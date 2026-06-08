@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+DerivedData/
+build/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/xcode/package.xcworkspace/xcuserdata/
+Package.resolved
+
+# Real / personal roster fixtures — never commit personal or employer schedule data.
+# Keep these local for development; commit only anonymised samples + the README spec.
+Fixtures/Rosters/*.xlsx
+Fixtures/Rosters/*.xls
+Fixtures/Rosters/*.numbers
+Fixtures/Rosters/*.csv
+!Fixtures/Rosters/sample-*.csv
+!Fixtures/Rosters/anonymised-*
