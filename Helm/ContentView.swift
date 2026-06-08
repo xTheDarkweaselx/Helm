@@ -8,73 +8,95 @@
 import SwiftUI
 import SwiftData
 
+/// The app's universal shell: a `NavigationSplitView` that auto-collapses to a
+/// stack on iPhone and shows columns on iPad/Mac (ADR-12). Sidebar lists rosters;
+/// detail shows the selected roster's shifts. The import wizard is presented as a
+/// sheet (built in a later phase).
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
+    @Query(sort: \Roster.createdAt, order: .reverse) private var rosters: [Roster]
+
+    @State private var selectedRosterID: Roster.ID?
+    @State private var isPresentingImport = false
+
+    private var selectedRoster: Roster? {
+        guard let selectedRosterID else { return nil }
+        return rosters.first { $0.id == selectedRosterID }
+    }
 
     var body: some View {
-        NavigationViewWrapper {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
+        NavigationSplitView {
+            Group {
+                if rosters.isEmpty {
+                    ContentUnavailableView {
+                        Label("No rosters yet", systemImage: "calendar.badge.plus")
+                    } description: {
+                        Text("Import a spreadsheet to add your shifts.")
+                    } actions: {
+                        Button("Import roster", systemImage: "square.and.arrow.down") {
+                            isPresentingImport = true
+                        }
+                    }
+                } else {
+                    List(selection: $selectedRosterID) {
+                        Section("Rosters") {
+                            ForEach(rosters) { roster in
+                                NavigationLink(value: roster.id) {
+                                    Label(roster.title ?? "Untitled roster", systemImage: "calendar")
+                                }
+                            }
+                        }
                     }
                 }
-                .onDelete(perform: deleteItems)
             }
-#if os(macOS)
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
-#endif
+            .navigationTitle("Helm")
             .toolbar {
-#if os(iOS)
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-#endif
                 ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
+                    Button("Import roster", systemImage: "square.and.arrow.down") {
+                        isPresentingImport = true
                     }
                 }
             }
-        }
-    }
-
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
-        }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
+        } detail: {
+            if let selectedRoster {
+                ShiftListView(roster: selectedRoster)
+            } else {
+                ContentUnavailableView("Select a roster", systemImage: "sidebar.left")
             }
+        }
+        .sheet(isPresented: $isPresentingImport) {
+            ImportPlaceholderView()
         }
     }
 }
 
-fileprivate struct NavigationViewWrapper<Content: View>: View {
-    let content: () -> Content
+/// Temporary stand-in for the import wizard (Phases v0 → v1). Replaced once the
+/// `.fileImporter` + parsing pipeline lands.
+private struct ImportPlaceholderView: View {
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-#if os(macOS)
-        NavigationSplitView {
-            content()
-        } detail: {
-            Text("Select an item")
+        NavigationStack {
+            ContentUnavailableView {
+                Label("Import coming next", systemImage: "doc.badge.gearshape")
+            } description: {
+                Text("The spreadsheet import wizard is being built. See DEVELOPMENT_PLAN.md §4.")
+            }
+            .navigationTitle("Import roster")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
         }
-#else
-        content()
-#endif
     }
 }
 
 #Preview {
+    let container = try! ModelContainer(
+        for: HelmApp.schema,
+        configurations: ModelConfiguration(schema: HelmApp.schema, isStoredInMemoryOnly: true)
+    )
     ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
+        .modelContainer(container)
 }

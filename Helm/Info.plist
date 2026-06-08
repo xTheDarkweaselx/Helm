@@ -5,6 +5,17 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
+		<string>fetch</string>
+		<string>processing</string>
 	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>Fusion-Studios.Helm.refresh</string>
+		<string>Fusion-Studios.Helm.reimport</string>
+	</array>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Helm adds your imported work shifts to your calendar and updates or removes them when you re-import a changed roster, so your calendar always matches your latest schedule.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Helm adds your imported work shifts to your calendar.</string>
 </dict>
 </plist>
