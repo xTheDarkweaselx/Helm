@@ -67,6 +67,13 @@ struct ContentView: View {
         .sheet(isPresented: $isPresentingImport) {
             ImportView()
         }
+#if DEBUG
+        .task {
+            if rosters.isEmpty {
+                await DemoImport.runIfRequested(modelContext: modelContext)
+            }
+        }
+#endif
     }
 }
 
