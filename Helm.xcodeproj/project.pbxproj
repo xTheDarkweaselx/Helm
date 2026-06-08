@@ -6,6 +6,12 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		666A88282FD788010014534A /* HelmCalendar in Frameworks */ = {isa = PBXBuildFile; productRef = 666A88272FD788010014534A /* HelmCalendar */; };
+		666A882A2FD788010014534A /* HelmDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 666A88292FD788010014534A /* HelmDomain */; };
+		666A882C2FD788010014534A /* HelmParsing in Frameworks */ = {isa = PBXBuildFile; productRef = 666A882B2FD788010014534A /* HelmParsing */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		666A87DF2FD76EC90014534A /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -65,6 +71,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				666A882A2FD788010014534A /* HelmDomain in Frameworks */,
+				666A882C2FD788010014534A /* HelmParsing in Frameworks */,
+				666A88282FD788010014534A /* HelmCalendar in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -125,6 +134,9 @@
 			);
 			name = Helm;
 			packageProductDependencies = (
+				666A88272FD788010014534A /* HelmCalendar */,
+				666A88292FD788010014534A /* HelmDomain */,
+				666A882B2FD788010014534A /* HelmParsing */,
 			);
 			productName = Helm;
 			productReference = 666A87CD2FD76EC70014534A /* Helm: Command Your Rota.app */;
@@ -208,6 +220,9 @@
 			);
 			mainGroup = 666A87C42FD76EC70014534A;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				666A88262FD788010014534A /* XCLocalSwiftPackageReference "HelmCore" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 666A87CE2FD76EC70014534A /* Products */;
 			projectDirPath = "";
@@ -630,6 +645,28 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		666A88262FD788010014534A /* XCLocalSwiftPackageReference "HelmCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = HelmCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		666A88272FD788010014534A /* HelmCalendar */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HelmCalendar;
+		};
+		666A88292FD788010014534A /* HelmDomain */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HelmDomain;
+		};
+		666A882B2FD788010014534A /* HelmParsing */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HelmParsing;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 666A87C52FD76EC70014534A /* Project object */;
 }

@@ -65,29 +65,7 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $isPresentingImport) {
-            ImportPlaceholderView()
-        }
-    }
-}
-
-/// Temporary stand-in for the import wizard (Phases v0 → v1). Replaced once the
-/// `.fileImporter` + parsing pipeline lands.
-private struct ImportPlaceholderView: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            ContentUnavailableView {
-                Label("Import coming next", systemImage: "doc.badge.gearshape")
-            } description: {
-                Text("The spreadsheet import wizard is being built. See DEVELOPMENT_PLAN.md §4.")
-            }
-            .navigationTitle("Import roster")
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
+            ImportView()
         }
     }
 }
