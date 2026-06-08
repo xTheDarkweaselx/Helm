@@ -24,14 +24,15 @@ final class UserProfile {
     var nameAliases: [String]?
     var createdAt: Date = Date.now
 
+    // CloudKit requires to-many relationships to be OPTIONAL (not just defaulted).
     @Relationship(deleteRule: .cascade, inverse: \Roster.user)
-    var rosters: [Roster] = []
+    var rosters: [Roster]?
 
     @Relationship(deleteRule: .cascade, inverse: \RotationAssignment.user)
-    var assignments: [RotationAssignment] = []
+    var assignments: [RotationAssignment]?
 
     @Relationship(deleteRule: .cascade, inverse: \ImportProfile.user)
-    var importProfiles: [ImportProfile] = []
+    var importProfiles: [ImportProfile]?
 
     init(id: String = UUID().uuidString, displayName: String? = nil, nameAliases: [String]? = nil) {
         self.id = id
@@ -72,13 +73,13 @@ final class ShiftType {
     var defaultAlarmOffsets: [Int]?
 
     @Relationship(deleteRule: .nullify, inverse: \ShiftInstance.shiftType)
-    var instances: [ShiftInstance] = []
+    var instances: [ShiftInstance]?
 
     @Relationship(deleteRule: .nullify, inverse: \RotationSlot.shiftType)
-    var rotationSlots: [RotationSlot] = []
+    var rotationSlots: [RotationSlot]?
 
     @Relationship(deleteRule: .nullify, inverse: \ShiftCodeMapping.shiftType)
-    var codeMappings: [ShiftCodeMapping] = []
+    var codeMappings: [ShiftCodeMapping]?
 
     var workKind: WorkKind {
         get { WorkKind(rawValue: workKindRaw) ?? .worked }
@@ -124,7 +125,7 @@ final class Roster {
     var user: UserProfile?
 
     @Relationship(deleteRule: .cascade, inverse: \ShiftInstance.roster)
-    var instances: [ShiftInstance] = []
+    var instances: [ShiftInstance]?
 
     init(id: String = UUID().uuidString, title: String? = nil, user: UserProfile? = nil) {
         self.id = id
@@ -166,10 +167,10 @@ final class ShiftInstance {
     var roster: Roster?
 
     @Relationship(deleteRule: .cascade, inverse: \ShiftSegment.instance)
-    var segments: [ShiftSegment] = []
+    var segments: [ShiftSegment]?
 
     @Relationship(deleteRule: .cascade, inverse: \CalendarSyncRecord.shiftInstance)
-    var syncRecords: [CalendarSyncRecord] = []
+    var syncRecords: [CalendarSyncRecord]?
 
     var overrideKind: OverrideKind {
         get { OverrideKind(rawValue: overrideKindRaw) ?? .none }
@@ -228,10 +229,10 @@ final class RotationPattern {
     var cycleLengthDays: Int = 7
 
     @Relationship(deleteRule: .cascade, inverse: \RotationSlot.pattern)
-    var slots: [RotationSlot] = []
+    var slots: [RotationSlot]?
 
     @Relationship(deleteRule: .cascade, inverse: \RotationAssignment.pattern)
-    var assignments: [RotationAssignment] = []
+    var assignments: [RotationAssignment]?
 
     init(id: String = UUID().uuidString, name: String? = nil, cycleLengthDays: Int = 7) {
         self.id = id

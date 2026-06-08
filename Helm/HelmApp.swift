@@ -57,16 +57,25 @@ extension HelmApp {
     static func makeModelContainer() -> ModelContainer {
         let schema = schema
 
-        // 1. Preferred: CloudKit-synced private database.
-        let cloudConfig = ModelConfiguration(
-            schema: schema,
-            isStoredInMemoryOnly: false,
-            cloudKitDatabase: .private(cloudKitContainerID)
-        )
-        do {
-            return try ModelContainer(for: schema, configurations: [cloudConfig])
-        } catch {
-            log.error("CloudKit ModelContainer failed, falling back to local store: \(error, privacy: .public)")
+        // 1. Preferred: CloudKit-synced private database — but only engage CloudKit
+        // when an iCloud account is actually available. Without an account (or the
+        // entitlement, e.g. an unsigned build) CloudKit's mirroring delegate traps
+        // ASYNCHRONOUSLY during setup, which a do/catch here cannot rescue — so we
+        // must decide up front. Account-less devices fall through to a local store;
+        // import-to-calendar still works (ADR-10).
+        if FileManager.default.ubiquityIdentityToken != nil {
+            let cloudConfig = ModelConfiguration(
+                schema: schema,
+                isStoredInMemoryOnly: false,
+                cloudKitDatabase: .private(cloudKitContainerID)
+            )
+            do {
+                return try ModelContainer(for: schema, configurations: [cloudConfig])
+            } catch {
+                log.error("CloudKit ModelContainer failed, falling back to local store: \(error, privacy: .public)")
+            }
+        } else {
+            log.notice("No iCloud account available; using a local store (no sync).")
         }
 
         // 2. Fallback: on-device only (no sync).

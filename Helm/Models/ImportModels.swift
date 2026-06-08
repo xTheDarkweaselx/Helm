@@ -40,10 +40,10 @@ final class ImportProfile {
     var user: UserProfile?
 
     @Relationship(deleteRule: .cascade, inverse: \ShiftCodeMapping.importProfile)
-    var codeMappings: [ShiftCodeMapping] = []
+    var codeMappings: [ShiftCodeMapping]?
 
     @Relationship(deleteRule: .cascade, inverse: \ImportRun.importProfile)
-    var runs: [ImportRun] = []
+    var runs: [ImportRun]?
 
     var layoutKind: LayoutKind? {
         get { layoutKindRaw.flatMap(LayoutKind.init(rawValue:)) }
@@ -91,7 +91,7 @@ final class ImportRun {
     var importProfile: ImportProfile?
 
     @Relationship(deleteRule: .nullify, inverse: \CalendarSyncRecord.importRun)
-    var syncRecords: [CalendarSyncRecord] = []
+    var syncRecords: [CalendarSyncRecord]?
 
     init(id: String = UUID().uuidString, importProfile: ImportProfile? = nil) {
         self.id = id

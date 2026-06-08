@@ -13,7 +13,7 @@ struct ShiftListView: View {
     let roster: Roster
 
     private var sortedInstances: [ShiftInstance] {
-        roster.instances.sorted {
+        (roster.instances ?? []).sorted {
             ($0.localDate ?? .distantPast, $0.sortIndex) < ($1.localDate ?? .distantPast, $1.sortIndex)
         }
     }
