@@ -15,6 +15,7 @@ build/
 
 # Swift Package Manager
 .build/
+.ddbuild/
 .swiftpm/xcode/package.xcworkspace/xcuserdata/
 Package.resolved
 
