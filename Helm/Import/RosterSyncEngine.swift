@@ -52,7 +52,7 @@ struct RosterSyncEngine {
 
     // MARK: - Apply (mutates SwiftData + calendar)
 
-    static func apply(_ plan: Plan, target: ShiftCalendarWriter, in context: ModelContext) async throws -> SyncSummary {
+    static func apply(_ plan: Plan, target: any CalendarTarget, in context: ModelContext) async throws -> SyncSummary {
         let result = plan.result
         let fingerprint = fingerprint(for: result.sourceName)
 
@@ -79,6 +79,18 @@ struct RosterSyncEngine {
         for instance in roster.instances ?? [] {
             if let key = instance.dedupKey { existingByKey[key] = instance }
         }
+
+        // Destination migration: a re-apply aimed at a DIFFERENT calendar than
+        // this roster's events live in (e.g. Apple → Google after signing in)
+        // best-effort removes them from the old destination first, so they
+        // don't linger there as orphans. The profile then records the new home.
+        let newKind = CalendarTargetKind(rawValue: target.kind) ?? .eventkit
+        if plan.isReimport, profile.target != newKind, !existingByKey.isEmpty {
+            if let oldTarget = try? await CalendarTargetProvider.authorizedTarget(for: profile.target) {
+                _ = try? await oldTarget.remove(dedupKeys: Array(existingByKey.keys))
+            }
+        }
+        profile.target = newKind
         // Last-wins on duplicate keys (matches incomingMap, used for the diff).
         // The trapping uniqueKeysWithValues: would crash on two same-day same-code rows.
         let incomingByKey = Dictionary(
@@ -145,11 +157,20 @@ struct RosterSyncEngine {
 
     /// Delete a roster and all of its calendar events. Removes the events FIRST so
     /// a failed/denied calendar removal doesn't orphan them (the roster stays).
-    static func delete(roster: Roster, target: ShiftCalendarWriter, in context: ModelContext) async throws {
+    static func delete(roster: Roster, target: any CalendarTarget, in context: ModelContext) async throws {
         let keys = (roster.instances ?? []).compactMap(\.dedupKey)
         if !keys.isEmpty { _ = try await target.remove(dedupKeys: keys) }
         context.delete(roster)
         try context.save()
+    }
+
+    /// The calendar destination this roster's events were last written to
+    /// (recorded on its ImportProfile at apply time), so delete/resync clean up
+    /// the right calendar even if the user has since switched destinations.
+    static func destination(for roster: Roster, in context: ModelContext) -> CalendarTargetKind {
+        guard let profileID = roster.sourceImportProfileID else { return .eventkit }
+        let descriptor = FetchDescriptor<ImportProfile>(predicate: #Predicate { $0.id == profileID })
+        return (try? context.fetch(descriptor).first)?.target ?? .eventkit
     }
 
     // MARK: - Mapping helpers
@@ -271,7 +292,7 @@ struct RosterSyncEngine {
 
     /// Re-write all of a roster's events (e.g. after the reminder setting changes).
     @discardableResult
-    static func resync(roster: Roster, target: ShiftCalendarWriter) async throws -> Int {
+    static func resync(roster: Roster, target: any CalendarTarget) async throws -> Int {
         let drafts = drafts(for: roster)
         guard !drafts.isEmpty else { return 0 }
         let results = try await target.write(drafts)

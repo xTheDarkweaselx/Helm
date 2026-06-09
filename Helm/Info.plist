@@ -13,6 +13,12 @@
 		<string>Fusion-Studios.Helm.refresh</string>
 		<string>Fusion-Studios.Helm.reimport</string>
 	</array>
+	<!-- Google OAuth client ID (type "iOS", from the user's own Google Cloud
+	     project). Empty by default: the Google Calendar feature stays hidden
+	     until a client ID is supplied here or pasted into Settings. Native-app
+	     client IDs are public identifiers, not secrets (PKCE, no client secret). -->
+	<key>HelmGoogleClientID</key>
+	<string></string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
 	<string>Helm adds your imported work shifts to your calendar and updates or removes them when you re-import a changed roster, so your calendar always matches your latest schedule.</string>
 	<key>NSCalendarsUsageDescription</key>

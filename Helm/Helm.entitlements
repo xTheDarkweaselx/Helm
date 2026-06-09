@@ -18,6 +18,10 @@
 	     write to Calendar. Ignored on iOS/iPadOS/visionOS (sandbox always on). -->
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
+	<!-- Outbound HTTPS for the direct Google Calendar integration (OAuth +
+	     Calendar API). Required on sandboxed macOS; harmless elsewhere. -->
+	<key>com.apple.security.network.client</key>
+	<true/>
 	<key>com.apple.security.files.user-selected.read-only</key>
 	<true/>
 	<key>com.apple.security.files.bookmarks.app-scope</key>

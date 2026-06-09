@@ -36,6 +36,11 @@ final class ImportProfile {
     /// How the user's own row/identity is located in the source.
     var meRowIdentity: String?
     var lastImportedAt: Date?
+    /// Which calendar destination this profile's roster was last written to
+    /// ("eventkit" / "google"), stamped at apply time, so delete/resync clean up
+    /// the calendar the events actually live in. Optional for CloudKit; nil
+    /// (pre-existing profiles) reads as .eventkit — correct, they predate Google.
+    var calendarTargetRaw: String?
 
     var user: UserProfile?
 
@@ -48,6 +53,11 @@ final class ImportProfile {
     var layoutKind: LayoutKind? {
         get { layoutKindRaw.flatMap(LayoutKind.init(rawValue:)) }
         set { layoutKindRaw = newValue?.rawValue }
+    }
+
+    var target: CalendarTargetKind {
+        get { calendarTargetRaw.flatMap(CalendarTargetKind.init(rawValue:)) ?? .eventkit }
+        set { calendarTargetRaw = newValue.rawValue }
     }
 
     init(id: String = UUID().uuidString, name: String? = nil, user: UserProfile? = nil) {

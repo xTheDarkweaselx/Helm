@@ -74,14 +74,12 @@ final class ImportCoordinator {
         let plan = self.plan ?? RosterSyncEngine.plan(for: result, in: modelContext)
         phase = .writing
 
-        let writer = ShiftCalendarWriter()
-        guard await writer.requestAccess() else {
-            phase = .failed("Calendar access was denied. Enable it for Helm in Settings, then try again. Your shifts are saved in Helm.")
-            return
-        }
         do {
-            let summary = try await RosterSyncEngine.apply(plan, target: writer, in: modelContext)
+            let target = try await CalendarTargetProvider.authorizedTarget()
+            let summary = try await RosterSyncEngine.apply(plan, target: target, in: modelContext)
             phase = .finished(summary)
+        } catch CalendarAccessError.eventKitDenied {
+            phase = .failed("Calendar access was denied. Enable it for Helm in Settings, then try again. Your shifts are saved in Helm.")
         } catch {
             phase = .failed(message(for: error))
         }

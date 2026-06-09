@@ -65,15 +65,14 @@ struct ShiftListView: View {
                 let roster = roster
                 let context = modelContext
                 Task {
-                    let writer = ShiftCalendarWriter()
-                    guard await writer.requestAccess() else {
-                        errorMessage = "Helm needs calendar access to remove these events. Enable it for Helm in Settings, then try again."
-                        return
-                    }
                     do {
-                        try await RosterSyncEngine.delete(roster: roster, target: writer, in: context)
+                        let destination = RosterSyncEngine.destination(for: roster, in: context)
+                        let target = try await CalendarTargetProvider.authorizedTarget(for: destination)
+                        try await RosterSyncEngine.delete(roster: roster, target: target, in: context)
+                    } catch CalendarAccessError.eventKitDenied {
+                        errorMessage = "Helm needs calendar access to remove these events. Enable it for Helm in Settings, then try again."
                     } catch {
-                        errorMessage = error.localizedDescription
+                        errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                     }
                 }
             }
@@ -141,18 +140,17 @@ struct ShiftListView: View {
         applyingReminders = true
         Task {
             defer { applyingReminders = false }
-            let writer = ShiftCalendarWriter()
-            guard await writer.requestAccess() else {
-                errorMessage = "Helm needs calendar access to update reminders. Enable it for Helm in Settings, then try again."
-                return
-            }
             do {
-                let n = try await RosterSyncEngine.resync(roster: roster, target: writer)
+                let destination = RosterSyncEngine.destination(for: roster, in: modelContext)
+                let target = try await CalendarTargetProvider.authorizedTarget(for: destination)
+                let n = try await RosterSyncEngine.resync(roster: roster, target: target)
                 infoMessage = n == 0
                     ? "This roster has no shifts to update."
                     : "Reminders applied to \(n) shift\(n == 1 ? "" : "s")."
+            } catch CalendarAccessError.eventKitDenied {
+                errorMessage = "Helm needs calendar access to update reminders. Enable it for Helm in Settings, then try again."
             } catch {
-                errorMessage = error.localizedDescription
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             }
         }
     }
