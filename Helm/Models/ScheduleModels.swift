@@ -244,6 +244,12 @@ final class RotationPattern {
     @Relationship(deleteRule: .cascade, inverse: \RotationAssignment.pattern)
     var assignments: [RotationAssignment]?
 
+    // CloudKit requires EVERY relationship to have an inverse; this one was
+    // missing (ScheduleSegment.pattern) and silently knocked the container down
+    // to the local fallback store (no sync) on iCloud-signed-in devices.
+    @Relationship(deleteRule: .nullify, inverse: \ScheduleSegment.pattern)
+    var segments: [ScheduleSegment]?
+
     init(id: String = UUID().uuidString, name: String? = nil, cycleLengthDays: Int = 7) {
         self.id = id
         self.name = name

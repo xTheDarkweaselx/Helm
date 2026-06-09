@@ -36,16 +36,24 @@ nonisolated enum GoogleAuthError: LocalizedError {
     }
 }
 
+/// What's persisted in the Keychain (one JSON blob).
+///
+/// File-scope and explicitly `nonisolated`: it is encoded/decoded ON the
+/// GoogleAuthService actor's executor (a background thread). Under the app
+/// target's default-MainActor isolation, a type nested in the actor gets a
+/// MainActor-isolated synthesized Codable conformance — JSONEncoder/Decoder
+/// then trip a runtime isolation assertion (EXC_BREAKPOINT) off the main
+/// thread: crashed at sign-in (first encode) and at every launch once tokens
+/// existed (reconcileMirror's first decode).
+nonisolated private struct StoredTokens: Codable, Sendable {
+    var refreshToken: String
+    var accessToken: String
+    var expiry: Date
+    var email: String?
+}
+
 actor GoogleAuthService: GoogleAccessTokenProviding {
     static let shared = GoogleAuthService()
-
-    /// What's persisted in the Keychain (one JSON blob).
-    private struct StoredTokens: Codable {
-        var refreshToken: String
-        var accessToken: String
-        var expiry: Date
-        var email: String?
-    }
 
     private let keychain = KeychainStore(service: "Fusion-Studios.Helm.google-oauth", account: "google")
     private let log = Logger(subsystem: "Fusion-Studios.Helm", category: "GoogleAuth")
