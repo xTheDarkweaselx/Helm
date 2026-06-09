@@ -51,7 +51,7 @@ public struct Color: Codable, Equatable {
 
 public struct NumberFormats: Codable, Equatable {
   public let items: [NumberFormat]
-  public let count: Int
+  public let count: Int? // Helm fork: optional — some writers omit count
 
   enum CodingKeys: String, CodingKey {
     case items = "numFmt"
@@ -71,7 +71,7 @@ public struct NumberFormat: Codable, Equatable {
 
 public struct Fonts: Codable, Equatable {
   public let items: [Font]
-  public let count: Int
+  public let count: Int? // Helm fork: optional — some writers omit count
 
   enum CodingKeys: String, CodingKey {
     case items = "font"
@@ -80,7 +80,7 @@ public struct Fonts: Codable, Equatable {
 
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    count = try container.decode(Int.self, forKey: .count)
+    count = try container.decodeIfPresent(Int.self, forKey: .count)
     items = try container.decode([Font?].self, forKey: .items)
       .map { $0 ?? Font() }
   }
@@ -93,7 +93,7 @@ public struct Fonts: Codable, Equatable {
 
 public struct Font: Codable, Equatable {
   public struct Size: Codable, Equatable {
-    public let value: Double
+    public let value: Double? // Helm fork: optional
 
     enum CodingKeys: String, CodingKey {
       case value = "val"
@@ -101,7 +101,7 @@ public struct Font: Codable, Equatable {
   }
 
   public struct Name: Codable, Equatable {
-    public let value: String
+    public let value: String? // Helm fork: optional
 
     enum CodingKeys: String, CodingKey {
       case value = "val"
@@ -167,7 +167,7 @@ public struct Font: Codable, Equatable {
 
 public struct Fills: Codable, Equatable {
   public let items: [Fill]
-  public let count: Int
+  public let count: Int? // Helm fork: optional — some writers omit count
 
   enum CodingKeys: String, CodingKey {
     case items = "fill"
@@ -180,7 +180,7 @@ public struct Fill: Codable, Equatable {
 }
 
 public struct PatternFill: Codable, Equatable {
-  public let patternType: String
+  public let patternType: String? // Helm fork: optional (OOXML default "none")
   public let foregroundColor: Color?
   public let backgroundColor: Color?
 
@@ -193,7 +193,7 @@ public struct PatternFill: Codable, Equatable {
 
 public struct Borders: Codable, Equatable {
   public let items: [Border]
-  public let count: Int
+  public let count: Int? // Helm fork: optional — some writers omit count
 
   enum CodingKeys: String, CodingKey {
     case items = "border"
@@ -202,7 +202,7 @@ public struct Borders: Codable, Equatable {
 
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    count = try container.decode(Int.self, forKey: .count)
+    count = try container.decodeIfPresent(Int.self, forKey: .count)
     items = try container.decode([Border?].self, forKey: .items)
       .map { $0 ?? Border() }
   }
@@ -235,7 +235,7 @@ public struct Border: Codable, Equatable {
 
 public struct CellStyleFormats: Codable, Equatable {
   public let items: [Format]
-  public let count: Int
+  public let count: Int? // Helm fork: optional — some writers omit count
 
   enum CodingKeys: String, CodingKey {
     case items = "xf"
@@ -245,7 +245,7 @@ public struct CellStyleFormats: Codable, Equatable {
 
 public struct CellFormats: Codable, Equatable {
   public let items: [Format]
-  public let count: Int
+  public let count: Int? // Helm fork: optional — some writers omit count
 
   enum CodingKeys: String, CodingKey {
     case items = "xf"
@@ -292,7 +292,7 @@ public struct Format: Codable, Equatable {
 
 public struct CellStyles: Codable, Equatable {
   public let items: [CellStyle]
-  public let count: Int
+  public let count: Int? // Helm fork: optional — some writers omit count
 
   enum CodingKeys: String, CodingKey {
     case items = "cellStyle"
@@ -303,7 +303,7 @@ public struct CellStyles: Codable, Equatable {
 public struct CellStyle: Codable, Equatable {
   public let name: String
   public let formatId: Int
-  public let builtinId: Int
+  public let builtinId: Int? // Helm fork: optional
 
   enum CodingKeys: String, CodingKey {
     case formatId = "xfId"
@@ -317,7 +317,7 @@ public struct CellStyle: Codable, Equatable {
  */
 public struct DifferentialFormats: Codable, Equatable {
   public let items: [Format]
-  public let count: Int
+  public let count: Int? // Helm fork: optional — some writers omit count
 
   enum CodingKeys: String, CodingKey {
     case items = "dxf"
@@ -326,7 +326,7 @@ public struct DifferentialFormats: Codable, Equatable {
 }
 
 public struct TableStyles: Codable, Equatable {
-  public let count: Int
+  public let count: Int? // Helm fork: optional — some writers omit count
   public let items: [TableStyle]
 
   enum CodingKeys: String, CodingKey {
@@ -340,9 +340,9 @@ public struct TableStyle: Codable, Equatable {
     public let type: String
   }
 
-  public let pivot: Bool
+  public let pivot: Bool? // Helm fork: optional
   public let name: String
-  public let count: Int
+  public let count: Int? // Helm fork: optional — some writers omit count
   public let elements: [Element]
 
   enum CodingKeys: String, CodingKey {
@@ -362,7 +362,7 @@ public struct Colors: Codable, Equatable {
     }
   }
 
-  public let indexed: Indexed
+  public let indexed: Indexed? // Helm fork: optional (<colors> may have only mruColors)
 
   enum CodingKeys: String, CodingKey {
     case indexed = "indexedColors"

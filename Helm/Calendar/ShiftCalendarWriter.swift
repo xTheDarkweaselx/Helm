@@ -120,6 +120,10 @@ final class ShiftCalendarWriter {
                 event = EKEvent(eventStore: store)
                 summary.added += 1
             }
+            // Defense-in-depth: index the (possibly new) event so a second instance
+            // with the same key in THIS batch updates it instead of creating a
+            // duplicate / orphan.
+            existingByURL[url.absoluteString] = event
 
             event.calendar = calendar
             event.title = instance.title ?? instance.shiftType?.label ?? instance.shiftType?.code ?? "Shift"

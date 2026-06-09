@@ -44,7 +44,9 @@ public enum XLSXGridLoader {
 
         var sheets: [Sheet] = []
         for (name, path) in pathsAndNames {
-            let worksheet = try file.parseWorksheet(at: path)
+            // Skip an individual sheet that fails to decode rather than failing the
+            // whole workbook (e.g. a rare sheet omitting cell r= attributes).
+            guard let worksheet = try? file.parseWorksheet(at: path) else { continue }
             var cells: [HelmParsing.CellReference: RawCell] = [:]
             for row in worksheet.data?.rows ?? [] {
                 for cell in row.cells {
@@ -81,10 +83,13 @@ public enum XLSXGridLoader {
         switch cell.type {
         case .sharedString:
             guard let idx = cell.value.flatMap(Int.init),
-                  let items = shared?.items, items.indices.contains(idx),
-                  let text = items[idx].text, !text.isEmpty
+                  let items = shared?.items, items.indices.contains(idx)
             else { return nil }
-            return RawCell(reference: ref, text: text)
+            // Fall back to concatenating rich-text runs when there's no plain <t>
+            // (rich-text strings would otherwise be silently dropped).
+            let combined = items[idx].text ?? items[idx].richText.compactMap(\.text).joined()
+            guard !combined.isEmpty else { return nil }
+            return RawCell(reference: ref, text: combined)
 
         case .inlineStr:
             guard let text = cell.inlineString?.text, !text.isEmpty else { return nil }
@@ -134,8 +139,12 @@ public enum XLSXGridLoader {
                   let bottomRight = HelmParsing.CellReference(a1: String(parts[1])),
                   let source = cells[topLeft]
             else { continue }
-            for r in topLeft.row...bottomRight.row {
-                for c in topLeft.column...bottomRight.column {
+            // Normalize endpoint order — a reversed/degenerate "F1:A1" would make
+            // `a...b` (a > b) a fatal range trap.
+            let (r0, r1) = (min(topLeft.row, bottomRight.row), max(topLeft.row, bottomRight.row))
+            let (c0, c1) = (min(topLeft.column, bottomRight.column), max(topLeft.column, bottomRight.column))
+            for r in r0...r1 {
+                for c in c0...c1 {
                     let target = HelmParsing.CellReference(column: c, row: r)
                     if cells[target] == nil {
                         cells[target] = RawCell(reference: target, text: source.text, number: source.number, isDate: source.isDate)

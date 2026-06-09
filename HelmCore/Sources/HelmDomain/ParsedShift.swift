@@ -56,6 +56,13 @@ public struct ParsedShift: Sendable, Equatable, Identifiable {
         calendar.timeZone = tz
         let c = calendar.dateComponents([.year, .month, .day], from: localDate)
         let day = String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
-        return "\(day)|\(timeZoneIdentifier)|\(normalizedCode)"
+        // Inline-time shifts carry no code; key them by their times so two timed
+        // entries on the same day don't collapse to one key (which would orphan a
+        // calendar event on re-import). Times are stable across re-imports; the
+        // source row is not, so it is deliberately NOT used here.
+        let code = normalizedCode.isEmpty
+            ? (inlineTimes.map { "\($0.startMinuteOfDay)-\($0.endMinuteOfDay)" } ?? "")
+            : normalizedCode
+        return "\(day)|\(timeZoneIdentifier)|\(code)"
     }
 }

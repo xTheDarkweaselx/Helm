@@ -58,7 +58,7 @@ public struct Workbook: Codable, Equatable {
 
   public struct Sheet: Codable, Equatable {
     public let name: String?
-    public let id: String
+    public let id: String? // Helm fork: optional (sheetId omitted by some writers; unused)
     public let relationship: String
 
     enum CodingKeys: String, CodingKey {

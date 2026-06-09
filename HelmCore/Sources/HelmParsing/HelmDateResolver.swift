@@ -71,8 +71,10 @@ public enum HelmDateResolver {
                 foundDate = true; i += 1 // month or minute — either way temporal
             case "h", "H", "s", "S":
                 foundTime = true; i += 1
-            case "a", "A", "p", "P":
-                foundTime = true; i += 1 // AM/PM marker
+            // NOTE: a bare unquoted a/A/p/P is a literal, NOT an AM/PM marker — a
+            // real AM/PM token ("AM/PM", "A/P") is always paired with h/hh, which
+            // already sets foundTime. Treating lone letters as time wrongly flags
+            // codes like "General"/"Standard" (they contain 'a') as dates.
             default:
                 i += 1
             }
@@ -81,8 +83,10 @@ public enum HelmDateResolver {
     }
 
     /// Convert an Excel serial number to a deterministic Date.
-    /// - 1900 system: epoch 1899-12-30 (this convention already absorbs the Lotus
-    ///   1900 phantom-leap-day for serials >= 60).
+    /// - 1900 system: epoch 1899-12-30. This convention matches Excel for serials
+    ///   >= 61 (i.e. 1900-03-01 onward, which covers every real roster); serials
+    ///   1–59 land one day earlier than Excel and serial 60 is Excel's phantom
+    ///   1900-02-29 — none of which occur in shift data.
     /// - 1904 system: epoch 1904-01-01.
     /// `dateOnly` anchors at NOON in `timeZoneIdentifier` (matching
     /// RosterDateParser, which builds at hour 12) so only y/m/d is meaningful.
@@ -92,6 +96,12 @@ public enum HelmDateResolver {
         dateOnly: Bool,
         timeZoneIdentifier: String
     ) -> Date? {
+        // Bound the serial BEFORE Int(floor()) — Int(.infinity)/Int(.nan)/Int(1e300)
+        // are fatal traps. A malformed/overflow numeric cell in a date-styled column
+        // returns nil here and is kept as a plain number, not crashed on.
+        // 2_958_466 ≈ Excel's max date (9999-12-31) + slack.
+        guard serial.isFinite, serial >= -3_000_000, serial <= 2_958_466 else { return nil }
+
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: timeZoneIdentifier) ?? .gmt
 

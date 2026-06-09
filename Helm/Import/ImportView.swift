@@ -16,6 +16,7 @@ import UniformTypeIdentifiers
 final class ImportCoordinator {
     enum Phase: Equatable {
         case idle
+        case reading
         case loaded
         case writing
         case finished(added: Int, updated: Int, skipped: Int)
@@ -25,22 +26,35 @@ final class ImportCoordinator {
     var phase: Phase = .idle
     var result: RosterImportResult?
 
-    func load(from url: URL) {
+    func load(from url: URL) async {
         do {
-            let accessed = url.startAccessingSecurityScopedResource()
-            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-            let data = try Data(contentsOf: url)
-            let name = url.deletingPathExtension().lastPathComponent
-            // Sniff the bytes, not the extension: PK = ZIP/OOXML (.xlsx);
-            // D0CF11E0 = OLE2 (legacy .xls); otherwise treat as text/CSV.
-            if data.starts(with: [0x50, 0x4B]) {
-                result = try RosterImporter.importXLSX(data: data, sourceName: name)
-            } else if data.starts(with: [0xD0, 0xCF, 0x11, 0xE0]) {
-                throw RosterImportError.legacyXLS
-            } else {
-                let text = String(decoding: data, as: UTF8.self)
-                result = try RosterImporter.importCSV(text: text, sourceName: name)
+            let data: Data
+            do {
+                let accessed = url.startAccessingSecurityScopedResource()
+                defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                data = try Data(contentsOf: url) // small read, kept inside the scope
             }
+            let name = url.deletingPathExtension().lastPathComponent
+            phase = .reading
+            // Parse off the main actor (ADR-9): heavy decode must not block the UI.
+            result = try await Task.detached(priority: .userInitiated) {
+                // Sniff the bytes, not the extension: PK = ZIP/OOXML (.xlsx);
+                // D0CF11E0 = OLE2 (legacy .xls); otherwise treat as text/CSV.
+                if data.starts(with: [0x50, 0x4B]) {
+                    return try RosterImporter.importXLSX(data: data, sourceName: name)
+                } else if data.starts(with: [0xD0, 0xCF, 0x11, 0xE0]) {
+                    throw RosterImportError.legacyXLS
+                } else {
+                    // UTF-8 first, then cp1252/Latin-1 so legacy rosters don't become
+                    // mojibake; strip a leading Excel UTF-8 BOM.
+                    let text = (String(data: data, encoding: .utf8)
+                                ?? String(data: data, encoding: .windowsCP1252)
+                                ?? String(data: data, encoding: .isoLatin1)
+                                ?? String(decoding: data, as: UTF8.self))
+                        .replacingOccurrences(of: "\u{FEFF}", with: "")
+                    return try RosterImporter.importCSV(text: text, sourceName: name)
+                }
+            }.value
             phase = .loaded
         } catch {
             phase = .failed(message(for: error))
@@ -136,11 +150,12 @@ struct ImportView: View {
     @State private var coordinator = ImportCoordinator()
     @State private var isFileImporterPresented = false
 
+    // Explicit OOXML + legacy-xls + text UTIs only — NOT the broad `.spreadsheet`
+    // (which would also offer .numbers/.ods that dead-end on the xlsx parser).
     private static let importTypes: [UTType] = [
         .commaSeparatedText, .tabSeparatedText, .plainText, .text,
-        .spreadsheet,
-        UTType("org.openxmlformats.spreadsheetml.sheet") ?? .spreadsheet, // .xlsx
-        UTType("com.microsoft.excel.xls") ?? .spreadsheet,                // legacy .xls → friendly error
+        UTType("org.openxmlformats.spreadsheetml.sheet") ?? .data, // .xlsx
+        UTType("com.microsoft.excel.xls") ?? .data,                // legacy .xls → friendly error
     ]
 
     var body: some View {
@@ -158,7 +173,7 @@ struct ImportView: View {
                     allowsMultipleSelection: false
                 ) { result in
                     if case let .success(urls) = result, let url = urls.first {
-                        coordinator.load(from: url)
+                        Task { await coordinator.load(from: url) }
                     } else if case let .failure(error) = result {
                         coordinator.phase = .failed(error.localizedDescription)
                     }
@@ -171,6 +186,9 @@ struct ImportView: View {
         switch coordinator.phase {
         case .idle:
             idleView
+        case .reading:
+            ProgressView("Reading roster…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .loaded:
             if let result = coordinator.result { previewView(result) }
         case .writing:

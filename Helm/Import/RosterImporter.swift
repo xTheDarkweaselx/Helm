@@ -13,8 +13,8 @@ import HelmParsing
 
 /// A code → wall-clock-times legend (employer-specific; the times for "M"/"A"
 /// are not in the spreadsheet — the user supplies them, see Fixtures README).
-struct ShiftLegend: Sendable {
-    struct Entry: Sendable {
+nonisolated struct ShiftLegend: Sendable {
+    nonisolated struct Entry: Sendable {
         var startMinute: Int
         var endMinute: Int
         var label: String
@@ -33,7 +33,7 @@ struct ShiftLegend: Sendable {
 }
 
 /// A resolved candidate shift, shown in the preview before writing.
-struct DraftShift: Identifiable, Sendable {
+nonisolated struct DraftShift: Identifiable, Sendable {
     enum Outcome: Sendable, Equatable {
         case willWrite
         case skippedOff
@@ -76,7 +76,7 @@ enum RosterImportError: LocalizedError {
     }
 }
 
-struct RosterImportResult: Sendable {
+nonisolated struct RosterImportResult: Sendable {
     var drafts: [DraftShift]
     var sourceName: String
     var unmappedCodes: [String]
@@ -87,7 +87,7 @@ struct RosterImportResult: Sendable {
 enum RosterImporter {
 
     /// Parse CSV text into resolved draft shifts.
-    static func importCSV(
+    nonisolated static func importCSV(
         text: String,
         sourceName: String,
         legend: ShiftLegend = .default,
@@ -102,7 +102,7 @@ enum RosterImporter {
     /// Parse `.xlsx` file data into resolved draft shifts via the vendored
     /// CoreXLSX fork + Helm date resolver. The adapter emits `dd/MM/yyyy` date
     /// text, so the default `.dayFirst` order is correct (no caller change).
-    static func importXLSX(
+    nonisolated static func importXLSX(
         data: Data,
         sourceName: String,
         legend: ShiftLegend = .default,
@@ -121,7 +121,7 @@ enum RosterImporter {
 
     /// Shared: pick the first sheet with a detectable roster layout, interpret it,
     /// and resolve drafts (so multi-sheet workbooks just work).
-    private static func resolve(
+    nonisolated private static func resolve(
         grid: SpreadsheetGrid,
         sourceName: String,
         legend: ShiftLegend,
@@ -145,7 +145,7 @@ enum RosterImporter {
         throw sawMapping ? RosterImportError.noRows : RosterImportError.noColumnsDetected
     }
 
-    private static func makeResult(parsed: [ParsedShift], sourceName: String, legend: ShiftLegend) -> RosterImportResult {
+    nonisolated private static func makeResult(parsed: [ParsedShift], sourceName: String, legend: ShiftLegend) -> RosterImportResult {
         var drafts: [DraftShift] = []
         var unmapped = Set<String>()
 
@@ -190,7 +190,7 @@ enum RosterImporter {
         return RosterImportResult(drafts: drafts, sourceName: sourceName, unmappedCodes: unmapped.sorted())
     }
 
-    private static func draft(for shift: ParsedShift, label: String?, startMinute: Int?, endMinute: Int?, resolved: ResolvedShiftTimes?, outcome: DraftShift.Outcome) -> DraftShift {
+    nonisolated private static func draft(for shift: ParsedShift, label: String?, startMinute: Int?, endMinute: Int?, resolved: ResolvedShiftTimes?, outcome: DraftShift.Outcome) -> DraftShift {
         DraftShift(
             localDate: shift.localDate,
             timeZoneIdentifier: shift.timeZoneIdentifier,

@@ -71,14 +71,15 @@ public extension Cell {
   /// given `sharedStrings` argument.
   func stringValue(_ sharedStrings: SharedStrings) -> String? {
     guard type == .sharedString, let index = value.flatMap(Int.init) else { return value }
-
+    // Helm fork: bounds-check to avoid a trap on a malformed/cross-referenced index.
+    guard sharedStrings.items.indices.contains(index) else { return nil }
     return sharedStrings.items[index].text
   }
 
   /// Returns a value of this cell as a RichText, from a given `sharedStrings` argument.
   func richStringValue(_ sharedStrings: SharedStrings) -> [RichText] {
     guard type == .sharedString, let index = value.flatMap(Int.init) else { return [] }
-
+    guard sharedStrings.items.indices.contains(index) else { return [] } // Helm fork: bounds-check
     return sharedStrings.items[index].richText
   }
 
@@ -108,15 +109,17 @@ public extension Cell {
 
   /// Returns a `Format` value applied to this cell, if any.
   func format(in styles: Styles) -> Format? {
-    guard let styleIndex = styleIndex else { return nil }
-
-    return styles.cellFormats?.items[styleIndex]
+    guard let styleIndex = styleIndex,
+          let items = styles.cellFormats?.items, items.indices.contains(styleIndex) // Helm fork: bounds-check
+    else { return nil }
+    return items[styleIndex]
   }
 
   /// Returns a `Font` value applied to this cell, if any.
   func font(in styles: Styles) -> Font? {
-    guard let fontID = format(in: styles)?.fontId else { return nil }
-
-    return styles.fonts?.items[fontID]
+    guard let fontID = format(in: styles)?.fontId,
+          let items = styles.fonts?.items, items.indices.contains(fontID) // Helm fork: bounds-check
+    else { return nil }
+    return items[fontID]
   }
 }

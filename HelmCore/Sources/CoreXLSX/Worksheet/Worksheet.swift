@@ -205,7 +205,7 @@ public struct Column: Codable, Equatable {
   public let max: Int
 
   /// Width of a column in width values of widest digist in normal font style.
-  public let width: Double
+  public let width: Double? // Helm fork: optional (a <col> may have bestFit and no width)
 
   /// Default style for related columns.
   public let style: UInt32?
