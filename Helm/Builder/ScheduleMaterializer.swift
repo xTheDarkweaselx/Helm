@@ -21,7 +21,8 @@ enum ScheduleMaterializer {
         let range = horizon(for: schedule, today: today)
         let days = ScheduleExpander.expand(spec, horizon: range)
         let drafts = days.map(draftShift(from:))
-        return RosterImportResult(drafts: drafts, sourceName: "schedule:\(schedule.id)", unmappedCodes: [])
+        return RosterImportResult(drafts: drafts, sourceName: "schedule:\(schedule.id)",
+                                  unmappedCodes: [], displayName: rosterTitle(for: schedule))
     }
 
     /// The Roster title to show (decorative; identity is the id-based fingerprint).

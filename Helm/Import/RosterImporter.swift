@@ -81,8 +81,12 @@ enum RosterImportError: LocalizedError {
 
 nonisolated struct RosterImportResult: Sendable {
     var drafts: [DraftShift]
+    /// Stable identity used for the re-import fingerprint (filename, or "schedule:<id>").
     var sourceName: String
     var unmappedCodes: [String]
+    /// Human-readable roster title (falls back to sourceName). Built rotas set this
+    /// to the schedule's title so the sidebar doesn't show the raw fingerprint.
+    var displayName: String? = nil
 
     var writableCount: Int { drafts.filter(\.isWritable).count }
 }

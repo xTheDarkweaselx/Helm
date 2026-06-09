@@ -66,12 +66,14 @@ struct RosterSyncEngine {
         }()
         profile.lastImportedAt = .now
 
+        let title = result.displayName ?? result.sourceName
         let roster = fetchRoster(forProfileID: profile.id, in: context) ?? {
-            let r = Roster(title: result.sourceName)
+            let r = Roster(title: title)
             r.sourceImportProfileID = profile.id
             context.insert(r)
             return r
         }()
+        roster.title = title // keep in sync (e.g. a renamed schedule)
 
         var existingByKey: [String: ShiftInstance] = [:]
         for instance in roster.instances ?? [] {
