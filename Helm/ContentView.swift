@@ -68,11 +68,9 @@ struct ContentView: View {
             ImportView()
         }
 #if DEBUG
-        .task {
-            if rosters.isEmpty {
-                await DemoImport.runIfRequested(modelContext: modelContext)
-            }
-        }
+        // Runs each launch when HELM_DEMO_IMPORT is set, so re-import idempotency
+        // can be exercised on a simulator (the engine reuses the roster).
+        .task { await DemoImport.runIfRequested(modelContext: modelContext) }
 #endif
     }
 }

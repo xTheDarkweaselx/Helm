@@ -11,8 +11,10 @@
 #if DEBUG
 import Foundation
 import SwiftData
+import OSLog
 
 enum DemoImport {
+    private static let log = Logger(subsystem: "Fusion-Studios.Helm", category: "DemoImport")
     private static var mode: String? { ProcessInfo.processInfo.environment["HELM_DEMO_IMPORT"] }
     static var isRequested: Bool { mode != nil }
     /// Optional absolute path to a real .xlsx to import (set via env, never hardcoded).
@@ -50,7 +52,13 @@ enum DemoImport {
         }
         let coordinator = ImportCoordinator()
         coordinator.result = result
+        coordinator.preparePlan(modelContext: modelContext)
         await coordinator.commit(modelContext: modelContext)
+        if case let .finished(summary) = coordinator.phase {
+            log.notice("summary: added=\(summary.added) updated=\(summary.updated) removed=\(summary.removed) unchanged=\(summary.unchanged) reimport=\(summary.isReimport)")
+        } else if case let .failed(message) = coordinator.phase {
+            log.error("failed: \(message, privacy: .public)")
+        }
     }
 }
 #endif

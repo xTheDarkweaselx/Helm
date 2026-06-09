@@ -2,14 +2,14 @@
 //  ImportView.swift
 //  Helm
 //
-//  v0 import flow: pick a CSV → preview resolved shifts → persist (SwiftData) →
-//  write to the Helm calendar via EventKit. The full auto-detecting wizard,
-//  diff-on-reimport, and .xlsx support arrive in v1.
+//  Import flow: pick an .xlsx/CSV → preview the add/update/remove diff vs any
+//  existing roster → persist (SwiftData) → sync the Helm calendar via EventKit.
 //
 
 import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
+import HelmDomain
 
 @MainActor
 @Observable
@@ -19,12 +19,13 @@ final class ImportCoordinator {
         case reading
         case loaded
         case writing
-        case finished(added: Int, updated: Int, skipped: Int)
+        case finished(SyncSummary)
         case failed(String)
     }
 
     var phase: Phase = .idle
     var result: RosterImportResult?
+    var plan: RosterSyncEngine.Plan?
 
     func load(from url: URL) async {
         do {
@@ -61,43 +62,17 @@ final class ImportCoordinator {
         }
     }
 
+    /// Compute the add/update/remove diff against any existing roster for this
+    /// source, for the preview (read-only).
+    func preparePlan(modelContext: ModelContext) {
+        guard let result, plan == nil else { return }
+        plan = RosterSyncEngine.plan(for: result, in: modelContext)
+    }
+
     func commit(modelContext: ModelContext) async {
         guard let result else { return }
+        let plan = self.plan ?? RosterSyncEngine.plan(for: result, in: modelContext)
         phase = .writing
-
-        let writable = result.drafts.filter(\.isWritable)
-        let nonWritable = result.drafts.count - writable.count
-
-        let roster = Roster(title: result.sourceName)
-        modelContext.insert(roster)
-
-        var typeCache: [String: ShiftType] = [:]
-        var instances: [ShiftInstance] = []
-        for (index, draft) in writable.enumerated() {
-            let type = shiftType(for: draft, cache: &typeCache, context: modelContext)
-            let instance = ShiftInstance(
-                localDate: draft.localDate,
-                timeZoneIdentifier: draft.timeZoneIdentifier,
-                title: draft.title ?? type.label,
-                locationName: draft.location,
-                shiftType: type,
-                roster: roster,
-                dedupKey: draft.dedupKey
-            )
-            instance.startUTC = draft.start
-            instance.endUTC = draft.end
-            instance.computedPaidHours = draft.paidHours
-            instance.sortIndex = index
-            modelContext.insert(instance)
-            instances.append(instance)
-        }
-
-        do {
-            try modelContext.save()
-        } catch {
-            phase = .failed("Couldn't save the roster: \(error.localizedDescription)")
-            return
-        }
 
         let writer = ShiftCalendarWriter()
         guard await writer.requestAccess() else {
@@ -105,33 +80,11 @@ final class ImportCoordinator {
             return
         }
         do {
-            let summary = try writer.upsert(instances)
-            phase = .finished(added: summary.added, updated: summary.updated, skipped: summary.skipped + nonWritable)
+            let summary = try await RosterSyncEngine.apply(plan, target: writer, in: modelContext)
+            phase = .finished(summary)
         } catch {
             phase = .failed(message(for: error))
         }
-    }
-
-    private func shiftType(for draft: DraftShift, cache: inout [String: ShiftType], context: ModelContext) -> ShiftType {
-        let key = draft.code.isEmpty
-            ? "inline:\(draft.startMinuteOfDay ?? 0)-\(draft.endMinuteOfDay ?? 0)"
-            : draft.code
-        if let cached = cache[key] { return cached }
-
-        let label = draft.label
-            ?? draft.startMinuteOfDay.map { Self.hhmm($0) + (draft.endMinuteOfDay.map { "–" + Self.hhmm($0) } ?? "") }
-            ?? (draft.code.isEmpty ? "Shift" : draft.code)
-
-        let type = ShiftType(
-            code: draft.code.isEmpty ? nil : draft.code,
-            label: label,
-            startMinuteOfDay: draft.startMinuteOfDay ?? 0,
-            endMinuteOfDay: draft.endMinuteOfDay ?? 0,
-            workKind: .worked
-        )
-        context.insert(type)
-        cache[key] = type
-        return type
     }
 
     private func message(for error: Error) -> String {
@@ -173,7 +126,10 @@ struct ImportView: View {
                     allowsMultipleSelection: false
                 ) { result in
                     if case let .success(urls) = result, let url = urls.first {
-                        Task { await coordinator.load(from: url) }
+                        Task {
+                            await coordinator.load(from: url)
+                            coordinator.preparePlan(modelContext: modelContext)
+                        }
                     } else if case let .failure(error) = result {
                         coordinator.phase = .failed(error.localizedDescription)
                     }
@@ -194,8 +150,8 @@ struct ImportView: View {
         case .writing:
             ProgressView("Adding shifts to your calendar…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        case let .finished(added, updated, skipped):
-            finishedView(added: added, updated: updated, skipped: skipped)
+        case let .finished(summary):
+            finishedView(summary: summary)
         case let .failed(message):
             failureView(message)
         }
@@ -213,10 +169,22 @@ struct ImportView: View {
     }
 
     private func previewView(_ result: RosterImportResult) -> some View {
-        List {
+        let diff = coordinator.plan?.diff
+        let isReimport = coordinator.plan?.isReimport ?? false
+        let hasChanges = diff?.hasChanges ?? (result.writableCount > 0)
+        return List {
             Section {
                 LabeledContent("Source", value: result.sourceName)
-                LabeledContent("Shifts to add", value: "\(result.writableCount)")
+                if isReimport, let diff {
+                    Label("Re-import — updating in place", systemImage: "arrow.triangle.2.circlepath")
+                        .foregroundStyle(.secondary)
+                    LabeledContent("Add", value: "\(diff.added.count)")
+                    LabeledContent("Update", value: "\(diff.updated.count)")
+                    LabeledContent("Remove", value: "\(diff.removed.count)")
+                    LabeledContent("Unchanged", value: "\(diff.unchanged.count)")
+                } else {
+                    LabeledContent("Shifts to add", value: "\(diff?.added.count ?? result.writableCount)")
+                }
                 LabeledContent("Skipped (off / TBC / unmapped)", value: "\(result.drafts.count - result.writableCount)")
                 if !result.unmappedCodes.isEmpty {
                     LabeledContent("Unknown codes", value: result.unmappedCodes.joined(separator: ", "))
@@ -234,21 +202,34 @@ struct ImportView: View {
             Button {
                 Task { await coordinator.commit(modelContext: modelContext) }
             } label: {
-                Text("Add \(result.writableCount) shifts to Calendar")
+                Text(commitTitle(diff: diff, isReimport: isReimport, result: result))
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(result.writableCount == 0)
+            .disabled(!hasChanges)
             .padding()
         }
     }
 
-    private func finishedView(added: Int, updated: Int, skipped: Int) -> some View {
+    private func commitTitle(diff: RosterDiff?, isReimport: Bool, result: RosterImportResult) -> String {
+        guard let diff else { return "Add \(result.writableCount) shifts to Calendar" }
+        if !diff.hasChanges { return "No changes" }
+        if isReimport {
+            var parts: [String] = []
+            if diff.added.count > 0 { parts.append("+\(diff.added.count)") }
+            if diff.updated.count > 0 { parts.append("✎\(diff.updated.count)") }
+            if diff.removed.count > 0 { parts.append("−\(diff.removed.count)") }
+            return "Apply changes (\(parts.joined(separator: " ")))"
+        }
+        return "Add \(diff.added.count) shifts to Calendar"
+    }
+
+    private func finishedView(summary: SyncSummary) -> some View {
         ContentUnavailableView {
-            Label("Shifts added", systemImage: "checkmark.circle.fill")
+            Label(summary.isReimport ? "Roster updated" : "Shifts added", systemImage: "checkmark.circle.fill")
         } description: {
-            Text("Added \(added), updated \(updated), skipped \(skipped). Open Calendar to see your “Helm Shifts”.")
+            Text("Added \(summary.added), updated \(summary.updated), removed \(summary.removed), unchanged \(summary.unchanged). Open Calendar to see your “Helm Shifts”.")
         } actions: {
             Button("Done") { dismiss() }.buttonStyle(.borderedProminent)
         }

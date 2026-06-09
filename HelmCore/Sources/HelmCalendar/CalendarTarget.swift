@@ -82,4 +82,13 @@ public protocol CalendarTarget: Sendable {
 
     /// Upsert the given drafts, returning what happened to each.
     func write(_ drafts: [CalendarEventDraft]) async throws -> [CalendarWriteResult]
+
+    /// Remove previously-written events by their dedup keys (re-import removals).
+    /// Returns the number actually removed.
+    @discardableResult
+    func remove(dedupKeys: [String]) async throws -> Int
+
+    /// Remove every event Helm created in this target.
+    @discardableResult
+    func removeAll() async throws -> Int
 }

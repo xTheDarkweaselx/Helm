@@ -2,21 +2,21 @@
 //  ShiftCalendarWriter.swift
 //  Helm
 //
-//  v0 EventKit write path (DEVELOPMENT_PLAN.md Phase v0). Requests FULL calendar
-//  access (ADR-2), writes shifts into a dedicated "Helm Shifts" calendar, and
-//  upserts idempotently keyed by a helm:// URL stamped on each event (ADR-3), so
-//  re-import updates in place instead of duplicating. Batched commit for speed.
-//
-//  This is the concrete EventKit adapter; it will be adapted to the HelmCalendar
-//  `CalendarTarget` protocol once the HelmCore package is linked into the app.
+//  EventKit adapter for the HelmCalendar `CalendarTarget` protocol (ADR-1).
+//  Requests FULL access (ADR-2), writes into a dedicated "Helm Shifts" calendar,
+//  and upserts idempotently keyed by a helm:// URL stamped on each event (ADR-3)
+//  so re-import updates in place; removals delete exactly the matching events.
 //
 
 import Foundation
 import EventKit
 import OSLog
+import HelmCalendar
 
 @MainActor
-final class ShiftCalendarWriter {
+final class ShiftCalendarWriter: CalendarTarget {
+    nonisolated let kind = "eventkit"
+
     enum WriterError: LocalizedError {
         case accessDenied
         case noWritableSource
@@ -29,19 +29,14 @@ final class ShiftCalendarWriter {
         }
     }
 
-    struct Summary: Sendable, Equatable {
-        var added = 0
-        var updated = 0
-        var skipped = 0
-    }
-
     static let calendarTitle = "Helm Shifts"
     static let urlScheme = "helm"
 
     private let store = EKEventStore()
     private let log = Logger(subsystem: "Fusion-Studios.Helm", category: "Calendar")
 
-    /// Request full access (needed to read back our events for idempotent re-import).
+    // MARK: - Access
+
     func requestAccess() async -> Bool {
         do {
             return try await store.requestFullAccessToEvents()
@@ -58,97 +53,113 @@ final class ShiftCalendarWriter {
     /// Find or create the dedicated "Helm Shifts" calendar on a writable source
     /// (prefer iCloud so it syncs, else local).
     func ensureHelmCalendar() throws -> EKCalendar {
-        if let existing = store.calendars(for: .event).first(where: {
-            $0.title == Self.calendarTitle && $0.allowsContentModifications
-        }) {
-            return existing
-        }
+        if let existing = existingCalendar(writableOnly: true) { return existing }
 
         let calendar = EKCalendar(for: .event, eventStore: store)
         calendar.title = Self.calendarTitle
-
         let sources = store.sources
         let source = sources.first(where: { $0.sourceType == .calDAV && $0.title.lowercased().contains("icloud") })
             ?? sources.first(where: { $0.sourceType == .local })
             ?? store.defaultCalendarForNewEvents?.source
         guard let source else { throw WriterError.noWritableSource }
         calendar.source = source
-
         try store.saveCalendar(calendar, commit: true)
         return calendar
     }
 
-    /// Idempotently upsert the given instances into the Helm calendar.
+    // MARK: - CalendarTarget
+
     @discardableResult
-    func upsert(_ instances: [ShiftInstance]) throws -> Summary {
+    func write(_ drafts: [CalendarEventDraft]) async throws -> [CalendarWriteResult] {
         guard authorizationStatus == .fullAccess else { throw WriterError.accessDenied }
-
+        guard !drafts.isEmpty else { return [] }
         let calendar = try ensureHelmCalendar()
-        var summary = Summary()
 
-        // Only instances with a resolved time window and a key can be written.
-        let writable = instances.filter { $0.startUTC != nil && $0.endUTC != nil && key(for: $0) != nil }
-        summary.skipped = instances.count - writable.count
-        guard !writable.isEmpty else { return summary }
+        var existingByURL = helmEvents(in: calendar,
+                                       from: drafts.map(\.start).min()!,
+                                       to: drafts.map(\.end).max()!)
 
-        // Pre-fetch existing Helm events across the span and index by our URL.
-        let minStart = writable.compactMap(\.startUTC).min()!
-        let maxEnd = writable.compactMap(\.endUTC).max()!
-        let cal = Calendar.current
-        let predicate = store.predicateForEvents(
-            withStart: cal.date(byAdding: .day, value: -1, to: minStart) ?? minStart,
-            end: cal.date(byAdding: .day, value: 1, to: maxEnd) ?? maxEnd,
-            calendars: [calendar]
-        )
-        var existingByURL: [String: EKEvent] = [:]
-        for event in store.events(matching: predicate) {
-            if let urlString = event.url?.absoluteString, urlString.hasPrefix("\(Self.urlScheme):") {
-                existingByURL[urlString] = event
-            }
-        }
-
-        for instance in writable {
-            guard let dedup = key(for: instance),
-                  let start = instance.startUTC, let end = instance.endUTC else { continue }
-            let url = eventURL(for: dedup)
-
+        var staged: [(key: String, action: CalendarWriteAction, event: EKEvent)] = []
+        for draft in drafts {
+            let url = eventURL(for: draft.dedupKey)
             let event: EKEvent
+            let action: CalendarWriteAction
             if let existing = existingByURL[url.absoluteString] {
-                event = existing
-                summary.updated += 1
+                event = existing; action = .updated
             } else {
-                event = EKEvent(eventStore: store)
-                summary.added += 1
+                event = EKEvent(eventStore: store); action = .added
             }
-            // Defense-in-depth: index the (possibly new) event so a second instance
-            // with the same key in THIS batch updates it instead of creating a
-            // duplicate / orphan.
-            existingByURL[url.absoluteString] = event
+            existingByURL[url.absoluteString] = event // guard in-batch key collisions
 
             event.calendar = calendar
-            event.title = instance.title ?? instance.shiftType?.label ?? instance.shiftType?.code ?? "Shift"
-            event.location = instance.locationName
-            event.notes = "Imported by Helm. Do not edit the URL tag.\n[\(Self.urlScheme):\(dedup)]"
-            event.startDate = start
-            event.endDate = end
-            event.timeZone = TimeZone(identifier: instance.timeZoneIdentifier)
+            event.title = draft.title
+            event.location = draft.location
+            event.notes = draft.notes ?? "Imported by Helm. Do not edit the URL tag.\n[\(Self.urlScheme):\(draft.dedupKey)]"
+            event.startDate = draft.start
+            event.endDate = draft.end
+            event.isAllDay = draft.isAllDay
+            event.timeZone = TimeZone(identifier: draft.timeZoneIdentifier)
             event.url = url
-            event.alarms = (instance.shiftType?.defaultAlarmOffsets ?? []).map {
-                EKAlarm(relativeOffset: TimeInterval(-$0 * 60))
-            }
+            event.alarms = draft.alarmOffsetsMinutes.map { EKAlarm(relativeOffset: TimeInterval(-$0 * 60)) }
 
             try store.save(event, span: .thisEvent, commit: false)
+            staged.append((draft.dedupKey, action, event))
         }
-
         try store.commit()
-        return summary
+
+        return staged.map { CalendarWriteResult(dedupKey: $0.key, action: $0.action, eventIdentifier: $0.event.eventIdentifier) }
     }
 
-    /// Remove every event Helm created in its calendar (the "remove all Helm shifts" affordance).
     @discardableResult
-    func removeAllHelmShifts() throws -> Int {
+    func remove(dedupKeys: [String]) async throws -> Int {
         guard authorizationStatus == .fullAccess else { throw WriterError.accessDenied }
-        guard let calendar = store.calendars(for: .event).first(where: { $0.title == Self.calendarTitle }) else { return 0 }
+        guard !dedupKeys.isEmpty, let calendar = existingCalendar() else { return 0 }
+        let targets = Set(dedupKeys.map { eventURL(for: $0).absoluteString })
+        var removed = 0
+        for event in allHelmEvents(in: calendar) where event.url.map({ targets.contains($0.absoluteString) }) == true {
+            try store.remove(event, span: .thisEvent, commit: false)
+            removed += 1
+        }
+        if removed > 0 { try store.commit() }
+        return removed
+    }
+
+    @discardableResult
+    func removeAll() async throws -> Int {
+        guard authorizationStatus == .fullAccess else { throw WriterError.accessDenied }
+        guard let calendar = existingCalendar() else { return 0 }
+        var removed = 0
+        for event in allHelmEvents(in: calendar) {
+            try store.remove(event, span: .thisEvent, commit: false)
+            removed += 1
+        }
+        if removed > 0 { try store.commit() }
+        return removed
+    }
+
+    // MARK: - Helpers
+
+    private func existingCalendar(writableOnly: Bool = false) -> EKCalendar? {
+        store.calendars(for: .event).first {
+            $0.title == Self.calendarTitle && (!writableOnly || $0.allowsContentModifications)
+        }
+    }
+
+    private func helmEvents(in calendar: EKCalendar, from start: Date, to end: Date) -> [String: EKEvent] {
+        let cal = Calendar.current
+        let predicate = store.predicateForEvents(
+            withStart: cal.date(byAdding: .day, value: -1, to: start) ?? start,
+            end: cal.date(byAdding: .day, value: 1, to: end) ?? end,
+            calendars: [calendar]
+        )
+        var map: [String: EKEvent] = [:]
+        for event in store.events(matching: predicate) {
+            if let s = event.url?.absoluteString, s.hasPrefix("\(Self.urlScheme):") { map[s] = event }
+        }
+        return map
+    }
+
+    private func allHelmEvents(in calendar: EKCalendar) -> [EKEvent] {
         let cal = Calendar.current
         let now = Date.now
         let predicate = store.predicateForEvents(
@@ -156,19 +167,9 @@ final class ShiftCalendarWriter {
             end: cal.date(byAdding: .year, value: 5, to: now)!,
             calendars: [calendar]
         )
-        var removed = 0
-        for event in store.events(matching: predicate) {
-            try store.remove(event, span: .thisEvent, commit: false)
-            removed += 1
+        return store.events(matching: predicate).filter {
+            ($0.url?.absoluteString.hasPrefix("\(Self.urlScheme):")) == true
         }
-        try store.commit()
-        return removed
-    }
-
-    // MARK: - Keys
-
-    private func key(for instance: ShiftInstance) -> String? {
-        instance.dedupKey ?? (instance.localDate != nil ? instance.id : nil)
     }
 
     private func eventURL(for dedupKey: String) -> URL {

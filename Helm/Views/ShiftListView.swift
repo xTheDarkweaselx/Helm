@@ -2,8 +2,8 @@
 //  ShiftListView.swift
 //  Helm
 //
-//  Detail pane: the shifts of a selected roster, grouped by day. Read-only for
-//  now; editing/overrides arrive with the idempotency work (Phase v1.1).
+//  Detail pane: the shifts of a selected roster. Re-import to update in place
+//  (idempotent); the overflow menu removes the roster and its calendar events.
 //
 
 import SwiftUI
@@ -11,6 +11,8 @@ import SwiftData
 
 struct ShiftListView: View {
     let roster: Roster
+    @Environment(\.modelContext) private var modelContext
+    @State private var isConfirmingDelete = false
 
     private var sortedInstances: [ShiftInstance] {
         (roster.instances ?? []).sorted {
@@ -33,6 +35,30 @@ struct ShiftListView: View {
             }
         }
         .navigationTitle(roster.title ?? "Roster")
+        .toolbar {
+            ToolbarItem {
+                Menu {
+                    Button("Remove from Calendar & delete", systemImage: "trash", role: .destructive) {
+                        isConfirmingDelete = true
+                    }
+                } label: {
+                    Label("More", systemImage: "ellipsis.circle")
+                }
+            }
+        }
+        .confirmationDialog("Delete this roster and remove its events from your calendar?",
+                            isPresented: $isConfirmingDelete, titleVisibility: .visible) {
+            Button("Delete roster & events", role: .destructive) {
+                let roster = roster
+                let context = modelContext
+                Task {
+                    let writer = ShiftCalendarWriter()
+                    _ = await writer.requestAccess()
+                    try? await RosterSyncEngine.delete(roster: roster, target: writer, in: context)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 }
 
