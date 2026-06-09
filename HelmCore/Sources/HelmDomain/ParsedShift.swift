@@ -51,11 +51,6 @@ public struct ParsedShift: Sendable, Equatable, Identifiable {
     /// The day is computed in the shift's own time zone (not UTC), so a shift just
     /// after local midnight keys to the correct calendar day.
     public var dedupKeyInput: String {
-        let tz = TimeZone(identifier: timeZoneIdentifier) ?? .gmt
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = tz
-        let c = calendar.dateComponents([.year, .month, .day], from: localDate)
-        let day = String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
         // Inline-time shifts carry no code; key them by their times so two timed
         // entries on the same day don't collapse to one key (which would orphan a
         // calendar event on re-import). Times are stable across re-imports; the
@@ -63,6 +58,6 @@ public struct ParsedShift: Sendable, Equatable, Identifiable {
         let code = normalizedCode.isEmpty
             ? (inlineTimes.map { "\($0.startMinuteOfDay)-\($0.endMinuteOfDay)" } ?? "")
             : normalizedCode
-        return "\(day)|\(timeZoneIdentifier)|\(code)"
+        return ShiftKey.make(localDate: localDate, timeZoneIdentifier: timeZoneIdentifier, code: code)
     }
 }

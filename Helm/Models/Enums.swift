@@ -28,6 +28,12 @@ enum OverrideKind: String, CaseIterable, Codable, Sendable {
     case swapped
 }
 
+/// A timeline segment in a built schedule: a repeating cycle, or an explicit list of dated days.
+enum SegmentKind: String, CaseIterable, Codable, Sendable {
+    case cyclic
+    case explicit
+}
+
 /// The layout Helm detected for a source spreadsheet.
 enum LayoutKind: String, CaseIterable, Codable, Sendable {
     case list   // one row per day (date down a column)

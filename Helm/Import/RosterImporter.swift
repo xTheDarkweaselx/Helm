@@ -55,6 +55,9 @@ nonisolated struct DraftShift: Identifiable, Sendable {
     let paidHours: Double?
     let dedupKey: String
     let sourceRow: Int?
+    /// When set (rota builder), the engine reuses this exact ShiftType instead of
+    /// fetching by code / synthesizing a bare one. Imports leave it nil.
+    let shiftTypeID: String?
     let outcome: Outcome
 
     var isWritable: Bool { outcome == .willWrite }
@@ -205,6 +208,7 @@ enum RosterImporter {
             paidHours: resolved?.paidHours(breakMinutes: 0),
             dedupKey: shift.dedupKeyInput,
             sourceRow: shift.sourceRow,
+            shiftTypeID: nil,
             outcome: outcome
         )
     }

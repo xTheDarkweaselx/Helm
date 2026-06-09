@@ -34,6 +34,9 @@ final class UserProfile {
     @Relationship(deleteRule: .cascade, inverse: \ImportProfile.user)
     var importProfiles: [ImportProfile]?
 
+    @Relationship(deleteRule: .cascade, inverse: \Schedule.user)
+    var schedules: [Schedule]?
+
     init(id: String = UUID().uuidString, displayName: String? = nil, nameAliases: [String]? = nil) {
         self.id = id
         self.displayName = displayName
@@ -247,14 +250,26 @@ final class RotationSlot {
     /// Ordered position within the cycle (0-based). We sort by this rather than
     /// using an ordered relationship (CloudKit-unsafe).
     var sortIndex: Int = 0
-    /// nil = an OFF day in the cycle.
+    /// The worked shift for this cycle position (nil + !isOff is also treated as OFF).
     var shiftType: ShiftType?
+    /// Explicit OFF — disambiguates a deliberate day off from "not yet filled".
+    var isOff: Bool = false
+    /// Per-slot overrides (e.g. the same M shift at a different site on some days).
+    var locationName: String?
+    var note: String?
+    var workKindOverrideRaw: String?
     var pattern: RotationPattern?
 
-    init(id: String = UUID().uuidString, sortIndex: Int = 0, shiftType: ShiftType? = nil) {
+    var workKindOverride: WorkKind? {
+        get { workKindOverrideRaw.flatMap(WorkKind.init(rawValue:)) }
+        set { workKindOverrideRaw = newValue?.rawValue }
+    }
+
+    init(id: String = UUID().uuidString, sortIndex: Int = 0, shiftType: ShiftType? = nil, isOff: Bool = false) {
         self.id = id
         self.sortIndex = sortIndex
         self.shiftType = shiftType
+        self.isOff = isOff
     }
 }
 
@@ -278,5 +293,120 @@ final class RotationAssignment {
         self.dayOffset = dayOffset
         self.user = user
         self.pattern = pattern
+    }
+}
+
+// MARK: - Custom rota builder (v2.2): Schedule timeline of segments + exceptions
+
+/// A user-built rota. Owns an ordered timeline of segments (cycles / explicit
+/// stretches) plus per-date exceptions, materialised into ShiftInstances over a
+/// bounded horizon and synced through the same diff/sync path as imports.
+@Model
+final class Schedule {
+    var id: String = UUID().uuidString
+    var title: String?
+    var createdAt: Date = Date.now
+    var notes: String?
+    var defaultTimeZoneIdentifier: String? = TimeZone.current.identifier
+    /// Bounded horizon; `horizonEnd` is only ever extended, never shrunk (avoids churn).
+    var horizonStart: Date?
+    var horizonEnd: Date?
+    /// 0 = use explicit horizon dates; >0 = rolling "expand N months ahead".
+    var rollingHorizonMonths: Int = 0
+    /// Links to the synthetic ImportProfile/Roster used for diff/sync ("schedule:<id>").
+    var sourceImportProfileID: String?
+    var user: UserProfile?
+
+    @Relationship(deleteRule: .cascade, inverse: \ScheduleSegment.schedule)
+    var segments: [ScheduleSegment]?
+    @Relationship(deleteRule: .cascade, inverse: \ScheduleException.schedule)
+    var exceptions: [ScheduleException]?
+
+    init(id: String = UUID().uuidString, title: String? = nil, user: UserProfile? = nil) {
+        self.id = id
+        self.title = title
+        self.createdAt = .now
+        self.defaultTimeZoneIdentifier = TimeZone.current.identifier
+        self.user = user
+    }
+}
+
+/// A date-bounded timeline segment: a repeating cycle (points at a RotationPattern)
+/// or an explicit list of dated days. Overlap precedence = highest `sortIndex`.
+@Model
+final class ScheduleSegment {
+    var id: String = UUID().uuidString
+    var sortIndex: Int = 0
+    var title: String?
+    var kindRaw: String = SegmentKind.cyclic.rawValue
+    var effectiveFrom: Date?
+    var effectiveTo: Date?
+    var anchorDate: Date?            // cycle Day-1 (cyclic only)
+    var dayOffset: Int = 0
+    var timeZoneIdentifier: String? // pinned at creation; nil → schedule default
+    var locationName: String?
+    var pattern: RotationPattern?   // cyclic only
+    var schedule: Schedule?
+
+    @Relationship(deleteRule: .cascade, inverse: \ExplicitDay.segment)
+    var explicitDays: [ExplicitDay]? // explicit only
+
+    var kind: SegmentKind {
+        get { SegmentKind(rawValue: kindRaw) ?? .cyclic }
+        set { kindRaw = newValue.rawValue }
+    }
+
+    init(id: String = UUID().uuidString, kind: SegmentKind = .cyclic, sortIndex: Int = 0) {
+        self.id = id
+        self.kindRaw = kind.rawValue
+        self.sortIndex = sortIndex
+    }
+}
+
+/// A single dated entry in an explicit (non-cyclic) segment.
+@Model
+final class ExplicitDay {
+    var id: String = UUID().uuidString
+    var sortIndex: Int = 0
+    var localDate: Date?
+    var shiftType: ShiftType?
+    var isOff: Bool = false
+    var inlineStartMinute: Int?
+    var inlineEndMinute: Int?
+    var title: String?
+    var locationName: String?
+    var note: String?
+    var segment: ScheduleSegment?
+
+    init(id: String = UUID().uuidString, localDate: Date? = nil, shiftType: ShiftType? = nil) {
+        self.id = id
+        self.localDate = localDate
+        self.shiftType = shiftType
+    }
+}
+
+/// A per-date override layered on top of the timeline (highest precedence).
+@Model
+final class ScheduleException {
+    var id: String = UUID().uuidString
+    var localDate: Date?
+    var kindRaw: String = OverrideKind.modified.rawValue // modified|cancelled|added|swapped
+    var shiftType: ShiftType?
+    var inlineStartMinute: Int?
+    var inlineEndMinute: Int?
+    var title: String?
+    var locationName: String?
+    var note: String?
+    var schedule: Schedule?
+
+    var kind: OverrideKind {
+        get { OverrideKind(rawValue: kindRaw) ?? .modified }
+        set { kindRaw = newValue.rawValue }
+    }
+
+    init(id: String = UUID().uuidString, localDate: Date? = nil, kind: OverrideKind = .modified) {
+        self.id = id
+        self.localDate = localDate
+        self.kindRaw = kind.rawValue
     }
 }

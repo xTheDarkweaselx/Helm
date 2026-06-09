@@ -281,6 +281,15 @@ struct RosterSyncEngine {
             ? "inline:\(draft.startMinuteOfDay ?? 0)-\(draft.endMinuteOfDay ?? 0)"
             : draft.code
         if let cached = cache[key] { return cached }
+        // Rota builder: reuse the exact built ShiftType (rich color/break/location),
+        // not a synthesized bare one.
+        if let id = draft.shiftTypeID {
+            let descriptor = FetchDescriptor<ShiftType>(predicate: #Predicate { $0.id == id })
+            if let built = try? context.fetch(descriptor).first {
+                cache[key] = built
+                return built
+            }
+        }
         // Reuse an existing ShiftType so a changed re-import doesn't insert a
         // duplicate type each time (and orphan the old one).
         if let found = fetchShiftType(for: draft, context: context) {
