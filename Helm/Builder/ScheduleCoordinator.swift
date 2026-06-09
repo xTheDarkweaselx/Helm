@@ -32,17 +32,23 @@ final class ScheduleCoordinator {
 
     /// Delete a schedule and everything it generated: its calendar events, the
     /// backing Roster + ImportProfile, then the schedule (segments/exceptions cascade).
-    static func deleteSchedule(_ schedule: Schedule, in context: ModelContext) async {
+    /// Throws (deleting NOTHING) when the schedule's events can't be removed
+    /// from their calendar — e.g. they live in Google and the account is signed
+    /// out — so the caller can warn instead of silently stranding events.
+    /// `force` deletes the data anyway, knowingly leaving the events behind.
+    /// EventKit-denied keeps the historical best-effort behaviour (data deletes;
+    /// the user explicitly chose to deny Helm the calendar).
+    static func deleteSchedule(_ schedule: Schedule, in context: ModelContext, force: Bool = false) async throws {
         let fingerprint = RosterSyncEngine.fingerprint(for: "schedule:\(schedule.id)")
         if let profile = try? context.fetch(FetchDescriptor<ImportProfile>(predicate: #Predicate { $0.sourceFingerprint == fingerprint })).first {
             let pid = profile.id
             if let roster = try? context.fetch(FetchDescriptor<Roster>(predicate: #Predicate { $0.sourceImportProfileID == pid })).first {
-                // Clean up the calendar the events actually live in; if access is
-                // unavailable (denied / signed out), still delete the data —
-                // matching the prior best-effort behaviour.
-                if let target = try? await CalendarTargetProvider.authorizedTarget(for: profile.target) {
-                    try? await RosterSyncEngine.delete(roster: roster, target: target, in: context)
-                } else {
+                do {
+                    let target = try await CalendarTargetProvider.authorizedTarget(for: profile.target)
+                    try await RosterSyncEngine.delete(roster: roster, target: target, in: context)
+                } catch {
+                    let tolerable = force || (error as? CalendarAccessError) == .eventKitDenied
+                    guard tolerable else { throw error }
                     context.delete(roster)
                 }
             }

@@ -236,7 +236,7 @@ struct SchedulePreviewView: View {
             ContentUnavailableView {
                 Label("Calendar updated", systemImage: "checkmark.circle.fill")
             } description: {
-                Text("Added \(summary.added), updated \(summary.updated), removed \(summary.removed), unchanged \(summary.unchanged).")
+                Text(summary.userDescription)
             } actions: {
                 Button("Done") { dismiss() }.buttonStyle(.borderedProminent)
             }

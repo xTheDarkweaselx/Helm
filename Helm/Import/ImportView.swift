@@ -227,7 +227,7 @@ struct ImportView: View {
         ContentUnavailableView {
             Label(summary.isReimport ? "Roster updated" : "Shifts added", systemImage: "checkmark.circle.fill")
         } description: {
-            Text("Added \(summary.added), updated \(summary.updated), removed \(summary.removed), unchanged \(summary.unchanged). Open Calendar to see your “Helm Shifts”.")
+            Text(summary.userDescription)
         } actions: {
             Button("Done") { dismiss() }.buttonStyle(.borderedProminent)
         }

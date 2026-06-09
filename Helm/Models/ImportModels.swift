@@ -41,6 +41,10 @@ final class ImportProfile {
     /// the calendar the events actually live in. Optional for CloudKit; nil
     /// (pre-existing profiles) reads as .eventkit — correct, they predate Google.
     var calendarTargetRaw: String?
+    /// For Google: which account the events live in (display email), so signing
+    /// into a DIFFERENT account is treated as a destination change (re-apply
+    /// re-writes the full roster there rather than assuming the events exist).
+    var calendarAccount: String?
 
     var user: UserProfile?
 

@@ -21,6 +21,37 @@ struct SyncSummary: Sendable, Equatable {
     var removed = 0
     var unchanged = 0
     var isReimport = false
+    /// Where the events were written (so the UI never implies Apple when Google).
+    var destination: CalendarTargetKind = .eventkit
+    /// Set when this apply moved the roster from another destination/account.
+    var movedFrom: CalendarTargetKind?
+    /// The old destination still holds a copy Helm couldn't remove (signed out,
+    /// denied, offline, or a previous Google account) — shown to the user.
+    var oldDestinationCleanupFailed = false
+
+    /// User-facing name of the destination calendar.
+    var destinationName: String {
+        Self.name(for: destination)
+    }
+
+    static func name(for kind: CalendarTargetKind) -> String {
+        switch kind {
+        case .google: "Google Calendar"
+        case .eventkit, .ics: "Apple Calendar"
+        }
+    }
+
+    /// The full result sentence shown on the finished screen, including where
+    /// the shifts went and any migration leftovers the user must know about.
+    var userDescription: String {
+        var text = "Added \(added), updated \(updated), removed \(removed), unchanged \(unchanged) — in \(destinationName)."
+        if let movedFrom {
+            text += oldDestinationCleanupFailed
+                ? " The old copy in \(Self.name(for: movedFrom)) couldn't be removed — sign in there and re-import, or delete the “Helm Shifts” calendar entries manually."
+                : " Moved over from \(Self.name(for: movedFrom))."
+        }
+        return text
+    }
 }
 
 @MainActor
@@ -81,16 +112,21 @@ struct RosterSyncEngine {
         }
 
         // Destination migration: a re-apply aimed at a DIFFERENT calendar than
-        // this roster's events live in (e.g. Apple → Google after signing in)
-        // best-effort removes them from the old destination first, so they
-        // don't linger there as orphans. The profile then records the new home.
+        // this roster's events live in (Apple ↔ Google, or a different Google
+        // account). Decided here, but the OLD calendar is only cleaned up AFTER
+        // the new-target write succeeds and SwiftData commits — a destructive
+        // pre-write side effect can't be rolled back, so failure must degrade to
+        // a recoverable duplicate, never a hole in every calendar.
         let newKind = CalendarTargetKind(rawValue: target.kind) ?? .eventkit
-        if plan.isReimport, profile.target != newKind, !existingByKey.isEmpty {
-            if let oldTarget = try? await CalendarTargetProvider.authorizedTarget(for: profile.target) {
-                _ = try? await oldTarget.remove(dedupKeys: Array(existingByKey.keys))
-            }
-        }
+        let oldKind = profile.target
+        let newAccount = newKind == .google ? GoogleConfig.accountEmail : nil
+        let accountChanged = newKind == .google && oldKind == .google
+            && profile.calendarAccount != nil && newAccount != nil
+            && profile.calendarAccount != newAccount
+        let isMigration = plan.isReimport && (oldKind != newKind || accountChanged) && !existingByKey.isEmpty
+        let oldKeys = Array(existingByKey.keys) // captured before any mutation
         profile.target = newKind
+        profile.calendarAccount = newAccount
         // Last-wins on duplicate keys (matches incomingMap, used for the diff).
         // The trapping uniqueKeysWithValues: would crash on two same-day same-code rows.
         let incomingByKey = Dictionary(
@@ -132,12 +168,24 @@ struct RosterSyncEngine {
         run.skippedCount = result.drafts.count - result.writableCount
         context.insert(run)
 
+        // Migrating destinations: the NEW calendar must receive the FULL roster
+        // (unchanged + user-authored shifts included), not just the diff — the
+        // diff only describes what changed in the SOURCE, and every event is
+        // about to be removed from the old calendar. Upserts are idempotent on
+        // both targets, so over-writing is safe.
+        if isMigration {
+            let removedSet = Set(removedKeys)
+            draftsToWrite = (roster.instances ?? [])
+                .filter { !removedSet.contains($0.dedupKey ?? "") }
+                .compactMap(calendarDraft(for:))
+        }
+
         // Write the calendar BEFORE committing SwiftData, so a calendar failure
         // (e.g. access revoked) rolls the data changes back instead of leaving the
         // store and the calendar permanently out of sync. The SwiftData mutations
         // above are still uncommitted at this point.
         do {
-            if !removedKeys.isEmpty { _ = try await target.remove(dedupKeys: removedKeys) }
+            if !removedKeys.isEmpty, !isMigration { _ = try await target.remove(dedupKeys: removedKeys) }
             if !draftsToWrite.isEmpty { _ = try await target.write(draftsToWrite) }
         } catch {
             context.rollback()
@@ -146,12 +194,31 @@ struct RosterSyncEngine {
 
         try context.save()
 
+        // Old-destination cleanup, best-effort, only now that the new calendar
+        // and the store are committed. Failure (signed out, denied, offline, or
+        // an old Google account we no longer have a token for) leaves duplicates
+        // behind — surfaced to the user via the summary, never silent.
+        var cleanupFailed = false
+        if isMigration {
+            if accountChanged {
+                // The old Google account's token is gone; its copy can't be removed.
+                cleanupFailed = true
+            } else if let oldTarget = try? await CalendarTargetProvider.authorizedTarget(for: oldKind) {
+                do { _ = try await oldTarget.remove(dedupKeys: oldKeys) } catch { cleanupFailed = true }
+            } else {
+                cleanupFailed = true
+            }
+        }
+
         return SyncSummary(
             added: plan.diff.added.count,
             updated: plan.diff.updated.count,
             removed: plan.diff.removed.count,
             unchanged: plan.diff.unchanged.count,
-            isReimport: plan.isReimport
+            isReimport: plan.isReimport,
+            destination: newKind,
+            movedFrom: isMigration ? oldKind : nil,
+            oldDestinationCleanupFailed: cleanupFailed
         )
     }
 

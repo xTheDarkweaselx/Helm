@@ -11,7 +11,7 @@
 import Foundation
 import HelmCalendar
 
-enum CalendarAccessError: LocalizedError {
+enum CalendarAccessError: LocalizedError, Equatable {
     case eventKitDenied
     case googleNotConfigured
     case googleSignInRequired

@@ -51,6 +51,10 @@ actor GoogleAuthService: GoogleAccessTokenProviding {
     private let log = Logger(subsystem: "Fusion-Studios.Helm", category: "GoogleAuth")
     private var cached: StoredTokens?
     private var refreshTask: Task<StoredTokens, Error>?
+    /// Guards refreshTask cleanup under actor reentrancy: a finished refresh must
+    /// never nil out a NEWER in-flight task another caller is joined on.
+    private var refreshGeneration = 0
+    private var lastRefreshCompletedAt: Date = .distantPast
     /// Auth-header requests must never hit a shared cache.
     private let urlSession = URLSession(configuration: .ephemeral)
 
@@ -62,6 +66,19 @@ actor GoogleAuthService: GoogleAccessTokenProviding {
 
     func accountEmail() -> String? {
         currentTokens()?.email
+    }
+
+    /// Re-align the synchronous UserDefaults mirrors with the Keychain truth.
+    /// Called at launch: the Keychain survives reinstalls while UserDefaults
+    /// doesn't (and vice-versa desyncs would hard-fail or hide the feature).
+    func reconcileMirror() {
+        let tokens = currentTokens()
+        UserDefaults.standard.set(tokens != nil, forKey: GoogleConfig.signedInDefaultsKey)
+        if let email = tokens?.email {
+            UserDefaults.standard.set(email, forKey: GoogleConfig.accountEmailDefaultsKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: GoogleConfig.accountEmailDefaultsKey)
+        }
     }
 
     private func currentTokens() -> StoredTokens? {
@@ -120,6 +137,17 @@ actor GoogleAuthService: GoogleAccessTokenProviding {
             // Shouldn't happen with access_type=offline + prompt=consent.
             throw GoogleAuthError.tokenExchangeFailed("Google did not return a refresh token. Remove Helm from your Google account's third-party access list and sign in again.")
         }
+        // Granular consent lets the user untick the calendar permission yet still
+        // complete sign-in — without this scope every calendar call would 403.
+        guard response.scope?.contains(GoogleOAuth.calendarScope) == true else {
+            _ = try? await urlSession.data(for: GoogleOAuth.revokeRequest(token: refreshToken))
+            throw GoogleAuthError.tokenExchangeFailed("Helm needs the Google Calendar permission. Sign in again and keep the calendar checkbox ticked.")
+        }
+        // Replacing an existing session: revoke the old grant so it doesn't
+        // linger authorized-but-untracked in the user's Google account.
+        if let previous = currentTokens(), previous.refreshToken != refreshToken {
+            _ = try? await urlSession.data(for: GoogleOAuth.revokeRequest(token: previous.refreshToken))
+        }
         store(StoredTokens(
             refreshToken: refreshToken,
             accessToken: response.accessToken,
@@ -150,12 +178,21 @@ actor GoogleAuthService: GoogleAccessTokenProviding {
     }
 
     func refreshedAccessToken() async throws -> String {
-        // A 401 just told us the cached token is bad regardless of its expiry.
-        try await refresh(force: true).accessToken
+        // A 401 just told us the caller's token is bad regardless of expiry.
+        // Several concurrent requests can all 401 at once (GoogleCalendarTarget
+        // runs 4-wide): if a refresh completed moments ago, the first caller
+        // already fixed the token — hand the others the fresh one instead of
+        // hammering the token endpoint with redundant refreshes.
+        if Date.now.timeIntervalSince(lastRefreshCompletedAt) < 10, let tokens = currentTokens() {
+            return tokens.accessToken
+        }
+        return try await refresh().accessToken
     }
 
-    private func refresh(force: Bool = false) async throws -> StoredTokens {
-        if !force, let existing = refreshTask {
+    /// Single-flight: every caller joins the in-flight refresh; the cleanup is
+    /// generation-guarded so a finishing task never clears a newer one.
+    private func refresh() async throws -> StoredTokens {
+        if let existing = refreshTask {
             return try await existing.value
         }
         guard let tokens = currentTokens() else { throw GoogleAuthError.notSignedIn }
@@ -173,12 +210,17 @@ actor GoogleAuthService: GoogleAccessTokenProviding {
                 email: response.idToken.flatMap(GoogleOAuth.email(fromIDToken:)) ?? tokens.email
             )
         }
+        refreshGeneration += 1
+        let generation = refreshGeneration
         refreshTask = task
-        defer { refreshTask = nil }
+        defer {
+            if refreshGeneration == generation { refreshTask = nil }
+        }
 
         do {
             let refreshed = try await task.value
             store(refreshed)
+            lastRefreshCompletedAt = .now
             return refreshed
         } catch GoogleAuthError.reauthenticationRequired {
             // invalid_grant: the refresh token is dead — terminal until re-auth.

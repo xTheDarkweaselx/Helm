@@ -29,6 +29,10 @@ public protocol GoogleAccessTokenProviding: Sendable {
 public enum GoogleCalendarError: Error, LocalizedError, Sendable {
     case api(status: Int, reason: String?, message: String)
     case invalidResponse
+    /// Removal was requested but Helm can't establish WHICH calendar holds the
+    /// events (stored id lost and the scope can't list) — failing loudly beats
+    /// silently deleting local data while events linger in Google.
+    case calendarUnlocatable
 
     public var errorDescription: String? {
         switch self {
@@ -36,6 +40,8 @@ public enum GoogleCalendarError: Error, LocalizedError, Sendable {
             "Google Calendar error (\(status)): \(message)"
         case .invalidResponse:
             "Google Calendar returned an unreadable response."
+        case .calendarUnlocatable:
+            "Helm couldn't locate its “Helm Shifts” calendar in this Google account. Sign out and back in, then try again."
         }
     }
 }
@@ -93,7 +99,13 @@ public actor GoogleCalendarTarget: CalendarTarget {
 
     @discardableResult
     public func remove(dedupKeys: [String]) async throws -> Int {
-        guard !dedupKeys.isEmpty, let calendarID = try await resolveExistingCalendar() else { return 0 }
+        guard !dedupKeys.isEmpty else { return 0 }
+        let calendarID: String
+        switch try await resolveCalendar() {
+        case let .found(id): calendarID = id
+        case .none: return 0 // verified absent: nothing was ever written / user deleted the calendar
+        case .unknowable: throw GoogleCalendarError.calendarUnlocatable
+        }
         var removed = 0
         try await withThrowingTaskGroup(of: Bool.self) { group in
             var inFlight = 0
@@ -118,7 +130,12 @@ public actor GoogleCalendarTarget: CalendarTarget {
 
     @discardableResult
     public func removeAll() async throws -> Int {
-        guard let calendarID = try await resolveExistingCalendar() else { return 0 }
+        let calendarID: String
+        switch try await resolveCalendar() {
+        case let .found(id): calendarID = id
+        case .none: return 0
+        case .unknowable: throw GoogleCalendarError.calendarUnlocatable
+        }
         // Find every Helm-written event via the private marker property, paged.
         // (List right after a bulk insert can lag; removeAll is a cleanup path,
         // not the hot path — re-running it converges.)
@@ -167,9 +184,19 @@ public actor GoogleCalendarTarget: CalendarTarget {
 
     // MARK: - Calendar resolution
 
+    /// How a lookup for the Helm calendar resolved. `.none` is a VERIFIED
+    /// absence; `.unknowable` means the stored id is lost AND the scope can't
+    /// list — write paths may create, but removal paths must fail loudly
+    /// rather than silently "remove 0" while events linger.
+    private enum CalendarResolution {
+        case found(String)
+        case none
+        case unknowable
+    }
+
     /// Find or create the dedicated "Helm Shifts" calendar.
     func ensureCalendar() async throws -> String {
-        if let id = try await resolveExistingCalendar() { return id }
+        if case let .found(id) = try await resolveCalendar() { return id }
         let body = try JSONEncoder().encode(GoogleCalendarResource(summary: Self.calendarTitle))
         let (data, _) = try await send(makeRequest("POST", url: Self.apiBase.appendingPathComponent("calendars"), body: body))
         let created = try Self.decode(GoogleCalendarResource.self, from: data)
@@ -181,23 +208,24 @@ public actor GoogleCalendarTarget: CalendarTarget {
 
     /// The existing Helm calendar if there is one — never creates (removal paths
     /// must not conjure a calendar just to find nothing to remove in it).
-    private func resolveExistingCalendar() async throws -> String? {
-        if let id = cachedCalendarID { return id }
+    private func resolveCalendar() async throws -> CalendarResolution {
+        if let id = cachedCalendarID { return .found(id) }
 
         // 1. The persisted id, verified (the user may have deleted the calendar).
+        var storedIDWasVerifiedGone = false
         if let stored = UserDefaults.standard.string(forKey: Self.calendarIDDefaultsKey) {
             do {
                 _ = try await send(makeRequest("GET", url: Self.apiBase.appendingPathComponent("calendars/\(stored)")))
                 cachedCalendarID = stored
-                return stored
+                return .found(stored)
             } catch let GoogleCalendarError.api(status, _, _) where status == 404 || status == 410 {
                 UserDefaults.standard.removeObject(forKey: Self.calendarIDDefaultsKey)
+                storedIDWasVerifiedGone = true
             }
         }
 
         // 2. calendarList lookup by title (e.g. after a reinstall — app.created
-        //    scope still sees calendars this OAuth client created). A 403 here
-        //    just means the scope can't list; fall through to "none".
+        //    scope still sees calendars this OAuth client created).
         do {
             var pageToken: String?
             repeat {
@@ -207,14 +235,16 @@ public actor GoogleCalendarTarget: CalendarTarget {
                 if let match = (page.items ?? []).first(where: { $0.summary == Self.calendarTitle && $0.id != nil }) {
                     cachedCalendarID = match.id
                     UserDefaults.standard.set(match.id, forKey: Self.calendarIDDefaultsKey)
-                    return match.id
+                    return .found(match.id!)
                 }
                 pageToken = page.nextPageToken
             } while pageToken != nil
+            return .none // listed everything: the calendar genuinely doesn't exist
         } catch let GoogleCalendarError.api(status, _, _) where status == 403 {
-            // Scope doesn't permit listing; the caller will create if needed.
+            // Scope can't list. If the stored id was VERIFIED deleted, absence is
+            // still a fact; with no stored id at all, existence is unknowable.
+            return storedIDWasVerifiedGone ? .none : .unknowable
         }
-        return nil
     }
 
     // MARK: - URL building (internal static for tests)
@@ -297,9 +327,12 @@ public actor GoogleCalendarTarget: CalendarTarget {
             let isServerError = (500..<600).contains(http.statusCode)
             guard (isRateLimited || isServerError), attempt < Self.maxAttempts else { throw error }
 
+            // Clamp the server's Retry-After: a malformed/huge/non-finite value
+            // must neither trap the UInt64 conversion nor stall an import.
             let retryAfter = (http.value(forHTTPHeaderField: "Retry-After")).flatMap(Double.init)
-            let backoff = retryAfter ?? Double.random(in: 0...(0.5 * pow(2, Double(attempt - 1))))
-            try await Task.sleep(nanoseconds: UInt64(backoff * 1_000_000_000))
+            let safeRetryAfter = (retryAfter?.isFinite == true) ? min(max(retryAfter!, 0), 60) : nil
+            let backoff = safeRetryAfter ?? Double.random(in: 0...(0.5 * pow(2, Double(attempt - 1))))
+            try await Task.sleep(nanoseconds: UInt64(backoff * 1_000_000_000)) // throws on cancellation
         }
     }
 

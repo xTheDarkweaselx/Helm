@@ -27,3 +27,4 @@ Fixtures/Rosters/*.numbers
 Fixtures/Rosters/*.csv
 !Fixtures/Rosters/sample-*.csv
 !Fixtures/Rosters/anonymised-*
+HelmCore/.build-beta/
