@@ -22,6 +22,19 @@ struct HelmApp: App {
             ContentView()
         }
         .modelContainer(modelContainer)
+        #if os(macOS)
+        .defaultSize(width: 1040, height: 680)
+        #endif
+
+        #if os(macOS)
+        // Standard Mac Settings window (⌘,) — same form as the sidebar's
+        // Settings destination, minus the navigation chrome.
+        Settings {
+            SettingsForm()
+                .frame(minWidth: 520, idealWidth: 560, minHeight: 480)
+        }
+        .modelContainer(modelContainer)
+        #endif
     }
 }
 
