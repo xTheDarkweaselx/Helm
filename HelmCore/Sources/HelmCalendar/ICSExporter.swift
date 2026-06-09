@@ -35,8 +35,9 @@ public enum ICSExporter {
             lines.append("UID:\(uid(for: draft.dedupKey))")
             lines.append("DTSTAMP:\(stamp)")
             if draft.isAllDay {
+                // RFC 5545: all-day DTEND is EXCLUSIVE (the day after the last day).
                 lines.append("DTSTART;VALUE=DATE:\(dateOnly(draft.start))")
-                lines.append("DTEND;VALUE=DATE:\(dateOnly(draft.end))")
+                lines.append("DTEND;VALUE=DATE:\(dateOnly(allDayEndExclusive(draft.end)))")
             } else {
                 lines.append("DTSTART:\(utc(draft.start))")
                 lines.append("DTEND:\(utc(draft.end))")
@@ -66,21 +67,26 @@ public enum ICSExporter {
     // MARK: - Pieces
 
     static func uid(for dedupKey: String) -> String {
-        let safe = dedupKey.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) ? Character($0) : "-" }
-        return String(safe) + "@helm.fusion-studios"
+        // Percent-encode (injective) so distinct keys never collide to one UID —
+        // matching ShiftCalendarWriter's eventURL so both dedup paths agree.
+        let safe = dedupKey.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? dedupKey
+        return safe + "@helm.fusion-studios"
     }
 
     /// Escape TEXT per RFC 5545 §3.3.11: backslash, semicolon, comma, and newlines.
+    /// CRLF and lone CR are normalised to a newline first so no separator is lost.
     static func escape(_ text: String) -> String {
+        let normalized = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
         var out = ""
-        out.reserveCapacity(text.count)
-        for ch in text {
+        out.reserveCapacity(normalized.count)
+        for ch in normalized {
             switch ch {
             case "\\": out += "\\\\"
             case ";": out += "\\;"
             case ",": out += "\\,"
             case "\n": out += "\\n"
-            case "\r": break
             default: out.append(ch)
             }
         }
@@ -107,6 +113,13 @@ public enum ICSExporter {
 
     static func utc(_ date: Date) -> String { utcFormatter.string(from: date) }
     static func dateOnly(_ date: Date) -> String { dateOnlyFormatter.string(from: date) }
+
+    /// The exclusive all-day end: the day AFTER the inclusive end day (UTC).
+    static func allDayEndExclusive(_ end: Date) -> Date {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        return cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: end)) ?? end
+    }
 
     /// A negative-duration TRIGGER, e.g. 60 → "-PT1H", 90 → "-PT1H30M", 0 → "PT0S".
     static func trigger(minutesBefore minutes: Int) -> String {

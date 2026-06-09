@@ -15,7 +15,9 @@ struct ShiftListView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var isConfirmingDelete = false
     @State private var errorMessage: String?
+    @State private var infoMessage: String?
     @State private var applyingReminders = false
+    @State private var icsURL: URL?
 
     private var sortedInstances: [ShiftInstance] {
         (roster.instances ?? []).sorted {
@@ -41,8 +43,8 @@ struct ShiftListView: View {
         .toolbar {
             ToolbarItem {
                 Menu {
-                    if let url = exportedICSURL() {
-                        ShareLink("Export .ics", item: url)
+                    if let icsURL {
+                        ShareLink("Export .ics", item: icsURL)
                     }
                     Button("Apply reminders to all shifts", systemImage: "bell") {
                         applyReminders()
@@ -82,16 +84,51 @@ struct ShiftListView: View {
         } message: {
             Text(errorMessage ?? "")
         }
+        .alert("Reminders updated", isPresented: .constant(infoMessage != nil)) {
+            Button("OK") { infoMessage = nil }
+        } message: {
+            Text(infoMessage ?? "")
+        }
+        // Regenerate the shareable .ics off the render path whenever the content
+        // or the reminder setting changes (never during body evaluation).
+        .task(id: rosterSignature) { await refreshICS() }
     }
 
-    /// Generate the roster's .ics into a temp file for sharing (nil if empty).
-    private func exportedICSURL() -> URL? {
-        let drafts = RosterSyncEngine.drafts(for: roster)
-        guard !drafts.isEmpty else { return nil }
-        let ics = ICSExporter.export(drafts, calendarName: roster.title ?? "Helm Shifts", generatedAt: .now)
-        let safeName = (roster.title ?? "roster").components(separatedBy: CharacterSet(charactersIn: "/:\\")).joined(separator: "-")
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeName).ics")
+    /// Changes when any shift's identity/title/time or the reminder default changes.
+    private var rosterSignature: String {
+        let parts: [String] = (roster.instances ?? []).map { inst in
+            let key = inst.dedupKey ?? inst.id
+            let title = inst.title ?? ""
+            let start = Int(inst.startUTC?.timeIntervalSince1970 ?? 0)
+            return "\(key)|\(title)|\(start)"
+        }
+        let joined = parts.sorted().joined(separator: ";")
+        return "\(joined)#\(ReminderSetting.minutesBefore)"
+    }
+
+    private func refreshICS() async {
+        let drafts = RosterSyncEngine.drafts(for: roster) // main-actor read of @Model
+        guard !drafts.isEmpty else { icsURL = nil; return }
+        let name = roster.title ?? "Helm Shifts"
+        let subdir = roster.id
+        icsURL = await Task.detached(priority: .utility) {
+            Self.writeICS(drafts: drafts, name: name, subdir: subdir)
+        }.value
+    }
+
+    /// Serialize + write the .ics off the main actor. Per-roster temp subdir avoids
+    /// cross-roster collisions and accumulation; the name is sanitized.
+    nonisolated private static func writeICS(drafts: [CalendarEventDraft], name: String, subdir: String) -> URL? {
+        let ics = ICSExporter.export(drafts, calendarName: name, generatedAt: .now)
+        var safe = name
+            .components(separatedBy: CharacterSet(charactersIn: "/:\\").union(.controlCharacters))
+            .joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if safe.isEmpty { safe = "roster" }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("helm-ics/\(subdir)", isDirectory: true)
         do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent("\(safe).ics")
             try Data(ics.utf8).write(to: url, options: .atomic)
             return url
         } catch {
@@ -110,7 +147,10 @@ struct ShiftListView: View {
                 return
             }
             do {
-                _ = try await RosterSyncEngine.resync(roster: roster, target: writer)
+                let n = try await RosterSyncEngine.resync(roster: roster, target: writer)
+                infoMessage = n == 0
+                    ? "This roster has no shifts to update."
+                    : "Reminders applied to \(n) shift\(n == 1 ? "" : "s")."
             } catch {
                 errorMessage = error.localizedDescription
             }

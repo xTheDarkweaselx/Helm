@@ -31,7 +31,7 @@ struct ICSExporterTests {
         #expect(ics.hasSuffix("END:VCALENDAR\r\n"))
         #expect(ics.contains("\r\nVERSION:2.0\r\n"))
         #expect(ics.contains("\r\nBEGIN:VEVENT\r\n"))
-        #expect(ics.contains("\r\nUID:2026-06-15-Europe-London-M@helm.fusion-studios\r\n"))
+        #expect(ics.contains("\r\nUID:2026%2D06%2D15%7CEurope%2FLondon%7CM@helm.fusion-studios\r\n"))
         #expect(ics.contains("\r\nSUMMARY:HMI Day 2\r\n"))
         #expect(ics.contains("\r\nLOCATION:D2\r\n"))
         #expect(ics.contains("\r\nDTSTART:")) // UTC form
@@ -67,6 +67,33 @@ struct ICSExporterTests {
         // Unfolding (remove CRLF+space) restores the summary.
         let unfolded = ics.replacingOccurrences(of: "\r\n ", with: "")
         #expect(unfolded.contains("SUMMARY:" + long))
+    }
+
+    @Test("CR, CRLF and LF in TEXT all normalise to one escaped newline")
+    func carriageReturns() {
+        #expect(ICSExporter.escape("A\rB") == "A\\nB")
+        #expect(ICSExporter.escape("A\r\nB") == "A\\nB")
+        #expect(ICSExporter.escape("A\nB") == "A\\nB")
+    }
+
+    @Test("UID is injective — punctuation-only differences don't collide")
+    func uidInjective() {
+        let a = ICSExporter.uid(for: "2026-06-15|Europe/London|M/A")
+        let b = ICSExporter.uid(for: "2026-06-15|Europe/London|M-A")
+        #expect(a != b)
+    }
+
+    @Test("All-day DTEND is exclusive (day after the last day)")
+    func allDayExclusive() {
+        let day = Date(timeIntervalSince1970: 1_781_000_000) // some day
+        let d = CalendarEventDraft(dedupKey: "k", title: "Leave", start: day, end: day,
+                                   timeZoneIdentifier: "UTC", isAllDay: true, contentHash: "h")
+        let ics = ICSExporter.export([d], calendarName: "X", generatedAt: stamp)
+        let inclusive = ICSExporter.dateOnly(day)
+        let exclusive = ICSExporter.dateOnly(ICSExporter.allDayEndExclusive(day))
+        #expect(exclusive != inclusive)
+        #expect(ics.contains("DTSTART;VALUE=DATE:\(inclusive)"))
+        #expect(ics.contains("DTEND;VALUE=DATE:\(exclusive)"))
     }
 
     @Test("Multibyte characters are not split across a fold boundary")
