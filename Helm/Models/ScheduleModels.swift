@@ -84,6 +84,13 @@ final class ShiftType {
     @Relationship(deleteRule: .nullify, inverse: \ShiftCodeMapping.shiftType)
     var codeMappings: [ShiftCodeMapping]?
 
+    // Builder back-references (explicit inverses required for CloudKit) — also let
+    // us count how many days a shift type is used by before deleting it.
+    @Relationship(deleteRule: .nullify, inverse: \ExplicitDay.shiftType)
+    var explicitDays: [ExplicitDay]?
+    @Relationship(deleteRule: .nullify, inverse: \ScheduleException.shiftType)
+    var exceptions: [ScheduleException]?
+
     var workKind: WorkKind {
         get { WorkKind(rawValue: workKindRaw) ?? .worked }
         set { workKindRaw = newValue.rawValue }

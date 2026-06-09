@@ -6,6 +6,31 @@
 //
 
 import SwiftUI
+import SwiftData
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
+
+/// Ensure a pattern's slots are exactly `cycleLengthDays`, contiguously indexed
+/// 0..<n (defensive against CloudKit-merge gaps/dupes). Used at creation (eager)
+/// and on length change.
+@MainActor
+func syncRotationSlots(_ pattern: RotationPattern, context: ModelContext) {
+    var slots = (pattern.slots ?? []).sorted { $0.sortIndex < $1.sortIndex }
+    for (i, slot) in slots.enumerated() where slot.sortIndex != i { slot.sortIndex = i }
+    while slots.count < pattern.cycleLengthDays {
+        let slot = RotationSlot(sortIndex: slots.count, isOff: true)
+        slot.pattern = pattern
+        context.insert(slot)
+        slots.append(slot)
+    }
+    if slots.count > pattern.cycleLengthDays {
+        for slot in slots[pattern.cycleLengthDays...] { context.delete(slot) }
+    }
+    try? context.save()
+}
 
 /// "HH:MM" from a minute-of-day (handles values ≥ 1440 / negative defensively).
 func hhmmString(_ minute: Int) -> String {
@@ -65,6 +90,10 @@ extension Color {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         ui.getRed(&r, green: &g, blue: &b, alpha: &a)
         return String(format: "%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
+        #elseif canImport(AppKit)
+        let base = NSColor(self)
+        guard let c = base.usingColorSpace(.sRGB) ?? base.usingColorSpace(.deviceRGB) else { return "808080" }
+        return String(format: "%02X%02X%02X", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
         #else
         return "808080"
         #endif

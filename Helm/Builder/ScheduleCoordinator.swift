@@ -30,6 +30,23 @@ final class ScheduleCoordinator {
         phase = .loaded
     }
 
+    /// Delete a schedule and everything it generated: its calendar events, the
+    /// backing Roster + ImportProfile, then the schedule (segments/exceptions cascade).
+    static func deleteSchedule(_ schedule: Schedule, in context: ModelContext) async {
+        let fingerprint = RosterSyncEngine.fingerprint(for: "schedule:\(schedule.id)")
+        let writer = ShiftCalendarWriter()
+        _ = await writer.requestAccess()
+        if let profile = try? context.fetch(FetchDescriptor<ImportProfile>(predicate: #Predicate { $0.sourceFingerprint == fingerprint })).first {
+            let pid = profile.id
+            if let roster = try? context.fetch(FetchDescriptor<Roster>(predicate: #Predicate { $0.sourceImportProfileID == pid })).first {
+                try? await RosterSyncEngine.delete(roster: roster, target: writer, in: context)
+            }
+            context.delete(profile)
+        }
+        context.delete(schedule)
+        try? context.save()
+    }
+
     func commit(in context: ModelContext) async {
         guard let plan else { return }
         phase = .writing

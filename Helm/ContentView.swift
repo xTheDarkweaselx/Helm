@@ -14,6 +14,16 @@ struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Roster.createdAt, order: .reverse) private var rosters: [Roster]
     @Query(sort: \Schedule.createdAt, order: .reverse) private var schedules: [Schedule]
+    @Query private var importProfiles: [ImportProfile]
+
+    /// Profiles that back a built schedule (so their materialized Roster is shown
+    /// under "Schedules", not duplicated under "Rosters").
+    private var scheduleProfileIDs: Set<String> {
+        Set(importProfiles.filter { ($0.sourceFingerprint ?? "").hasPrefix("schedule:") }.map(\.id))
+    }
+    private var importedRosters: [Roster] {
+        rosters.filter { !scheduleProfileIDs.contains($0.sourceImportProfileID ?? "") }
+    }
 
     enum Selection: Hashable {
         case roster(String)
@@ -24,7 +34,7 @@ struct ContentView: View {
     @State private var isPresentingImport = false
     @State private var isPresentingSettings = false
 
-    private var isEmpty: Bool { rosters.isEmpty && schedules.isEmpty }
+    private var isEmpty: Bool { importedRosters.isEmpty && schedules.isEmpty }
 
     var body: some View {
         NavigationSplitView {
@@ -49,9 +59,9 @@ struct ContentView: View {
 
     private var sidebar: some View {
         List(selection: $selection) {
-            if !rosters.isEmpty {
+            if !importedRosters.isEmpty {
                 Section("Rosters") {
-                    ForEach(rosters) { roster in
+                    ForEach(importedRosters) { roster in
                         NavigationLink(value: Selection.roster(roster.id)) {
                             Label(roster.title ?? "Untitled roster", systemImage: "calendar")
                         }
@@ -64,6 +74,12 @@ struct ContentView: View {
                         NavigationLink(value: Selection.schedule(schedule.id)) {
                             Label(schedule.title?.isEmpty == false ? schedule.title! : "Untitled schedule",
                                   systemImage: "slider.horizontal.below.square.filled.and.square")
+                        }
+                        .swipeActions {
+                            Button("Delete", systemImage: "trash", role: .destructive) {
+                                let schedule = schedule
+                                Task { await ScheduleCoordinator.deleteSchedule(schedule, in: modelContext) }
+                            }
                         }
                     }
                 }

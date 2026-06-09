@@ -72,7 +72,7 @@ struct ScheduleSegmentEditorView: View {
                     let p = RotationPattern(name: segment.title ?? "Cycle", cycleLengthDays: 7)
                     context.insert(p)
                     segment.pattern = p
-                    try? context.save()
+                    syncRotationSlots(p, context: context) // create the 7 OFF slots eagerly
                 }
             }
         }
@@ -89,8 +89,12 @@ struct ScheduleSegmentEditorView: View {
         Section {
             ForEach(explicitDays) { day in
                 HStack {
-                    DatePicker("", selection: dateBinding(Binding(get: { day.localDate }, set: { day.localDate = $0 }), default: today), displayedComponents: .date)
-                        .labelsHidden()
+                    let sel = dateBinding(Binding(get: { day.localDate }, set: { day.localDate = $0 }), default: today)
+                    if let from = segment.effectiveFrom, let to = segment.effectiveTo, from <= to {
+                        DatePicker("", selection: sel, in: from...to, displayedComponents: .date).labelsHidden()
+                    } else {
+                        DatePicker("", selection: sel, displayedComponents: .date).labelsHidden()
+                    }
                     Spacer()
                     Button { pickingDay = day } label: { dayTypeLabel(day) }
                         .buttonStyle(.plain)

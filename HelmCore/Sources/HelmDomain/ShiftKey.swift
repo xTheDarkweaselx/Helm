@@ -22,8 +22,9 @@ public enum ShiftKey {
     }
 
     /// Namespace a code for a generated (built) schedule so its keys are disjoint
-    /// from imports (bare code) and from other schedules.
+    /// from imports (bare code) and from other schedules. The FULL scope (schedule
+    /// id) is used — truncating risked cross-schedule key collisions.
     public static func generatedCode(scope: String, code: String) -> String {
-        "g:\(scope.prefix(8)):\(code)"
+        "g:\(scope):\(code)"
     }
 }

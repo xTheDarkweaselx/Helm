@@ -20,6 +20,7 @@ struct ShiftTypeLibraryView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \ShiftType.code) private var types: [ShiftType]
     @State private var editing: ShiftTypeEditTarget?
+    @State private var pendingDeletion: [ShiftType] = []
 
     var body: some View {
         List {
@@ -28,9 +29,23 @@ struct ShiftTypeLibraryView: View {
                     .buttonStyle(.plain)
             }
             .onDelete { offsets in
-                for i in offsets { context.delete(types[i]) }
-                try? context.save()
+                let targets = offsets.map { types[$0] }
+                if targets.reduce(0, { $0 + referenceCount($1) }) > 0 {
+                    pendingDeletion = targets // confirm — would turn dependent days off
+                } else {
+                    delete(targets)
+                }
             }
+        }
+        .confirmationDialog("Delete shift type?",
+                            isPresented: Binding(get: { !pendingDeletion.isEmpty }, set: { if !$0 { pendingDeletion = [] } }),
+                            titleVisibility: .visible) {
+            Button("Delete — turns \(pendingRefCount) day\(pendingRefCount == 1 ? "" : "s") off", role: .destructive) {
+                delete(pendingDeletion); pendingDeletion = []
+            }
+            Button("Cancel", role: .cancel) { pendingDeletion = [] }
+        } message: {
+            Text("This is used by \(pendingRefCount) day\(pendingRefCount == 1 ? "" : "s") in your cycles/schedules. Deleting it turns those days off on the next update.")
         }
         .navigationTitle("Shift Types")
         .overlay {
@@ -45,6 +60,17 @@ struct ShiftTypeLibraryView: View {
         .sheet(item: $editing) { target in
             ShiftTypeEditorView(existing: target.type)
         }
+    }
+
+    private var pendingRefCount: Int { pendingDeletion.reduce(0) { $0 + referenceCount($1) } }
+
+    private func referenceCount(_ type: ShiftType) -> Int {
+        (type.rotationSlots?.count ?? 0) + (type.explicitDays?.count ?? 0) + (type.exceptions?.count ?? 0)
+    }
+
+    private func delete(_ targets: [ShiftType]) {
+        for t in targets { context.delete(t) }
+        try? context.save()
     }
 
     private func row(_ type: ShiftType) -> some View {

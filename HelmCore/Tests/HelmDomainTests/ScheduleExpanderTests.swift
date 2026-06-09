@@ -36,9 +36,9 @@ struct ScheduleExpanderTests {
         let days = ScheduleExpander.expand(baseSpec(), horizon: day(2026, 6, 1)...day(2026, 6, 8))
         #expect(days.count == 8)
         #expect(days.filter(\.isWritable).count == 6) // OFF on the 4th and 8th
-        #expect(days[0].code == "g:sched123:M")
-        #expect(days[0].dedupKey == "2026-06-01|Europe/London|g:sched123:M")
-        #expect(days[2].code == "g:sched123:A")
+        #expect(days[0].code == "g:sched1234extra:M")
+        #expect(days[0].dedupKey == "2026-06-01|Europe/London|g:sched1234extra:M")
+        #expect(days[2].code == "g:sched1234extra:A")
         #expect(days[3].isWritable == false) // OFF
     }
 
@@ -78,7 +78,7 @@ struct ScheduleExpanderTests {
         let high = cyclic([SlotSpec(sortIndex: 0, shiftType: A)], from: day(2026, 6, 1), to: day(2026, 6, 30), anchor: day(2026, 6, 1), len: 1, sortIndex: 2)
         let spec = ScheduleSpec(scope: scope, defaultTimeZoneIdentifier: london, segments: [low, high])
         let d1 = ScheduleExpander.expand(spec, horizon: day(2026, 6, 10)...day(2026, 6, 10))[0]
-        #expect(d1.code == "g:sched123:A")
+        #expect(d1.code == "g:sched1234extra:A")
     }
 
     @Test("Days outside any segment emit nothing (gap)")
@@ -98,7 +98,7 @@ struct ScheduleExpanderTests {
         let jun1 = days.first { $0.dedupKey.hasPrefix("2026-06-01") }
         #expect(jun1?.isWritable == false) // cancelled
         let may30 = days.first { $0.dedupKey.hasPrefix("2026-05-30") }
-        #expect(may30?.isWritable == true && may30?.code == "g:sched123:A") // added on a gap day
+        #expect(may30?.isWritable == true && may30?.code == "g:sched1234extra:A") // added on a gap day
     }
 
     @Test("Explicit segment with inline times + OFF days")
@@ -113,7 +113,30 @@ struct ScheduleExpanderTests {
         #expect(days.count == 2) // 1 Jul (inline) + 2 Jul (off); 3 Jul has no entry → gap
         let d1 = days.first { $0.dedupKey.hasPrefix("2026-07-01") }
         #expect(d1?.isWritable == true)
-        #expect(d1?.code == "g:sched123:inline:540-1020")
+        #expect(d1?.code == "g:sched1234extra:inline:540-1020")
         #expect(days.first { $0.dedupKey.hasPrefix("2026-07-02") }?.isWritable == false)
+    }
+
+    @Test("An explicit overlay falls through to the underlying cycle on uncovered days")
+    func explicitOverlayFallsThrough() {
+        let cycle = cyclic([SlotSpec(sortIndex: 0, shiftType: M)], from: day(2026, 6, 1), to: day(2026, 6, 30), anchor: day(2026, 6, 1), len: 1, sortIndex: 1)
+        let overlay = SegmentSpec(sortIndex: 2, isExplicit: true, effectiveFrom: day(2026, 6, 1), effectiveTo: day(2026, 6, 30),
+                                  explicitDays: [ExplicitDaySpec(localDate: day(2026, 6, 10), shiftType: A)])
+        let spec = ScheduleSpec(scope: scope, defaultTimeZoneIdentifier: london, segments: [cycle, overlay])
+        let days = ScheduleExpander.expand(spec, horizon: day(2026, 6, 9)...day(2026, 6, 11))
+        #expect(days.count == 3)
+        #expect(days.first { $0.dedupKey.hasPrefix("2026-06-09") }?.code == "g:sched1234extra:M") // cycle shows through
+        #expect(days.first { $0.dedupKey.hasPrefix("2026-06-10") }?.code == "g:sched1234extra:A") // overlay wins
+        #expect(days.first { $0.dedupKey.hasPrefix("2026-06-11") }?.code == "g:sched1234extra:M") // cycle shows through
+    }
+
+    @Test("An incomplete (no shift) exception does not blank the cycle day")
+    func incompleteExceptionFallsThrough() {
+        let cycle = cyclic([SlotSpec(sortIndex: 0, shiftType: M)], from: day(2026, 6, 1), to: day(2026, 6, 30), anchor: day(2026, 6, 1), len: 1, sortIndex: 1)
+        let spec = ScheduleSpec(scope: scope, defaultTimeZoneIdentifier: london, segments: [cycle],
+                                exceptions: [ExceptionSpec(localDate: day(2026, 6, 10), kindRaw: "modified")]) // no shift/times
+        let d = ScheduleExpander.expand(spec, horizon: day(2026, 6, 10)...day(2026, 6, 10))[0]
+        #expect(d.isWritable == true)
+        #expect(d.code == "g:sched1234extra:M") // fell through to the cycle, not OFF
     }
 }

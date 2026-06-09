@@ -32,7 +32,8 @@ struct ScheduleEditorView: View {
                     set: { schedule.title = $0.isEmpty ? nil : $0 }
                 ))
                 DatePicker("Horizon from", selection: dateBinding($schedule.horizonStart, default: today), displayedComponents: .date)
-                DatePicker("Horizon until", selection: dateBinding($schedule.horizonEnd, default: defaultHorizonEnd), displayedComponents: .date)
+                DatePicker("Horizon until", selection: dateBinding($schedule.horizonEnd, default: defaultHorizonEnd),
+                           in: (schedule.horizonStart ?? today)..., displayedComponents: .date)
             } header: {
                 Text("Schedule")
             } footer: {
@@ -147,13 +148,14 @@ struct ScheduleEditorView: View {
         segment.effectiveFrom = schedule.horizonStart ?? today
         segment.effectiveTo = schedule.horizonEnd ?? defaultHorizonEnd
         segment.schedule = schedule
+        context.insert(segment)
         if kind == .cyclic {
             segment.anchorDate = segment.effectiveFrom
             let pattern = RotationPattern(name: "Cycle", cycleLengthDays: 7)
             context.insert(pattern)
             segment.pattern = pattern
+            syncRotationSlots(pattern, context: context) // eager 7 OFF slots
         }
-        context.insert(segment)
         try? context.save()
     }
 

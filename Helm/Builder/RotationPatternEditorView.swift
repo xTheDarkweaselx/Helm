@@ -68,20 +68,7 @@ struct RotationPatternEditorView: View {
         }
     }
 
-    /// Keep the slot list exactly `cycleLengthDays` long (0-based sortIndex).
-    private func syncSlots() {
-        var current = slots
-        while current.count < pattern.cycleLengthDays {
-            let slot = RotationSlot(sortIndex: current.count, isOff: true)
-            slot.pattern = pattern
-            context.insert(slot)
-            current.append(slot)
-        }
-        if current.count > pattern.cycleLengthDays {
-            for slot in current[pattern.cycleLengthDays...] { context.delete(slot) }
-        }
-        try? context.save()
-    }
+    private func syncSlots() { syncRotationSlots(pattern, context: context) }
 }
 
 struct ShiftTypePickerSheet: View {

@@ -161,39 +161,46 @@ public enum ScheduleExpander {
 
     private static func resolveDay(_ day: Date, spec: ScheduleSpec, byPriority: [SegmentSpec],
                                    exceptions: [String: ExceptionSpec], defaultTZ: TimeZone) -> ExpandedDay? {
-        // 1. Exception wins.
+        // 1. Exception wins — but only when it actually resolves to something.
         if let ex = exceptions[dayKey(day, defaultTZ)] {
             if ex.kindRaw == OverrideKindRaw.cancelled { return offDay(day, tz: spec.defaultTimeZoneIdentifier, scope: spec.scope) }
-            return fromSource(day, tz: spec.defaultTimeZoneIdentifier, scope: spec.scope,
-                              shiftType: ex.shiftType, inlineStart: ex.inlineStartMinute, inlineEnd: ex.inlineEndMinute,
-                              title: ex.title, location: ex.locationName)
-                ?? offDay(day, tz: spec.defaultTimeZoneIdentifier, scope: spec.scope)
+            if let resolved = fromSource(day, tz: spec.defaultTimeZoneIdentifier, scope: spec.scope,
+                                         shiftType: ex.shiftType, inlineStart: ex.inlineStartMinute, inlineEnd: ex.inlineEndMinute,
+                                         title: ex.title, location: ex.locationName) {
+                return resolved
+            }
+            // An incomplete exception (no shift / no times) is NOT authoritative —
+            // fall through to the segments rather than forcing the day OFF.
         }
 
-        // 2. Governing segment (highest sortIndex whose window contains the day).
-        guard let seg = byPriority.first(where: { windowContains($0, day, defaultTZ) }) else { return nil } // gap
-        let tz = seg.timeZoneIdentifier ?? spec.defaultTimeZoneIdentifier
-
-        if seg.isExplicit {
-            guard let ed = seg.explicitDays.first(where: { sameDay($0.localDate, day, TimeZone(identifier: tz) ?? defaultTZ) }) else {
-                return nil // explicit segment, no entry today → gap
+        // 2. Governing segment, highest sortIndex first. EXPLICIT segments are sparse
+        //    OVERLAYS: a day with no matching entry falls through to lower-priority
+        //    segments (so an explicit overlay doesn't blank an underlying cycle).
+        //    CYCLIC segments govern every day in their window.
+        for seg in byPriority where windowContains(seg, day, defaultTZ) {
+            let tz = seg.timeZoneIdentifier ?? spec.defaultTimeZoneIdentifier
+            if seg.isExplicit {
+                guard let ed = seg.explicitDays.first(where: { sameDay($0.localDate, day, TimeZone(identifier: tz) ?? defaultTZ) }) else {
+                    continue // overlay miss → try the next (lower-priority) segment
+                }
+                if ed.isOff { return offDay(day, tz: tz, scope: spec.scope) }
+                return fromSource(day, tz: tz, scope: spec.scope, shiftType: ed.shiftType,
+                                  inlineStart: ed.inlineStartMinute, inlineEnd: ed.inlineEndMinute,
+                                  title: ed.title, location: ed.locationName)
+                    ?? offDay(day, tz: tz, scope: spec.scope)
+            } else {
+                guard let anchor = seg.anchorDate, seg.cycleLengthDays > 0 else { continue }
+                let pos = cyclePosition(anchor: anchor, day: day, dayOffset: seg.dayOffset,
+                                        cycleLength: seg.cycleLengthDays, tz: TimeZone(identifier: tz) ?? defaultTZ)
+                guard let slot = seg.slots.first(where: { $0.sortIndex == pos }) else {
+                    return offDay(day, tz: tz, scope: spec.scope) // unfilled position → OFF
+                }
+                if slot.isOff || slot.shiftType == nil { return offDay(day, tz: tz, scope: spec.scope) }
+                return fromType(day, tz: tz, scope: spec.scope, type: slot.shiftType!,
+                                location: slot.locationName ?? seg.locationName)
             }
-            if ed.isOff { return offDay(day, tz: tz, scope: spec.scope) }
-            return fromSource(day, tz: tz, scope: spec.scope, shiftType: ed.shiftType,
-                              inlineStart: ed.inlineStartMinute, inlineEnd: ed.inlineEndMinute,
-                              title: ed.title, location: ed.locationName)
-                ?? offDay(day, tz: tz, scope: spec.scope)
-        } else {
-            guard let anchor = seg.anchorDate, seg.cycleLengthDays > 0 else { return nil }
-            let pos = cyclePosition(anchor: anchor, day: day, dayOffset: seg.dayOffset,
-                                    cycleLength: seg.cycleLengthDays, tz: TimeZone(identifier: tz) ?? defaultTZ)
-            guard let slot = seg.slots.first(where: { $0.sortIndex == pos }) else {
-                return offDay(day, tz: tz, scope: spec.scope) // unfilled position → OFF
-            }
-            if slot.isOff || slot.shiftType == nil { return offDay(day, tz: tz, scope: spec.scope) }
-            return fromType(day, tz: tz, scope: spec.scope, type: slot.shiftType!,
-                            location: slot.locationName ?? seg.locationName)
         }
+        return nil // gap
     }
 
     private static func fromSource(_ day: Date, tz: String, scope: String, shiftType: ShiftTypeSpec?,
