@@ -13,9 +13,10 @@ import Foundation
 import SwiftData
 
 enum DemoImport {
-    static var isRequested: Bool {
-        ProcessInfo.processInfo.environment["HELM_DEMO_IMPORT"] == "1"
-    }
+    private static var mode: String? { ProcessInfo.processInfo.environment["HELM_DEMO_IMPORT"] }
+    static var isRequested: Bool { mode != nil }
+    /// Optional absolute path to a real .xlsx to import (set via env, never hardcoded).
+    private static var xlsxPath: String? { ProcessInfo.processInfo.environment["HELM_DEMO_XLSX_PATH"] }
 
     /// Synthetic sample mirroring the first real roster's format (also in
     /// Fixtures/Rosters/sample-roster.csv). Embedded so no bundling is required.
@@ -34,7 +35,19 @@ enum DemoImport {
     @MainActor
     static func runIfRequested(modelContext: ModelContext) async {
         guard isRequested else { return }
-        guard let result = try? RosterImporter.importCSV(text: sampleCSV, sourceName: "Sample (June)") else { return }
+        let result: RosterImportResult
+        do {
+            if mode == "xlsx", let path = xlsxPath {
+                let data = try Data(contentsOf: URL(fileURLWithPath: path))
+                let name = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+                result = try RosterImporter.importXLSX(data: data, sourceName: name)
+            } else {
+                result = try RosterImporter.importCSV(text: sampleCSV, sourceName: "Sample (June)")
+            }
+        } catch {
+            print("DemoImport failed: \(error)")
+            return
+        }
         let coordinator = ImportCoordinator()
         coordinator.result = result
         await coordinator.commit(modelContext: modelContext)

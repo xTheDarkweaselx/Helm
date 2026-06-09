@@ -17,7 +17,7 @@ build/
 .build/
 .ddbuild/
 .swiftpm/xcode/package.xcworkspace/xcuserdata/
-Package.resolved
+# Package.resolved IS committed (pins XMLCoder/ZIPFoundation for reproducibility).
 
 # Real / personal roster fixtures — never commit personal or employer schedule data.
 # Keep these local for development; commit only anonymised samples + the README spec.

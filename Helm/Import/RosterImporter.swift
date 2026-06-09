@@ -64,12 +64,14 @@ enum RosterImportError: LocalizedError {
     case couldNotReadFile
     case noColumnsDetected
     case noRows
+    case legacyXLS
 
     var errorDescription: String? {
         switch self {
         case .couldNotReadFile: "Helm couldn't read that file."
         case .noColumnsDetected: "Helm couldn't find a date column and a shift column in that file."
         case .noRows: "No shifts were found in that file."
+        case .legacyXLS: "That's an older Excel .xls file. In Excel choose File → Save As and pick “Excel Workbook (.xlsx)” or “CSV”, then import that."
         }
     }
 }
@@ -93,17 +95,57 @@ enum RosterImporter {
         dateOrder: RosterDateParser.Order = .dayFirst
     ) throws -> RosterImportResult {
         let grid = CSVParser.parse(text, sheetName: sourceName)
-        guard let sheet = grid.sheets.first else { throw RosterImportError.couldNotReadFile }
-        guard let mapping = ListLayoutDetector.detect(sheet: sheet) else { throw RosterImportError.noColumnsDetected }
+        return try resolve(grid: grid, sourceName: sourceName, legend: legend,
+                           timeZoneIdentifier: timeZoneIdentifier, dateOrder: dateOrder)
+    }
 
-        let parsed = ListLayoutInterpreter.interpret(
-            sheet: sheet,
-            mapping: mapping,
-            timeZoneIdentifier: timeZoneIdentifier,
-            dateOrder: dateOrder
-        )
-        guard !parsed.isEmpty else { throw RosterImportError.noRows }
+    /// Parse `.xlsx` file data into resolved draft shifts via the vendored
+    /// CoreXLSX fork + Helm date resolver. The adapter emits `dd/MM/yyyy` date
+    /// text, so the default `.dayFirst` order is correct (no caller change).
+    static func importXLSX(
+        data: Data,
+        sourceName: String,
+        legend: ShiftLegend = .default,
+        timeZoneIdentifier: String = TimeZone.current.identifier,
+        dateOrder: RosterDateParser.Order = .dayFirst
+    ) throws -> RosterImportResult {
+        let grid: SpreadsheetGrid
+        do {
+            grid = try XLSXGridLoader.load(data: data, timeZoneIdentifier: timeZoneIdentifier)
+        } catch {
+            throw RosterImportError.couldNotReadFile
+        }
+        return try resolve(grid: grid, sourceName: sourceName, legend: legend,
+                           timeZoneIdentifier: timeZoneIdentifier, dateOrder: dateOrder)
+    }
 
+    /// Shared: pick the first sheet with a detectable roster layout, interpret it,
+    /// and resolve drafts (so multi-sheet workbooks just work).
+    private static func resolve(
+        grid: SpreadsheetGrid,
+        sourceName: String,
+        legend: ShiftLegend,
+        timeZoneIdentifier: String,
+        dateOrder: RosterDateParser.Order
+    ) throws -> RosterImportResult {
+        guard !grid.sheets.isEmpty else { throw RosterImportError.couldNotReadFile }
+
+        var sawMapping = false
+        for sheet in grid.sheets {
+            guard let mapping = ListLayoutDetector.detect(sheet: sheet) else { continue }
+            sawMapping = true
+            let parsed = ListLayoutInterpreter.interpret(
+                sheet: sheet, mapping: mapping,
+                timeZoneIdentifier: timeZoneIdentifier, dateOrder: dateOrder
+            )
+            if !parsed.isEmpty {
+                return makeResult(parsed: parsed, sourceName: sourceName, legend: legend)
+            }
+        }
+        throw sawMapping ? RosterImportError.noRows : RosterImportError.noColumnsDetected
+    }
+
+    private static func makeResult(parsed: [ParsedShift], sourceName: String, legend: ShiftLegend) -> RosterImportResult {
         var drafts: [DraftShift] = []
         var unmapped = Set<String>()
 

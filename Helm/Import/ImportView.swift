@@ -30,9 +30,17 @@ final class ImportCoordinator {
             let accessed = url.startAccessingSecurityScopedResource()
             defer { if accessed { url.stopAccessingSecurityScopedResource() } }
             let data = try Data(contentsOf: url)
-            let text = String(decoding: data, as: UTF8.self)
             let name = url.deletingPathExtension().lastPathComponent
-            result = try RosterImporter.importCSV(text: text, sourceName: name)
+            // Sniff the bytes, not the extension: PK = ZIP/OOXML (.xlsx);
+            // D0CF11E0 = OLE2 (legacy .xls); otherwise treat as text/CSV.
+            if data.starts(with: [0x50, 0x4B]) {
+                result = try RosterImporter.importXLSX(data: data, sourceName: name)
+            } else if data.starts(with: [0xD0, 0xCF, 0x11, 0xE0]) {
+                throw RosterImportError.legacyXLS
+            } else {
+                let text = String(decoding: data, as: UTF8.self)
+                result = try RosterImporter.importCSV(text: text, sourceName: name)
+            }
             phase = .loaded
         } catch {
             phase = .failed(message(for: error))
@@ -128,7 +136,12 @@ struct ImportView: View {
     @State private var coordinator = ImportCoordinator()
     @State private var isFileImporterPresented = false
 
-    private static let csvTypes: [UTType] = [.commaSeparatedText, .tabSeparatedText, .plainText, .text]
+    private static let importTypes: [UTType] = [
+        .commaSeparatedText, .tabSeparatedText, .plainText, .text,
+        .spreadsheet,
+        UTType("org.openxmlformats.spreadsheetml.sheet") ?? .spreadsheet, // .xlsx
+        UTType("com.microsoft.excel.xls") ?? .spreadsheet,                // legacy .xls → friendly error
+    ]
 
     var body: some View {
         NavigationStack {
@@ -141,7 +154,7 @@ struct ImportView: View {
                 }
                 .fileImporter(
                     isPresented: $isFileImporterPresented,
-                    allowedContentTypes: Self.csvTypes,
+                    allowedContentTypes: Self.importTypes,
                     allowsMultipleSelection: false
                 ) { result in
                     if case let .success(urls) = result, let url = urls.first {
@@ -174,9 +187,9 @@ struct ImportView: View {
         ContentUnavailableView {
             Label("Choose a roster file", systemImage: "tablecells")
         } description: {
-            Text("Pick a CSV exported from your shift spreadsheet. Helm will find the dates and shift codes automatically. (Excel .xlsx support is coming next.)")
+            Text("Pick an Excel (.xlsx) or CSV file of your roster. Helm finds the dates and shift codes automatically.")
         } actions: {
-            Button("Choose CSV…", systemImage: "folder") { isFileImporterPresented = true }
+            Button("Choose file…", systemImage: "folder") { isFileImporterPresented = true }
                 .buttonStyle(.borderedProminent)
         }
     }
