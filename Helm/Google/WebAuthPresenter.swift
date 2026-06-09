@@ -31,7 +31,7 @@ enum WebAuthError: LocalizedError {
 }
 
 @MainActor
-final class WebAuthPresenter: NSObject, @preconcurrency ASWebAuthenticationPresentationContextProviding {
+final class WebAuthPresenter: NSObject, ASWebAuthenticationPresentationContextProviding {
     /// Strong reference: the session is deallocated (and the sheet dismissed)
     /// if nothing retains it while the user is signing in.
     private var session: ASWebAuthenticationSession?

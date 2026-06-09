@@ -64,7 +64,11 @@ public class XLSXFile {
   ) {
     let archiveURL = URL(fileURLWithPath: filepath)
 
-    guard let archive = Archive(url: archiveURL, accessMode: .read) else {
+    // Helm fork: ZIPFoundation 0.9.16+ deprecated the optional initializers in
+    // favour of throwing ones; keep this initializer's failable contract. The
+    // explicit pathEncoding label selects the throwing overload (a bare call
+    // would still resolve to the deprecated optional one).
+    guard let archive = try? Archive(url: archiveURL, accessMode: .read, pathEncoding: nil) else {
       return nil
     }
 
@@ -87,7 +91,10 @@ public class XLSXFile {
     bufferSize: UInt32 = 10 * 1024 * 1024,
     errorContextLength: UInt = 0
   ) throws {
-    guard let archive = Archive(data: data, accessMode: .read)
+    // Helm fork: throwing initializer (ZIPFoundation 0.9.16+); keep the
+    // domain-specific error this API documents. The explicit pathEncoding
+    // label selects the throwing overload over the deprecated optional one.
+    guard let archive = try? Archive(data: data, accessMode: .read, pathEncoding: nil)
     else { throw CoreXLSXError.dataIsNotAnArchive }
 
     self.archive = archive
@@ -112,7 +119,8 @@ public class XLSXFile {
     }
 
     var data = Data()
-    _ = try archive.extract(entry, bufferSize: bufferSize) {
+    // Helm fork: ZIPFoundation deprecated the UInt32 bufferSize overload.
+    _ = try archive.extract(entry, bufferSize: Int(bufferSize)) {
       data += $0
     }
 
