@@ -77,8 +77,11 @@ struct RosterSyncEngine {
         for instance in roster.instances ?? [] {
             if let key = instance.dedupKey { existingByKey[key] = instance }
         }
-        let incomingByKey = Dictionary(uniqueKeysWithValues:
-            result.drafts.filter(\.isWritable).map { (key(for: $0), $0) })
+        // Last-wins on duplicate keys (matches incomingMap, used for the diff).
+        // The trapping uniqueKeysWithValues: would crash on two same-day same-code rows.
+        let incomingByKey = Dictionary(
+            result.drafts.filter(\.isWritable).map { (key(for: $0), $0) },
+            uniquingKeysWith: { _, last in last })
 
         var typeCache: [String: ShiftType] = [:]
         var removedKeys: [String] = []
@@ -115,11 +118,19 @@ struct RosterSyncEngine {
         run.skippedCount = result.drafts.count - result.writableCount
         context.insert(run)
 
-        try context.save()
+        // Write the calendar BEFORE committing SwiftData, so a calendar failure
+        // (e.g. access revoked) rolls the data changes back instead of leaving the
+        // store and the calendar permanently out of sync. The SwiftData mutations
+        // above are still uncommitted at this point.
+        do {
+            if !removedKeys.isEmpty { _ = try await target.remove(dedupKeys: removedKeys) }
+            if !draftsToWrite.isEmpty { _ = try await target.write(draftsToWrite) }
+        } catch {
+            context.rollback()
+            throw error
+        }
 
-        // Sync the calendar via the protocol.
-        if !draftsToWrite.isEmpty { _ = try await target.write(draftsToWrite) }
-        if !removedKeys.isEmpty { _ = try await target.remove(dedupKeys: removedKeys) }
+        try context.save()
 
         return SyncSummary(
             added: plan.diff.added.count,
@@ -130,12 +141,13 @@ struct RosterSyncEngine {
         )
     }
 
-    /// Delete a roster and all of its calendar events.
+    /// Delete a roster and all of its calendar events. Removes the events FIRST so
+    /// a failed/denied calendar removal doesn't orphan them (the roster stays).
     static func delete(roster: Roster, target: ShiftCalendarWriter, in context: ModelContext) async throws {
         let keys = (roster.instances ?? []).compactMap(\.dedupKey)
+        if !keys.isEmpty { _ = try await target.remove(dedupKeys: keys) }
         context.delete(roster)
         try context.save()
-        if !keys.isEmpty { _ = try await target.remove(dedupKeys: keys) }
     }
 
     // MARK: - Mapping helpers
@@ -150,18 +162,31 @@ struct RosterSyncEngine {
         draft.title ?? type.label ?? type.code ?? "Shift"
     }
 
+    /// The title an instance WILL be persisted with — must match `title(for:type:)`
+    /// using the type that `shiftType(for:)` would build, so the diff's incoming
+    /// hash equals the existing instance's hash (no false "updated" churn).
+    private static func resolvedTitle(for draft: DraftShift) -> String {
+        if let t = draft.title { return t }
+        if let l = draft.label { return l }
+        if let s = draft.startMinuteOfDay {
+            return hhmm(s) + (draft.endMinuteOfDay.map { "–" + hhmm($0) } ?? "")
+        }
+        return draft.code.isEmpty ? "Shift" : draft.code
+    }
+
     private static func existingMap(for roster: Roster) -> [String: ExistingShift] {
         var map: [String: ExistingShift] = [:]
         for instance in roster.instances ?? [] {
             guard let key = instance.dedupKey else { continue }
+            // Alarms are intentionally excluded from the DIFF hash (they're derived
+            // from the shift type, not the source) to avoid false "updated" churn.
             map[key] = ExistingShift(
                 contentHash: ShiftContentHash.make(
                     title: instance.title,
                     startUTC: instance.startUTC,
                     endUTC: instance.endUTC,
                     location: instance.locationName,
-                    timeZoneIdentifier: instance.timeZoneIdentifier,
-                    alarmOffsetsMinutes: instance.shiftType?.defaultAlarmOffsets ?? []
+                    timeZoneIdentifier: instance.timeZoneIdentifier
                 ),
                 isUserAuthored: instance.isUserAuthored
             )
@@ -179,7 +204,7 @@ struct RosterSyncEngine {
 
     private static func contentHash(for draft: DraftShift) -> String {
         ShiftContentHash.make(
-            title: draft.title ?? draft.label ?? draft.code,
+            title: resolvedTitle(for: draft), // must equal the persisted instance.title
             startUTC: draft.start,
             endUTC: draft.end,
             location: draft.location,
@@ -236,6 +261,12 @@ struct RosterSyncEngine {
             ? "inline:\(draft.startMinuteOfDay ?? 0)-\(draft.endMinuteOfDay ?? 0)"
             : draft.code
         if let cached = cache[key] { return cached }
+        // Reuse an existing ShiftType so a changed re-import doesn't insert a
+        // duplicate type each time (and orphan the old one).
+        if let found = fetchShiftType(for: draft, context: context) {
+            cache[key] = found
+            return found
+        }
         let label = draft.label
             ?? draft.startMinuteOfDay.map { hhmm($0) + (draft.endMinuteOfDay.map { "–" + hhmm($0) } ?? "") }
             ?? (draft.code.isEmpty ? "Shift" : draft.code)
@@ -249,6 +280,21 @@ struct RosterSyncEngine {
         context.insert(type)
         cache[key] = type
         return type
+    }
+
+    private static func fetchShiftType(for draft: DraftShift, context: ModelContext) -> ShiftType? {
+        let start = draft.startMinuteOfDay ?? 0
+        let end = draft.endMinuteOfDay ?? 0
+        if draft.code.isEmpty {
+            let d = FetchDescriptor<ShiftType>(predicate: #Predicate {
+                $0.code == nil && $0.startMinuteOfDay == start && $0.endMinuteOfDay == end
+            })
+            return try? context.fetch(d).first
+        } else {
+            let code = draft.code
+            let d = FetchDescriptor<ShiftType>(predicate: #Predicate { $0.code == code })
+            return try? context.fetch(d).first
+        }
     }
 
     private static func hhmm(_ minute: Int) -> String {

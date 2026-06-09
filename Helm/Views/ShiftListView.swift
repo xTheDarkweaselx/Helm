@@ -13,6 +13,7 @@ struct ShiftListView: View {
     let roster: Roster
     @Environment(\.modelContext) private var modelContext
     @State private var isConfirmingDelete = false
+    @State private var deleteError: String?
 
     private var sortedInstances: [ShiftInstance] {
         (roster.instances ?? []).sorted {
@@ -53,11 +54,23 @@ struct ShiftListView: View {
                 let context = modelContext
                 Task {
                     let writer = ShiftCalendarWriter()
-                    _ = await writer.requestAccess()
-                    try? await RosterSyncEngine.delete(roster: roster, target: writer, in: context)
+                    guard await writer.requestAccess() else {
+                        deleteError = "Helm needs calendar access to remove these events. Enable it for Helm in Settings, then try again."
+                        return
+                    }
+                    do {
+                        try await RosterSyncEngine.delete(roster: roster, target: writer, in: context)
+                    } catch {
+                        deleteError = error.localizedDescription
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
+        }
+        .alert("Couldn’t delete roster", isPresented: .constant(deleteError != nil)) {
+            Button("OK") { deleteError = nil }
+        } message: {
+            Text(deleteError ?? "")
         }
     }
 }

@@ -160,16 +160,24 @@ final class ShiftCalendarWriter: CalendarTarget {
     }
 
     private func allHelmEvents(in calendar: EKCalendar) -> [EKEvent] {
+        // EventKit's predicateForEvents only matches within ~4 years of its start,
+        // so scan a wide horizon in 3-year chunks and dedupe boundary overlaps.
         let cal = Calendar.current
         let now = Date.now
-        let predicate = store.predicateForEvents(
-            withStart: cal.date(byAdding: .year, value: -5, to: now)!,
-            end: cal.date(byAdding: .year, value: 5, to: now)!,
-            calendars: [calendar]
-        )
-        return store.events(matching: predicate).filter {
-            ($0.url?.absoluteString.hasPrefix("\(Self.urlScheme):")) == true
+        let start = cal.date(byAdding: .year, value: -10, to: now)!
+        let end = cal.date(byAdding: .year, value: 10, to: now)!
+        var byID: [String: EKEvent] = [:]
+        var windowStart = start
+        while windowStart < end {
+            let windowEnd = min(end, cal.date(byAdding: .year, value: 3, to: windowStart) ?? end)
+            let predicate = store.predicateForEvents(withStart: windowStart, end: windowEnd, calendars: [calendar])
+            for event in store.events(matching: predicate)
+            where (event.url?.absoluteString.hasPrefix("\(Self.urlScheme):")) == true {
+                byID[event.eventIdentifier ?? event.calendarItemIdentifier] = event
+            }
+            windowStart = windowEnd
         }
+        return Array(byID.values)
     }
 
     private func eventURL(for dedupKey: String) -> URL {
