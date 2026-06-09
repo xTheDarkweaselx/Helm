@@ -100,7 +100,7 @@ struct RosterSyncEngine {
             guard let draft = incomingByKey[key] else { continue }
             let type = shiftType(for: draft, cache: &typeCache, context: context)
             let instance = makeInstance(from: draft, type: type, roster: roster, context: context)
-            draftsToWrite.append(calendarDraft(for: instance, type: type))
+            if let cal = calendarDraft(for: instance) { draftsToWrite.append(cal) }
         }
 
         // Updated: mutate existing instances in place.
@@ -108,7 +108,7 @@ struct RosterSyncEngine {
             guard let draft = incomingByKey[key], let instance = existingByKey[key] else { continue }
             let type = shiftType(for: draft, cache: &typeCache, context: context)
             apply(draft: draft, to: instance, type: type)
-            draftsToWrite.append(calendarDraft(for: instance, type: type))
+            if let cal = calendarDraft(for: instance) { draftsToWrite.append(cal) }
         }
 
         let run = ImportRun(importProfile: profile)
@@ -239,21 +239,41 @@ struct RosterSyncEngine {
         instance.timeZoneIdentifier = draft.timeZoneIdentifier
     }
 
-    private static func calendarDraft(for instance: ShiftInstance, type: ShiftType) -> CalendarEventDraft {
-        CalendarEventDraft(
+    /// Build the calendar draft for an instance, stamping the user's current
+    /// default reminder as the alarm offset.
+    static func calendarDraft(for instance: ShiftInstance) -> CalendarEventDraft? {
+        guard let start = instance.startUTC, let end = instance.endUTC else { return nil }
+        let offsets = ReminderSetting.offsets
+        let title = instance.title ?? instance.shiftType?.label ?? instance.shiftType?.code ?? "Shift"
+        return CalendarEventDraft(
             dedupKey: instance.dedupKey ?? instance.id,
-            title: instance.title ?? type.label ?? "Shift",
+            title: title,
             location: instance.locationName,
-            start: instance.startUTC ?? .now,
-            end: instance.endUTC ?? .now,
+            start: start,
+            end: end,
             timeZoneIdentifier: instance.timeZoneIdentifier,
-            alarmOffsetsMinutes: type.defaultAlarmOffsets ?? [],
+            alarmOffsetsMinutes: offsets,
             contentHash: ShiftContentHash.make(
-                title: instance.title, startUTC: instance.startUTC, endUTC: instance.endUTC,
-                location: instance.locationName, timeZoneIdentifier: instance.timeZoneIdentifier,
-                alarmOffsetsMinutes: type.defaultAlarmOffsets ?? []
+                title: instance.title, startUTC: start, endUTC: end,
+                location: instance.locationName, timeZoneIdentifier: instance.timeZoneIdentifier
             )
         )
+    }
+
+    /// All calendar drafts for a roster (for .ics export and re-apply).
+    static func drafts(for roster: Roster) -> [CalendarEventDraft] {
+        (roster.instances ?? [])
+            .sorted { ($0.startUTC ?? .distantPast) < ($1.startUTC ?? .distantPast) }
+            .compactMap(calendarDraft(for:))
+    }
+
+    /// Re-write all of a roster's events (e.g. after the reminder setting changes).
+    @discardableResult
+    static func resync(roster: Roster, target: ShiftCalendarWriter) async throws -> Int {
+        let drafts = drafts(for: roster)
+        guard !drafts.isEmpty else { return 0 }
+        let results = try await target.write(drafts)
+        return results.count
     }
 
     private static func shiftType(for draft: DraftShift, cache: inout [String: ShiftType], context: ModelContext) -> ShiftType {

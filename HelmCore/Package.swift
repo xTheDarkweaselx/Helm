@@ -43,6 +43,7 @@ let package = Package(
         .target(name: "HelmParsing", dependencies: ["HelmDomain", "CoreXLSX"]),
         .target(name: "HelmCalendar", dependencies: ["HelmDomain"]),
         .testTarget(name: "HelmDomainTests", dependencies: ["HelmDomain"]),
+        .testTarget(name: "HelmCalendarTests", dependencies: ["HelmCalendar"]),
         .testTarget(
             name: "HelmParsingTests",
             dependencies: ["HelmParsing"],

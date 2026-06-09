@@ -18,6 +18,7 @@ struct ContentView: View {
 
     @State private var selectedRosterID: Roster.ID?
     @State private var isPresentingImport = false
+    @State private var isPresentingSettings = false
 
     private var selectedRoster: Roster? {
         guard let selectedRosterID else { return nil }
@@ -56,6 +57,11 @@ struct ContentView: View {
                         isPresentingImport = true
                     }
                 }
+                ToolbarItem {
+                    Button("Settings", systemImage: "gearshape") {
+                        isPresentingSettings = true
+                    }
+                }
             }
         } detail: {
             if let selectedRoster {
@@ -66,6 +72,9 @@ struct ContentView: View {
         }
         .sheet(isPresented: $isPresentingImport) {
             ImportView()
+        }
+        .sheet(isPresented: $isPresentingSettings) {
+            SettingsView()
         }
 #if DEBUG
         // Runs each launch when HELM_DEMO_IMPORT is set, so re-import idempotency

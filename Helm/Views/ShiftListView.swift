@@ -8,12 +8,14 @@
 
 import SwiftUI
 import SwiftData
+import HelmCalendar
 
 struct ShiftListView: View {
     let roster: Roster
     @Environment(\.modelContext) private var modelContext
     @State private var isConfirmingDelete = false
-    @State private var deleteError: String?
+    @State private var errorMessage: String?
+    @State private var applyingReminders = false
 
     private var sortedInstances: [ShiftInstance] {
         (roster.instances ?? []).sorted {
@@ -39,6 +41,14 @@ struct ShiftListView: View {
         .toolbar {
             ToolbarItem {
                 Menu {
+                    if let url = exportedICSURL() {
+                        ShareLink("Export .ics", item: url)
+                    }
+                    Button("Apply reminders to all shifts", systemImage: "bell") {
+                        applyReminders()
+                    }
+                    .disabled(applyingReminders)
+                    Divider()
                     Button("Remove from Calendar & delete", systemImage: "trash", role: .destructive) {
                         isConfirmingDelete = true
                     }
@@ -55,22 +65,55 @@ struct ShiftListView: View {
                 Task {
                     let writer = ShiftCalendarWriter()
                     guard await writer.requestAccess() else {
-                        deleteError = "Helm needs calendar access to remove these events. Enable it for Helm in Settings, then try again."
+                        errorMessage = "Helm needs calendar access to remove these events. Enable it for Helm in Settings, then try again."
                         return
                     }
                     do {
                         try await RosterSyncEngine.delete(roster: roster, target: writer, in: context)
                     } catch {
-                        deleteError = error.localizedDescription
+                        errorMessage = error.localizedDescription
                     }
                 }
             }
             Button("Cancel", role: .cancel) {}
         }
-        .alert("Couldn’t delete roster", isPresented: .constant(deleteError != nil)) {
-            Button("OK") { deleteError = nil }
+        .alert("Something went wrong", isPresented: .constant(errorMessage != nil)) {
+            Button("OK") { errorMessage = nil }
         } message: {
-            Text(deleteError ?? "")
+            Text(errorMessage ?? "")
+        }
+    }
+
+    /// Generate the roster's .ics into a temp file for sharing (nil if empty).
+    private func exportedICSURL() -> URL? {
+        let drafts = RosterSyncEngine.drafts(for: roster)
+        guard !drafts.isEmpty else { return nil }
+        let ics = ICSExporter.export(drafts, calendarName: roster.title ?? "Helm Shifts", generatedAt: .now)
+        let safeName = (roster.title ?? "roster").components(separatedBy: CharacterSet(charactersIn: "/:\\")).joined(separator: "-")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(safeName).ics")
+        do {
+            try Data(ics.utf8).write(to: url, options: .atomic)
+            return url
+        } catch {
+            return nil
+        }
+    }
+
+    private func applyReminders() {
+        let roster = roster
+        applyingReminders = true
+        Task {
+            defer { applyingReminders = false }
+            let writer = ShiftCalendarWriter()
+            guard await writer.requestAccess() else {
+                errorMessage = "Helm needs calendar access to update reminders. Enable it for Helm in Settings, then try again."
+                return
+            }
+            do {
+                _ = try await RosterSyncEngine.resync(roster: roster, target: writer)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
         }
     }
 }
