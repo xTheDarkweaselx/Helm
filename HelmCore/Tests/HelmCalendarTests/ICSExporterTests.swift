@@ -89,8 +89,8 @@ struct ICSExporterTests {
         let d = CalendarEventDraft(dedupKey: "k", title: "Leave", start: day, end: day,
                                    timeZoneIdentifier: "UTC", isAllDay: true, contentHash: "h")
         let ics = ICSExporter.export([d], calendarName: "X", generatedAt: stamp)
-        let inclusive = ICSExporter.dateOnly(day)
-        let exclusive = ICSExporter.dateOnly(ICSExporter.allDayEndExclusive(day))
+        let inclusive = ICSExporter.dateOnly(day, timeZoneID: "UTC")
+        let exclusive = ICSExporter.dateOnly(ICSExporter.allDayEndExclusive(day, timeZoneID: "UTC"), timeZoneID: "UTC")
         #expect(exclusive != inclusive)
         #expect(ics.contains("DTSTART;VALUE=DATE:\(inclusive)"))
         #expect(ics.contains("DTEND;VALUE=DATE:\(exclusive)"))

@@ -74,9 +74,16 @@ struct ContentView: View {
         // Keep the synchronous Google sign-in flags honest with the Keychain
         // truth (they diverge across reinstalls).
         .task { await GoogleAuthService.shared.reconcileMirror() }
-        // Siri/Shortcuts "Show my Helm calendar" (v6).
+        // Siri/Shortcuts "Show my Helm calendar" (v6). The pending flag covers
+        // cold launches where the intent ran before this view subscribed.
         .onReceive(NotificationCenter.default.publisher(for: .helmOpenCalendar)) { _ in
             selection = .calendar
+        }
+        .task {
+            if PendingRoute.openCalendar {
+                PendingRoute.openCalendar = false
+                selection = .calendar
+            }
         }
         #if DEBUG
         .task { await DemoImport.runIfRequested(modelContext: modelContext) }

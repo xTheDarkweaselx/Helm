@@ -69,11 +69,11 @@ struct TimelinePane: View {
                             if day != days.last { Divider() }
                         }
                     }
-                    .id("timeline-top")
                 }
                 .onAppear {
-                    // Land around the working morning, not midnight.
-                    proxy.scrollTo("timeline-top", anchor: UnitPoint(x: 0, y: -7.0 / 24.0))
+                    // Land at the working morning (gutter rows carry hour ids;
+                    // a negative-anchor scrollTo on the whole content no-ops).
+                    proxy.scrollTo("hour-7", anchor: .top)
                 }
             }
         }
@@ -120,7 +120,8 @@ struct TimelinePane: View {
                     Text("all-day")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
-                    ForEach(chips, id: \.1.id) { day, chip in
+                    ForEach(Array(chips.enumerated()), id: \.offset) { _, pair in
+                        let (day, chip) = pair
                         HStack(spacing: 3) {
                             if days.count > 1 {
                                 Text(day.startOfDay(in: calendar), format: .dateTime.weekday(.abbreviated))
@@ -152,13 +153,29 @@ struct TimelinePane: View {
     }
 
     private var hourGutter: some View {
-        let length = TimelineLayoutEngine.dayLengthMinutes(day: days.first ?? today, calendar: calendar)
+        // Sized by the LONGEST visible day; labels are true wall-clock at each
+        // y-position (on a DST day, elapsed-hour 2 may be 03:00 on the wall).
+        let referenceDay = days.max { day1, day2 in
+            TimelineLayoutEngine.dayLengthMinutes(day: day1, calendar: calendar)
+                < TimelineLayoutEngine.dayLengthMinutes(day: day2, calendar: calendar)
+        } ?? today
+        let length = TimelineLayoutEngine.dayLengthMinutes(day: referenceDay, calendar: calendar)
+        let dayStart = referenceDay.startOfDay(in: calendar)
+        var formatter: DateFormatter {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX") // stable 24h labels
+            f.dateFormat = "HH:mm"
+            f.timeZone = calendar.timeZone
+            return f
+        }
+        let hourFormatter = formatter
         return VStack(alignment: .trailing, spacing: 0) {
             ForEach(0..<Int(ceil(length / 60)), id: \.self) { hour in
-                Text(String(format: "%02d:00", hour % 24))
+                Text(hourFormatter.string(from: dayStart.addingTimeInterval(Double(hour) * 3600)))
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.tertiary)
                     .frame(height: hourHeight, alignment: .top)
+                    .id("hour-\(hour)")
             }
         }
         .frame(width: Self.gutterWidth - 4, alignment: .trailing)
@@ -217,7 +234,9 @@ struct TimelineDayColumn: View {
                 }
 
                 if isToday {
-                    nowLine(dayLength: dayLength)
+                    SwiftUI.TimelineView(.everyMinute) { context in
+                        nowLine(dayLength: dayLength, at: context.date)
+                    }
                 }
             }
         }
@@ -227,9 +246,9 @@ struct TimelineDayColumn: View {
     }
 
     @ViewBuilder
-    private func nowLine(dayLength: Double) -> some View {
+    private func nowLine(dayLength: Double, at now: Date) -> some View {
         let dayStart = day.startOfDay(in: calendar)
-        let minutes = Date.now.timeIntervalSince(dayStart) / 60
+        let minutes = now.timeIntervalSince(dayStart) / 60
         if minutes >= 0 && minutes <= dayLength {
             HStack(spacing: 0) {
                 Circle().fill(Color.red).frame(width: 6, height: 6)

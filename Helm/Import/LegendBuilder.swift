@@ -117,8 +117,25 @@ enum LegendBuilder {
         try? context.save()
     }
 
-    /// Forget a learned mapping (the Learned-codes list on the Shift Types page).
+    /// Forget a learned mapping (the Learned-codes list on the Shift Types
+    /// page). If the mapping created its own ShiftType (same code) and nothing
+    /// else references it, the type goes too — otherwise the code would keep
+    /// auto-resolving through the global tier with the very times the user
+    /// just disowned, and "the next import will ask again" would be a lie.
     static func forget(_ mapping: ShiftCodeMapping, in context: ModelContext) {
+        if (mapping.actionRaw ?? "timed") == "timed",
+           let type = mapping.shiftType,
+           type.code == mapping.rawCode {
+            let otherMappings = (type.codeMappings ?? []).filter { $0.id != mapping.id }
+            let unreferenced = (type.instances ?? []).isEmpty
+                && (type.rotationSlots ?? []).isEmpty
+                && (type.explicitDays ?? []).isEmpty
+                && (type.exceptions ?? []).isEmpty
+                && otherMappings.isEmpty
+            if unreferenced {
+                context.delete(type)
+            }
+        }
         context.delete(mapping)
         try? context.save()
     }

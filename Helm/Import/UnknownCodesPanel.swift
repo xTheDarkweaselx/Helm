@@ -130,9 +130,7 @@ private struct UnknownCodeRow: View {
                 case .newTimed:
                     if let suggestion = spanningSuggestion {
                         Button("Use \(hhmm(suggestion.start))–\(hhmm(suggestion.end)) (spans \(CompositeShiftCode.split(code).joined(separator: " + ")))") {
-                            startMinutes = suggestion.start
-                            endMinutes = min(suggestion.end, 1439)
-                            overnight = suggestion.end > 1439
+                            applyPrefill(suggestion)
                         }
                         .font(.caption)
                         .buttonStyle(.bordered)
@@ -155,7 +153,9 @@ private struct UnknownCodeRow: View {
 
                 Button("Save mapping") { save() }
                     .buttonStyle(.borderedProminent)
-                    .disabled(mode == .existing && selectedTypeID == nil)
+                    .disabled((mode == .existing && selectedTypeID == nil)
+                              // An equal pick is a mis-pick, not a 24h shift.
+                              || (mode == .newTimed && endMinutes == startMinutes && !overnight))
             }
             .padding(.top, 6)
         } label: {
@@ -170,11 +170,19 @@ private struct UnknownCodeRow: View {
         .onAppear {
             if existingTypes.isEmpty == false && spanningSuggestion == nil { mode = .newTimed }
             if let suggestion = spanningSuggestion {
-                startMinutes = suggestion.start
-                endMinutes = min(suggestion.end, 1439)
-                overnight = suggestion.end > 1439
+                applyPrefill(suggestion)
             }
         }
+    }
+
+    /// WRAP overnight ends (an effective 06:30-next-day is 1830 → 06:30 + the
+    /// overnight flag), never clamp — clamping wrote 23:45-next-day types. Also
+    /// snap to the 15-minute picker grid so the menus always show a selection.
+    private func applyPrefill(_ suggestion: (start: Int, end: Int)) {
+        func snap(_ minute: Int) -> Int { (minute / 15) * 15 }
+        overnight = suggestion.end > 1439
+        startMinutes = snap(suggestion.start)
+        endMinutes = snap(overnight ? suggestion.end - 1440 : suggestion.end)
     }
 
     private func save() {
@@ -187,7 +195,7 @@ private struct UnknownCodeRow: View {
                 label: label.isEmpty ? nil : label,
                 startMinute: startMinutes,
                 endMinute: endMinutes,
-                overnight: overnight || endMinutes <= startMinutes,
+                overnight: overnight || endMinutes < startMinutes, // strict: equal is blocked above
                 colorHex: nil
             ))
         case .allDay:

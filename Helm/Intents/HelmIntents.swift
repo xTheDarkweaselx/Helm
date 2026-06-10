@@ -16,6 +16,14 @@ nonisolated extension Notification.Name {
     static let helmOpenCalendar = Notification.Name("helmOpenCalendarTab")
 }
 
+/// Cold-launch route holder: OpenCalendarIntent can fire BEFORE ContentView
+/// subscribes to the notification — it sets this too, and ContentView drains
+/// it on appear, so "Show my Helm calendar" works from a cold start.
+@MainActor
+enum PendingRoute {
+    static var openCalendar = false
+}
+
 struct NextShiftIntent: AppIntent {
     static let title: LocalizedStringResource = "Next Shift"
     static let description = IntentDescription("Tells you when your next shift starts.")
@@ -24,37 +32,17 @@ struct NextShiftIntent: AppIntent {
     func perform() async throws -> some IntentResult & ProvidesDialog {
         let context = HelmApp.sharedModelContainer.mainContext
         let instances = (try? context.fetch(FetchDescriptor<ShiftInstance>())) ?? []
-        let now = Date.now
-        let todayStart = Calendar.current.startOfDay(for: now)
-
-        // Next timed shift (by start instant) vs next all-day TBC day — the
-        // earlier one wins. Never speak a midnight "time" for a TBC day.
-        let nextTimed = instances
-            .filter { ($0.isAllDay ?? false) == false }
-            .compactMap { instance in instance.startUTC.map { (instance, $0) } }
-            .filter { $0.1 > now }
-            .min { $0.1 < $1.1 }
-        let nextAllDay = instances
-            .filter { ($0.isAllDay ?? false) && ($0.localDate ?? .distantPast) >= todayStart }
-            .min { ($0.localDate ?? .distantFuture) < ($1.localDate ?? .distantFuture) }
-
-        func title(_ instance: ShiftInstance) -> String {
-            instance.title ?? instance.shiftType?.label ?? instance.shiftType?.code ?? "a shift"
-        }
-
-        switch (nextTimed, nextAllDay) {
-        case (nil, nil):
+        // ONE selector shared with the Overview hero (NextShiftSelector) —
+        // Siri and the dashboard can never disagree about what "next" means.
+        guard let next = NextShiftSelector.next(in: instances) else {
             return .result(dialog: "You have no upcoming shifts in Helm.")
-        case let (timed?, allDay):
-            if let allDay, let allDayDate = allDay.localDate,
-               allDayDate < Calendar.current.startOfDay(for: timed.1) {
-                return .result(dialog: allDayDialog(allDay, title: title(allDay)))
-            }
-            let when = timed.1.formatted(.dateTime.weekday(.wide).day().month().hour().minute())
-            return .result(dialog: "Your next shift is \(title(timed.0)) on \(when).")
-        case let (nil, allDay?):
-            return .result(dialog: allDayDialog(allDay, title: title(allDay)))
         }
+        let title = next.title ?? next.shiftType?.label ?? next.shiftType?.code ?? "a shift"
+        if next.isAllDay == true {
+            return .result(dialog: allDayDialog(next, title: title))
+        }
+        let when = (next.startUTC ?? .now).formatted(.dateTime.weekday(.wide).day().month().hour().minute())
+        return .result(dialog: "Your next shift is \(title) on \(when).")
     }
 
     @MainActor
@@ -103,7 +91,9 @@ struct HoursIntent: AppIntent {
 
         let summary = InsightsMath.periodSummary(shifts: shifts, in: range)
         let hours = summary.hours.formatted(.number.precision(.fractionLength(0...1)))
-        var dialog = "You have \(hours) hours across \(summary.shiftCount) shift\(summary.shiftCount == 1 ? "" : "s") \(label)."
+        // Pluralize against the SPOKEN string, so "1 hour" but "1.5 hours".
+        let hourUnit = hours == "1" ? "hour" : "hours"
+        var dialog = "You have \(hours) \(hourUnit) across \(summary.shiftCount) shift\(summary.shiftCount == 1 ? "" : "s") \(label)."
         if summary.tentativeCount > 0 {
             dialog += " \(summary.tentativeCount) day\(summary.tentativeCount == 1 ? " is" : "s are") still awaiting times."
         }
@@ -118,6 +108,7 @@ struct OpenCalendarIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        PendingRoute.openCalendar = true
         NotificationCenter.default.post(name: .helmOpenCalendar, object: nil)
         return .result()
     }

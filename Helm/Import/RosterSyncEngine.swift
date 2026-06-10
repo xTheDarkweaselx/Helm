@@ -196,7 +196,11 @@ struct RosterSyncEngine {
         // above are still uncommitted at this point.
         do {
             for target in targets {
-                if !removedKeys.isEmpty, !isMigration { _ = try await target.remove(dedupKeys: removedKeys) }
+                // Always remove removed keys: on a newly-added destination they
+                // don't exist and both adapters tolerate missing keys; on a
+                // RETAINED destination during migration this is the only thing
+                // that deletes them (the full rewrite only covers survivors).
+                if !removedKeys.isEmpty { _ = try await target.remove(dedupKeys: removedKeys) }
                 if !draftsToWrite.isEmpty { _ = try await target.write(draftsToWrite) }
             }
         } catch {

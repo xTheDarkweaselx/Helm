@@ -162,7 +162,26 @@ struct CalendarView: View {
     }
 
     private func header(monthHours: Double) -> some View {
-        HStack {
+        // One row when everything fits (Mac/iPad); title row + controls row
+        // on iPhone widths — v6 added the mode picker and zoom to this header.
+        ViewThatFits(in: .horizontal) {
+            HStack {
+                titleBlock(monthHours: monthHours)
+                Spacer()
+                headerControls
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                titleBlock(monthHours: monthHours)
+                HStack {
+                    headerControls
+                    Spacer()
+                }
+            }
+        }
+        .buttonStyle(.borderless)
+    }
+
+    private func titleBlock(monthHours: Double) -> some View {
             VStack(alignment: .leading, spacing: 1) {
                 headerTitle
                     .font(.title3.weight(.semibold))
@@ -177,7 +196,10 @@ struct CalendarView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Spacer()
+    }
+
+    @ViewBuilder
+    private var headerControls: some View {
             Picker("View", selection: $displayModeRaw) {
                 ForEach(CalendarDisplayMode.allCases, id: \.rawValue) { mode in
                     Text(mode.label).tag(mode.rawValue)
@@ -214,8 +236,6 @@ struct CalendarView: View {
                 Label("Next", systemImage: "chevron.right").labelStyle(.iconOnly)
             }
             .keyboardShortcut(isLive ? KeyboardShortcut(.rightArrow, modifiers: .command) : nil)
-        }
-        .buttonStyle(.borderless)
     }
 
     private var headerTitle: Text {
@@ -529,7 +549,10 @@ struct CalendarView: View {
             if event.isAllDay {
                 allDay.append(TimelineAllDayChip(id: "e:\(event.id)", title: event.title, colorHex: nil, eventColor: event.color, isEvent: true, previewStatus: nil))
             } else {
-                timed.append(TimelineBlock(id: "e:\(event.id)", start: event.start, end: event.end, title: event.title, colorHex: nil, eventColor: event.color, isEvent: true, previewStatus: nil))
+                // Zero-duration events (reminders-as-events) get a thin pill
+                // instead of silently vanishing from the engine's half-open math.
+                let end = event.end > event.start ? event.end : event.start.addingTimeInterval(15 * 60)
+                timed.append(TimelineBlock(id: "e:\(event.id)", start: event.start, end: end, title: event.title, colorHex: nil, eventColor: event.color, isEvent: true, previewStatus: nil))
             }
         }
 

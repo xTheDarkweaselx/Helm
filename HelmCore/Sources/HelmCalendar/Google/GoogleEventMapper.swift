@@ -32,11 +32,11 @@ public enum GoogleEventMapper {
         let start: GoogleEvent.Time
         let end: GoogleEvent.Time
         if draft.isAllDay {
-            // Google's all-day end date is EXCLUSIVE. Helm's internal convention
-            // (shared with ICSExporter) is an inclusive end day interpreted in
-            // UTC, so mirror ICSExporter exactly: day-of(start), day-of(end)+1.
-            start = .init(date: dateOnly(draft.start))
-            end = .init(date: dateOnly(allDayEndExclusive(draft.end)))
+            // Google's all-day end date is EXCLUSIVE. Civil days are evaluated
+            // in the DRAFT'S OWN zone: a London-midnight start is 23:00Z the
+            // previous day — UTC formatting would land it one day early.
+            start = .init(date: dateOnly(draft.start, timeZoneID: draft.timeZoneIdentifier))
+            end = .init(date: dateOnly(allDayEndExclusive(draft.end, timeZoneID: draft.timeZoneIdentifier), timeZoneID: draft.timeZoneIdentifier))
         } else {
             // A UTC "Z" instant plus the IANA zone: the instant fixes the time,
             // the zone fixes how Google renders and DST-adjusts it.
@@ -93,15 +93,20 @@ public enum GoogleEventMapper {
         rfc3339Formatter.string(from: date)
     }
 
-    static func dateOnly(_ date: Date) -> String {
-        dateOnlyFormatter.string(from: date)
+    static func dateOnly(_ date: Date, timeZoneID: String) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = Calendar(identifier: .gregorian)
+        f.timeZone = TimeZone(identifier: timeZoneID) ?? TimeZone(identifier: "UTC")!
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: date)
     }
 
-    /// The exclusive all-day end: the day AFTER the inclusive end day (UTC),
-    /// byte-for-byte the same convention as ICSExporter.allDayEndExclusive.
-    static func allDayEndExclusive(_ end: Date) -> Date {
+    /// The exclusive all-day end: the day AFTER the inclusive end day, in the
+    /// event's OWN zone — same convention as ICSExporter.allDayEndExclusive.
+    static func allDayEndExclusive(_ end: Date, timeZoneID: String) -> Date {
         var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(identifier: "UTC")!
+        cal.timeZone = TimeZone(identifier: timeZoneID) ?? TimeZone(identifier: "UTC")!
         return cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: end)) ?? end
     }
 
@@ -114,12 +119,4 @@ public enum GoogleEventMapper {
         return f
     }()
 
-    private static let dateOnlyFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.calendar = Calendar(identifier: .gregorian)
-        f.timeZone = TimeZone(identifier: "UTC")
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
 }

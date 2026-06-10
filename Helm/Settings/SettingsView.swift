@@ -44,6 +44,7 @@ struct SettingsForm: View {
     @State private var isSigningIn = false
     @State private var authMessage: String?
     @State private var isConfirmingSignOut = false
+    @FocusState private var rateFieldFocused: Bool
     @State private var removeAllCandidate: CalendarTargetKind?
     @State private var isCleaningUp = false
     @State private var cleanupMessage: String?
@@ -101,8 +102,17 @@ struct SettingsForm: View {
                     TextField("0", value: $hourlyRate, format: .number.precision(.fractionLength(0...2)))
                         .multilineTextAlignment(.trailing)
                         .frame(maxWidth: 100)
+                        .focused($rateFieldFocused)
                         #if os(iOS)
+                        // The decimal pad has no Return key — without this
+                        // toolbar there is no way to dismiss it.
                         .keyboardType(.decimalPad)
+                        .toolbar {
+                            ToolbarItemGroup(placement: .keyboard) {
+                                Spacer()
+                                Button("Done") { rateFieldFocused = false }
+                            }
+                        }
                         #endif
                 }
             } header: {

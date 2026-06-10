@@ -8,6 +8,7 @@
 
 import Foundation
 import SwiftData
+import HelmCalendar
 
 @MainActor
 @Observable
@@ -43,14 +44,22 @@ final class ScheduleCoordinator {
         if let profile = try? context.fetch(FetchDescriptor<ImportProfile>(predicate: #Predicate { $0.sourceFingerprint == fingerprint })).first {
             let pid = profile.id
             if let roster = try? context.fetch(FetchDescriptor<Roster>(predicate: #Predicate { $0.sourceImportProfileID == pid })).first {
-                do {
-                    let targets = try await CalendarTargetProvider.authorizedTargets(for: profile.targets)
-                    try await RosterSyncEngine.delete(roster: roster, targets: targets, in: context)
-                } catch {
-                    let tolerable = force || (error as? CalendarAccessError) == .eventKitDenied
-                    guard tolerable else { throw error }
-                    context.delete(roster)
+                // Per-destination: Apple being DENIED must not strand a
+                // perfectly removable Google copy (or vice versa). Only an
+                // eventkit-denied failure (the user's explicit choice) or
+                // `force` is tolerated — anything else aborts with nothing
+                // deleted so the caller can warn.
+                let keys = (roster.instances ?? []).compactMap(\.dedupKey)
+                for kind in profile.targets.sorted(by: { $0.rawValue < $1.rawValue }) {
+                    do {
+                        let target = try await CalendarTargetProvider.authorizedTarget(for: kind)
+                        if !keys.isEmpty { _ = try await target.remove(dedupKeys: keys) }
+                    } catch {
+                        let tolerable = force || (kind == .eventkit && (error as? CalendarAccessError) == .eventKitDenied)
+                        guard tolerable else { throw error }
+                    }
                 }
+                context.delete(roster)
             }
             context.delete(profile)
         }

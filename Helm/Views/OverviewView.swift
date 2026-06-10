@@ -13,6 +13,34 @@ import SwiftData
 import Charts
 import HelmDomain
 
+/// THE next-shift rule, shared by the Overview hero and Siri's NextShiftIntent
+/// so the screen and the spoken answer can never disagree. Tie-break: an
+/// all-day (TBC) day wins only when its civil day is STRICTLY earlier than
+/// the next timed shift's civil day.
+enum NextShiftSelector {
+    static func next(in instances: [ShiftInstance]) -> ShiftInstance? {
+        let now = Date.now
+        let calendar = Calendar.current
+        let todayStart = calendar.startOfDay(for: now)
+        let nextTimed = instances
+            .filter { ($0.isAllDay ?? false) == false }
+            .compactMap { instance in instance.startUTC.map { (instance, $0) } }
+            .filter { $0.1 > now }
+            .min { $0.1 < $1.1 }
+        let nextAllDay = instances
+            .filter { ($0.isAllDay ?? false) && ($0.localDate ?? .distantPast) >= todayStart }
+            .min { ($0.localDate ?? .distantFuture) < ($1.localDate ?? .distantFuture) }
+        switch (nextTimed, nextAllDay) {
+        case (nil, nil): return nil
+        case let (timed?, nil): return timed.0
+        case let (nil, allDay?): return allDay
+        case let (timed?, allDay?):
+            let allDayDay = allDay.localDate.map { calendar.startOfDay(for: $0) } ?? .distantFuture
+            return allDayDay < calendar.startOfDay(for: timed.1) ? allDay : timed.0
+        }
+    }
+}
+
 /// MainActor snapshot: SwiftData models → pure InsightShift values.
 /// Shared by this dashboard and the App Intents (same numbers, everywhere).
 @MainActor
@@ -111,15 +139,9 @@ struct OverviewView: View {
 
     // MARK: Hero
 
-    private var upcoming: [ShiftInstance] {
-        instances
-            .filter { ($0.startUTC ?? .distantPast) >= .now || (($0.isAllDay ?? false) && ($0.localDate ?? .distantPast) >= calendar.startOfDay(for: .now)) }
-            .sorted { ($0.startUTC ?? $0.localDate ?? .distantFuture) < ($1.startUTC ?? $1.localDate ?? .distantFuture) }
-    }
-
     @ViewBuilder
     private var nextShiftHero: some View {
-        if let next = upcoming.first {
+        if let next = NextShiftSelector.next(in: instances) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Next shift").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 Text(next.title ?? next.shiftType?.label ?? next.shiftType?.code ?? "Shift")

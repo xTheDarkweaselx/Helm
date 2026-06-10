@@ -208,7 +208,8 @@ struct ImportView: View {
     private func previewView(_ result: RosterImportResult) -> some View {
         let diff = coordinator.plan?.diff
         let isReimport = coordinator.plan?.isReimport ?? false
-        let hasChanges = diff?.hasChanges ?? (result.writableCount > 0)
+        let hasChanges = (diff?.hasChanges ?? (result.writableCount > 0))
+            || destinationChangePending(isReimport: isReimport)
         return VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Picker("View", selection: $previewStyle) {
@@ -230,13 +231,18 @@ struct ImportView: View {
                 .padding(.horizontal)
                 .padding(.bottom, 6)
             if !result.unmappedCodes.isEmpty {
-                UnknownCodesPanel(codes: result.unmappedCodes, result: result) { code, action in
-                    LegendBuilder.learn(code: code, action: action, sourceName: result.sourceName, in: modelContext)
-                    coordinator.remapAndReplan(modelContext: modelContext)
-                    if let plan = coordinator.plan {
-                        overlay = PlanOverlayBuilder.build(from: plan, in: modelContext)
+                // Bounded: expanded editors scroll inside the panel instead of
+                // starving the calendar preview below.
+                ScrollView {
+                    UnknownCodesPanel(codes: result.unmappedCodes, result: result) { code, action in
+                        LegendBuilder.learn(code: code, action: action, sourceName: result.sourceName, in: modelContext)
+                        coordinator.remapAndReplan(modelContext: modelContext)
+                        if let plan = coordinator.plan {
+                            overlay = PlanOverlayBuilder.build(from: plan, in: modelContext)
+                        }
                     }
                 }
+                .frame(maxHeight: 280)
                 .padding(.horizontal)
                 .padding(.bottom, 6)
             }
@@ -343,10 +349,23 @@ struct ImportView: View {
         return kinds.isEmpty ? [.eventkit] : kinds
     }
 
+    /// The matched profile's recorded destinations differ from the current
+    /// selection — committing migrates even when the shifts are unchanged.
+    private func destinationChangePending(isReimport: Bool) -> Bool {
+        guard isReimport, let profileID = coordinator.plan?.existingProfileID else { return false }
+        let descriptor = FetchDescriptor<ImportProfile>(predicate: #Predicate { $0.id == profileID })
+        guard let profile = try? modelContext.fetch(descriptor).first else { return false }
+        return profile.targets != resolvedDestinations
+    }
+
     private func commitTitle(diff: RosterDiff?, isReimport: Bool, result: RosterImportResult) -> String {
         let destination = SyncSummary.name(for: resolvedDestinations)
         guard let diff else { return "Add \(result.writableCount) shifts to \(destination)" }
-        if !diff.hasChanges { return "No changes" }
+        if !diff.hasChanges {
+            return destinationChangePending(isReimport: isReimport)
+                ? "Move shifts to \(destination)"
+                : "No changes"
+        }
         if isReimport {
             var parts: [String] = []
             if diff.added.count > 0 { parts.append("+\(diff.added.count)") }
@@ -397,6 +416,15 @@ struct CalendarDestinationPicker: View {
         return kinds.isEmpty ? [.eventkit] : kinds
     }
 
+    /// What writes will actually target right now (observed, Google-gated).
+    private var resolvedKinds: Set<CalendarTargetKind> {
+        var kinds = chosen
+        if kinds.contains(.google), !(GoogleConfig.isConfigured && googleSignedIn) {
+            kinds.remove(.google)
+        }
+        return kinds.isEmpty ? [.eventkit] : kinds
+    }
+
     var body: some View {
         Menu {
             Toggle("Apple Calendar", isOn: binding(for: .eventkit))
@@ -405,7 +433,9 @@ struct CalendarDestinationPicker: View {
                     .disabled(!googleUsable && !chosen.contains(.google))
             }
         } label: {
-            Label("Add to: \(SyncSummary.name(for: CalendarDestinationSetting.current))",
+            // Derived from the OBSERVED properties — a raw store read here
+            // froze on first render (same class as the 559aed4 commit-title bug).
+            Label("Add to: \(SyncSummary.name(for: resolvedKinds))",
                   systemImage: "calendar.badge.plus")
                 .lineLimit(1)
         }

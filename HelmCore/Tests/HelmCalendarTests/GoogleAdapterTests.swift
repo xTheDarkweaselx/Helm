@@ -79,6 +79,16 @@ import Testing
         #expect(event.location == "UEC")
     }
 
+    @Test func allDayDatesUseTheDraftZoneNotUTC() {
+        // REGRESSION (v6 hardening): a London-midnight all-day start during BST
+        // is 23:00Z the PREVIOUS day — UTC formatting shipped TBC days one day
+        // early to Google/.ics. 2026-06-08T23:00Z == 2026-06-09 00:00 London.
+        let londonMidnight = Date(timeIntervalSince1970: 1_780_959_600)
+        let event = GoogleEventMapper.event(for: draft(start: londonMidnight, end: londonMidnight, isAllDay: true, alarms: []))
+        #expect(event.start?.date == "2026-06-09")
+        #expect(event.end?.date == "2026-06-10")
+    }
+
     @Test func allDayEventUsesExclusiveEndDate() {
         // Single all-day on 2026-06-09 (inclusive internal end) → end.date 06-10.
         let day = Date(timeIntervalSince1970: 1_780_963_200) // 2026-06-09 00:00 UTC
@@ -92,8 +102,8 @@ import Testing
     @Test func allDayExclusiveEndMatchesICSExporterConvention() {
         // Both exporters must agree on the same draft (shared UTC convention).
         let end = Date(timeIntervalSince1970: 1_780_963_200 + 9_000) // 02:30 into the day
-        let google = GoogleEventMapper.allDayEndExclusive(end)
-        let ics = ICSExporter.allDayEndExclusive(end)
+        let google = GoogleEventMapper.allDayEndExclusive(end, timeZoneID: "Europe/London")
+        let ics = ICSExporter.allDayEndExclusive(end, timeZoneID: "Europe/London")
         #expect(google == ics)
     }
 

@@ -35,9 +35,11 @@ public enum ICSExporter {
             lines.append("UID:\(uid(for: draft.dedupKey))")
             lines.append("DTSTAMP:\(stamp)")
             if draft.isAllDay {
-                // RFC 5545: all-day DTEND is EXCLUSIVE (the day after the last day).
-                lines.append("DTSTART;VALUE=DATE:\(dateOnly(draft.start))")
-                lines.append("DTEND;VALUE=DATE:\(dateOnly(allDayEndExclusive(draft.end)))")
+                // RFC 5545: all-day DTEND is EXCLUSIVE (the day after the last
+                // day). Civil days computed in the DRAFT'S zone — UTC would put
+                // a London-midnight day one day early during BST.
+                lines.append("DTSTART;VALUE=DATE:\(dateOnly(draft.start, timeZoneID: draft.timeZoneIdentifier))")
+                lines.append("DTEND;VALUE=DATE:\(dateOnly(allDayEndExclusive(draft.end, timeZoneID: draft.timeZoneIdentifier), timeZoneID: draft.timeZoneIdentifier))")
             } else {
                 lines.append("DTSTART:\(utc(draft.start))")
                 lines.append("DTEND:\(utc(draft.end))")
@@ -112,12 +114,20 @@ public enum ICSExporter {
     }()
 
     static func utc(_ date: Date) -> String { utcFormatter.string(from: date) }
-    static func dateOnly(_ date: Date) -> String { dateOnlyFormatter.string(from: date) }
+    static func dateOnly(_ date: Date, timeZoneID: String) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = Calendar(identifier: .gregorian)
+        f.timeZone = TimeZone(identifier: timeZoneID) ?? TimeZone(identifier: "UTC")!
+        f.dateFormat = "yyyyMMdd"
+        return f.string(from: date)
+    }
 
-    /// The exclusive all-day end: the day AFTER the inclusive end day (UTC).
-    static func allDayEndExclusive(_ end: Date) -> Date {
+    /// The exclusive all-day end: the day AFTER the inclusive end day, in the
+    /// event's OWN zone.
+    static func allDayEndExclusive(_ end: Date, timeZoneID: String) -> Date {
         var cal = Calendar(identifier: .gregorian)
-        cal.timeZone = TimeZone(identifier: "UTC")!
+        cal.timeZone = TimeZone(identifier: timeZoneID) ?? TimeZone(identifier: "UTC")!
         return cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: end)) ?? end
     }
 
