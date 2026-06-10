@@ -78,6 +78,7 @@ struct DayCellView: View {
             RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 1.5)
         )
+        .animation(.spring(duration: 0.18), value: isSelected)
         .contentShape(Rectangle())
         .opacity(cell.isInMonth ? 1 : 0.35)
         .accessibilityElement(children: .ignore)

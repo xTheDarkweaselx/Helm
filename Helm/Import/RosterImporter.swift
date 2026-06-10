@@ -11,26 +11,9 @@ import Foundation
 import HelmDomain
 import HelmParsing
 
-/// A code → wall-clock-times legend (employer-specific; the times for "M"/"A"
-/// are not in the spreadsheet — the user supplies them, see Fixtures README).
-nonisolated struct ShiftLegend: Sendable {
-    nonisolated struct Entry: Sendable {
-        var startMinute: Int
-        var endMinute: Int
-        var label: String
-    }
-
-    var entries: [String: Entry]
-
-    func entry(for normalizedCode: String) -> Entry? { entries[normalizedCode] }
-
-    /// Default legend for the first real roster (06:30–13:30 / 13:30–22:00).
-    static let `default` = ShiftLegend(entries: [
-        "M": Entry(startMinute: 6 * 60 + 30, endMinute: 13 * 60 + 30, label: "Morning"),
-        "A": Entry(startMinute: 13 * 60 + 30, endMinute: 22 * 60, label: "Afternoon"),
-        "M/A": Entry(startMinute: 6 * 60 + 30, endMinute: 22 * 60, label: "Morning + Afternoon"),
-    ])
-}
+// v6: the legend is HelmDomain's three-tier MergedLegend (built-ins < global
+// ShiftTypes < per-source learned mappings). LegendBuilder snapshots SwiftData
+// into it on the main actor; this file stays pure.
 
 /// A resolved candidate shift, shown in the preview before writing.
 nonisolated struct DraftShift: Identifiable, Sendable {
@@ -38,6 +21,9 @@ nonisolated struct DraftShift: Identifiable, Sendable {
         case willWrite
         case skippedOff
         case skippedTentative
+        /// The user explicitly mapped this code to "ignore" — never conflated
+        /// with roster OFF days in the health summary.
+        case skippedByRule
         case skippedUnmapped
     }
 
@@ -92,6 +78,9 @@ nonisolated struct RosterImportResult: Sendable {
     /// Human-readable roster title (falls back to sourceName). Built rotas set this
     /// to the schedule's title so the sidebar doesn't show the raw fingerprint.
     var displayName: String? = nil
+    /// Retained parse rows so the review panel can RE-resolve after learning a
+    /// code, without re-reading the (expired security-scope) file.
+    var parsed: [ParsedShift] = []
 
     var writableCount: Int { drafts.filter(\.isWritable).count }
 }
@@ -102,7 +91,7 @@ enum RosterImporter {
     nonisolated static func importCSV(
         text: String,
         sourceName: String,
-        legend: ShiftLegend = .default,
+        legend: MergedLegend = LegendMerger.merge(globalTypes: [], learned: []),
         timeZoneIdentifier: String = TimeZone.current.identifier,
         dateOrder: RosterDateParser.Order = .dayFirst
     ) throws -> RosterImportResult {
@@ -117,7 +106,7 @@ enum RosterImporter {
     nonisolated static func importXLSX(
         data: Data,
         sourceName: String,
-        legend: ShiftLegend = .default,
+        legend: MergedLegend = LegendMerger.merge(globalTypes: [], learned: []),
         timeZoneIdentifier: String = TimeZone.current.identifier,
         dateOrder: RosterDateParser.Order = .dayFirst
     ) throws -> RosterImportResult {
@@ -136,7 +125,7 @@ enum RosterImporter {
     nonisolated private static func resolve(
         grid: SpreadsheetGrid,
         sourceName: String,
-        legend: ShiftLegend,
+        legend: MergedLegend,
         timeZoneIdentifier: String,
         dateOrder: RosterDateParser.Order
     ) throws -> RosterImportResult {
@@ -157,7 +146,17 @@ enum RosterImporter {
         throw sawMapping ? RosterImportError.noRows : RosterImportError.noColumnsDetected
     }
 
-    nonisolated private static func makeResult(parsed: [ParsedShift], sourceName: String, legend: ShiftLegend) -> RosterImportResult {
+    /// Pure re-resolution over a result's retained rows — the review panel
+    /// calls this after a mapping is learned (no file re-read: the
+    /// security-scoped URL is long gone by then). dedupKeys derive from
+    /// code+date only, so identities are stable across re-resolution.
+    nonisolated static func reresolve(_ result: RosterImportResult, legend: MergedLegend) -> RosterImportResult {
+        var newResult = makeResult(parsed: result.parsed, sourceName: result.sourceName, legend: legend)
+        newResult.displayName = result.displayName
+        return newResult
+    }
+
+    nonisolated private static func makeResult(parsed: [ParsedShift], sourceName: String, legend: MergedLegend) -> RosterImportResult {
         var drafts: [DraftShift] = []
         var unmapped = Set<String>()
 
@@ -193,25 +192,35 @@ enum RosterImporter {
                 continue
             }
 
-            // 3) Legend lookup.
-            if let entry = legend.entry(for: shift.normalizedCode) {
+            // 3) Legend lookup (merged: built-ins < global types < learned).
+            switch legend.resolution(for: shift.normalizedCode) {
+            case let .timed(entry):
                 let resolved = ShiftTimeResolver.resolve(
                     localDay: shift.localDate,
                     startMinuteOfDay: entry.startMinute,
                     endMinuteOfDay: entry.endMinute,
                     timeZone: tz
                 )
-                drafts.append(draft(for: shift, label: entry.label, startMinute: entry.startMinute, endMinute: entry.endMinute, resolved: resolved, outcome: resolved == nil ? .skippedUnmapped : .willWrite))
-            } else {
+                drafts.append(draft(for: shift, label: entry.label, startMinute: entry.startMinute, endMinute: entry.endMinute, resolved: resolved, outcome: resolved == nil ? .skippedUnmapped : .willWrite, breakMinutes: entry.breakMinutes, shiftTypeID: entry.shiftTypeID))
+            case let .allDay(label):
+                var dayCal = Calendar(identifier: .gregorian)
+                dayCal.timeZone = tz
+                let dayStart = dayCal.startOfDay(for: shift.localDate)
+                drafts.append(draft(for: shift, label: label ?? shift.normalizedCode, startMinute: nil, endMinute: nil,
+                                    resolved: nil, outcome: .willWrite,
+                                    allDay: (start: dayStart, end: dayStart)))
+            case .ignore:
+                drafts.append(draft(for: shift, label: nil, startMinute: nil, endMinute: nil, resolved: nil, outcome: .skippedByRule))
+            case nil:
                 unmapped.insert(shift.normalizedCode)
                 drafts.append(draft(for: shift, label: nil, startMinute: nil, endMinute: nil, resolved: nil, outcome: .skippedUnmapped))
             }
         }
 
-        return RosterImportResult(drafts: drafts, sourceName: sourceName, unmappedCodes: unmapped.sorted())
+        return RosterImportResult(drafts: drafts, sourceName: sourceName, unmappedCodes: unmapped.sorted(), parsed: parsed)
     }
 
-    nonisolated private static func draft(for shift: ParsedShift, label: String?, startMinute: Int?, endMinute: Int?, resolved: ResolvedShiftTimes?, outcome: DraftShift.Outcome, allDay: (start: Date, end: Date)? = nil) -> DraftShift {
+    nonisolated private static func draft(for shift: ParsedShift, label: String?, startMinute: Int?, endMinute: Int?, resolved: ResolvedShiftTimes?, outcome: DraftShift.Outcome, allDay: (start: Date, end: Date)? = nil, breakMinutes: Int = 0, shiftTypeID: String? = nil) -> DraftShift {
         DraftShift(
             localDate: shift.localDate,
             timeZoneIdentifier: shift.timeZoneIdentifier,
@@ -223,11 +232,11 @@ enum RosterImporter {
             endMinuteOfDay: endMinute,
             start: allDay?.start ?? resolved?.start,
             end: allDay?.end ?? resolved?.end,
-            paidHours: resolved?.paidHours(breakMinutes: 0),
+            paidHours: resolved?.paidHours(breakMinutes: breakMinutes),
             isAllDay: allDay != nil,
             dedupKey: shift.dedupKeyInput,
             sourceRow: shift.sourceRow,
-            shiftTypeID: nil,
+            shiftTypeID: shiftTypeID,
             outcome: outcome
         )
     }

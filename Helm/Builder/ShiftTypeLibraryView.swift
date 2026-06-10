@@ -19,6 +19,7 @@ private enum ShiftTypeEditTarget: Identifiable {
 struct ShiftTypeLibraryView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \ShiftType.code) private var types: [ShiftType]
+    @Query(sort: \ShiftCodeMapping.rawCode) private var learnedMappings: [ShiftCodeMapping]
     @State private var editing: ShiftTypeEditTarget?
     @State private var pendingDeletion: [ShiftType] = []
 
@@ -34,6 +35,29 @@ struct ShiftTypeLibraryView: View {
                     pendingDeletion = targets // confirm — would turn dependent days off
                 } else {
                     delete(targets)
+                }
+            }
+
+            // v6 Import Intelligence: what Helm has learned per source.
+            if !learnedMappings.isEmpty {
+                Section {
+                    ForEach(learnedMappings) { mapping in
+                        learnedRow(mapping)
+                            .swipeActions {
+                                Button("Forget", systemImage: "trash", role: .destructive) {
+                                    LegendBuilder.forget(mapping, in: context)
+                                }
+                            }
+                            .contextMenu {
+                                Button("Forget mapping", systemImage: "trash", role: .destructive) {
+                                    LegendBuilder.forget(mapping, in: context)
+                                }
+                            }
+                    }
+                } header: {
+                    Text("Learned codes")
+                } footer: {
+                    Text("Taught during imports — each applies to its own roster source. Forget one and the next import will ask again.")
                 }
             }
         }
@@ -66,6 +90,32 @@ struct ShiftTypeLibraryView: View {
 
     private func referenceCount(_ type: ShiftType) -> Int {
         (type.rotationSlots?.count ?? 0) + (type.explicitDays?.count ?? 0) + (type.exceptions?.count ?? 0)
+    }
+
+    @ViewBuilder
+    private func learnedRow(_ mapping: ShiftCodeMapping) -> some View {
+        HStack {
+            Text(mapping.rawCode ?? "?")
+                .font(.body.weight(.bold).monospaced())
+            VStack(alignment: .leading, spacing: 1) {
+                switch mapping.actionRaw ?? "timed" {
+                case "allDay":
+                    Text("All-day event")
+                case "ignore":
+                    Text("Ignored").foregroundStyle(.secondary)
+                default:
+                    Text(mapping.shiftType.map { "\($0.label ?? $0.code ?? "Shift")" } ?? "Missing type")
+                        .foregroundStyle(mapping.shiftType == nil ? .red : .primary)
+                }
+                if let source = mapping.importProfile?.name {
+                    Text(source).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
+                }
+            }
+            Spacer()
+            if let type = mapping.shiftType {
+                ShiftTypeChip(label: type.code ?? "?", colorHex: type.colorHex)
+            }
+        }
     }
 
     private func delete(_ targets: [ShiftType]) {

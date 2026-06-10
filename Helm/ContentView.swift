@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import Combine // NotificationCenter publisher (MemberImportVisibility)
 
 /// The app's universal shell: a `NavigationSplitView` (ADR-12) with a permanent,
 /// feature-structured sidebar (standard Mac design): Overview + Shift Types up
@@ -73,6 +74,10 @@ struct ContentView: View {
         // Keep the synchronous Google sign-in flags honest with the Keychain
         // truth (they diverge across reinstalls).
         .task { await GoogleAuthService.shared.reconcileMirror() }
+        // Siri/Shortcuts "Show my Helm calendar" (v6).
+        .onReceive(NotificationCenter.default.publisher(for: .helmOpenCalendar)) { _ in
+            selection = .calendar
+        }
         #if DEBUG
         .task { await DemoImport.runIfRequested(modelContext: modelContext) }
         #endif

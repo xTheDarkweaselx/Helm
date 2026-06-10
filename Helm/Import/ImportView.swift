@@ -27,7 +27,7 @@ final class ImportCoordinator {
     var result: RosterImportResult?
     var plan: RosterSyncEngine.Plan?
 
-    func load(from url: URL) async {
+    func load(from url: URL, modelContext: ModelContext) async {
         // A fresh file invalidates any previous plan — a failed commit followed
         // by "Try another file" must never apply the stale one.
         plan = nil
@@ -40,12 +40,15 @@ final class ImportCoordinator {
             }
             let name = url.deletingPathExtension().lastPathComponent
             phase = .reading
+            // Snapshot the merged legend ON MainActor before the detached parse
+            // (SwiftData never crosses isolation; the legend is a value).
+            let legend = LegendBuilder.legend(forSourceName: name, in: modelContext)
             // Parse off the main actor (ADR-9): heavy decode must not block the UI.
             result = try await Task.detached(priority: .userInitiated) {
                 // Sniff the bytes, not the extension: PK = ZIP/OOXML (.xlsx);
                 // D0CF11E0 = OLE2 (legacy .xls); otherwise treat as text/CSV.
                 if data.starts(with: [0x50, 0x4B]) {
-                    return try RosterImporter.importXLSX(data: data, sourceName: name)
+                    return try RosterImporter.importXLSX(data: data, sourceName: name, legend: legend)
                 } else if data.starts(with: [0xD0, 0xCF, 0x11, 0xE0]) {
                     throw RosterImportError.legacyXLS
                 } else {
@@ -56,7 +59,7 @@ final class ImportCoordinator {
                                 ?? String(data: data, encoding: .isoLatin1)
                                 ?? String(decoding: data, as: UTF8.self))
                         .replacingOccurrences(of: "\u{FEFF}", with: "")
-                    return try RosterImporter.importCSV(text: text, sourceName: name)
+                    return try RosterImporter.importCSV(text: text, sourceName: name, legend: legend)
                 }
             }.value
             phase = .loaded
@@ -70,6 +73,17 @@ final class ImportCoordinator {
     func preparePlan(modelContext: ModelContext) {
         guard let result, plan == nil else { return }
         plan = RosterSyncEngine.plan(for: result, in: modelContext)
+    }
+
+    /// THE funnel after a code is learned: rebuild the legend FROM THE STORE
+    /// (never patch in place — must match what the next real import would do),
+    /// re-resolve the retained rows, replan.
+    func remapAndReplan(modelContext: ModelContext) {
+        guard let result else { return }
+        let legend = LegendBuilder.legend(forSourceName: result.sourceName, in: modelContext)
+        self.result = RosterImporter.reresolve(result, legend: legend)
+        plan = nil
+        preparePlan(modelContext: modelContext)
     }
 
     func commit(modelContext: ModelContext) async {
@@ -144,7 +158,7 @@ struct ImportView: View {
                 if case let .success(urls) = result, let url = urls.first {
                     Task {
                         overlay = nil
-                        await coordinator.load(from: url)
+                        await coordinator.load(from: url, modelContext: modelContext)
                         coordinator.preparePlan(modelContext: modelContext)
                         if let plan = coordinator.plan {
                             overlay = PlanOverlayBuilder.build(from: plan, in: modelContext)
@@ -210,6 +224,23 @@ struct ImportView: View {
             .padding(.horizontal)
             .padding(.vertical, 8)
 
+            // v6 Import Intelligence: the always-visible health contract and,
+            // when codes are unknown, the inline teach-Helm panel.
+            ImportHealthBanner(health: importHealth(for: result)) { previewStyle = .list }
+                .padding(.horizontal)
+                .padding(.bottom, 6)
+            if !result.unmappedCodes.isEmpty {
+                UnknownCodesPanel(codes: result.unmappedCodes, result: result) { code, action in
+                    LegendBuilder.learn(code: code, action: action, sourceName: result.sourceName, in: modelContext)
+                    coordinator.remapAndReplan(modelContext: modelContext)
+                    if let plan = coordinator.plan {
+                        overlay = PlanOverlayBuilder.build(from: plan, in: modelContext)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 6)
+            }
+
             // ZStack (not if/else) so toggling styles never destroys the
             // calendar's state (selected day, visible month, event cache).
             ZStack {
@@ -257,19 +288,48 @@ struct ImportView: View {
                 } else {
                     LabeledContent("Shifts to add", value: "\(diff?.added.count ?? result.writableCount)")
                 }
-                LabeledContent("Skipped (off / unmapped)", value: "\(result.drafts.count - result.writableCount)")
                 if !result.unmappedCodes.isEmpty {
                     LabeledContent("Unknown codes", value: result.unmappedCodes.joined(separator: ", "))
                         .foregroundStyle(.orange)
                 }
             }
 
-            Section("Preview") {
-                ForEach(result.drafts) { draft in
-                    DraftRow(draft: draft)
+            ForEach(outcomeGroups(for: result), id: \.title) { group in
+                Section("\(group.title) (\(group.drafts.count))") {
+                    ForEach(group.drafts) { draft in
+                        DraftRow(draft: draft)
+                    }
                 }
             }
         }
+    }
+
+    private func outcomeGroups(for result: RosterImportResult) -> [(title: String, drafts: [DraftShift])] {
+        var groups: [(String, [DraftShift])] = []
+        let timed = result.drafts.filter { $0.outcome == .willWrite && !$0.isAllDay }
+        let allDay = result.drafts.filter { $0.outcome == .willWrite && $0.isAllDay }
+        let off = result.drafts.filter { $0.outcome == .skippedOff || $0.outcome == .skippedTentative }
+        let byRule = result.drafts.filter { $0.outcome == .skippedByRule }
+        let unknown = result.drafts.filter { $0.outcome == .skippedUnmapped }
+        if !timed.isEmpty { groups.append(("Shifts", timed)) }
+        if !allDay.isEmpty { groups.append(("All-day", allDay)) }
+        if !off.isEmpty { groups.append(("Off days", off)) }
+        if !byRule.isEmpty { groups.append(("Ignored by your rules", byRule)) }
+        if !unknown.isEmpty { groups.append(("Unknown codes", unknown)) }
+        return groups
+    }
+
+    private func importHealth(for result: RosterImportResult) -> ImportHealth {
+        var written = 0, allDay = 0, off = 0, byRule = 0, unknown = 0
+        for draft in result.drafts {
+            switch draft.outcome {
+            case .willWrite: if draft.isAllDay { allDay += 1 } else { written += 1 }
+            case .skippedOff, .skippedTentative: off += 1
+            case .skippedByRule: byRule += 1
+            case .skippedUnmapped: unknown += 1
+            }
+        }
+        return ImportHealth(written: written, allDay: allDay, off: off, byRule: byRule, unknown: unknown, unknownCodes: result.unmappedCodes)
     }
 
     /// CalendarDestinationSetting.current, derived from OBSERVED storage so
@@ -389,12 +449,14 @@ private struct DraftRow: View {
     private var trailing: String {
         switch draft.outcome {
         case .willWrite:
+            if draft.isAllDay { return "All-day" }
             if let s = draft.startMinuteOfDay, let e = draft.endMinuteOfDay {
                 return "\(ImportCoordinator.hhmm(s))–\(ImportCoordinator.hhmm(e))"
             }
             return "✓"
         case .skippedOff: return "Off"
         case .skippedTentative: return "TBC"
+        case .skippedByRule: return "Ignored (your rule)"
         case .skippedUnmapped: return "Unknown: \(draft.code)"
         }
     }
@@ -404,6 +466,7 @@ private struct DraftRow: View {
         case .willWrite: .secondary
         case .skippedOff: .secondary
         case .skippedTentative: .orange
+        case .skippedByRule: .secondary
         case .skippedUnmapped: .red
         }
     }

@@ -51,6 +51,7 @@ struct DayDetailView: View {
                     }
                 }
                 .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
         }
     }

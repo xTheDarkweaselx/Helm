@@ -38,6 +38,7 @@ struct SettingsForm: View {
     @AppStorage(GoogleConfig.defaultsKey) private var googleClientID: String = ""
     @AppStorage(GoogleConfig.signedInDefaultsKey) private var googleSignedIn: Bool = false
     @AppStorage(GoogleConfig.accountEmailDefaultsKey) private var googleEmail: String = ""
+    @AppStorage("hourlyRate") private var hourlyRate: Double = 0
     @Query private var importProfiles: [ImportProfile]
 
     @State private var isSigningIn = false
@@ -91,6 +92,23 @@ struct SettingsForm: View {
                 } else {
                     Text("Google Calendar appears here once it's set up and you're signed in below.")
                 }
+            }
+
+            Section {
+                HStack {
+                    Text("Hourly rate")
+                    Spacer()
+                    TextField("0", value: $hourlyRate, format: .number.precision(.fractionLength(0...2)))
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 100)
+                        #if os(iOS)
+                        .keyboardType(.decimalPad)
+                        #endif
+                }
+            } header: {
+                Text("Pay")
+            } footer: {
+                Text("Optional. Set a flat hourly rate and Overview shows an estimated-pay card (hours × rate, before tax). 0 hides it.")
             }
 
             googleSection

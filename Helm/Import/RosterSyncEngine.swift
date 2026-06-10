@@ -77,13 +77,15 @@ struct RosterSyncEngine {
     static func plan(for result: RosterImportResult, in context: ModelContext) -> Plan {
         let fingerprint = fingerprint(for: result.sourceName)
         let profile = fetchProfile(fingerprint: fingerprint, in: context)
-        let existing = profile.flatMap { fetchRoster(forProfileID: $0.id, in: context) }
-            .map(existingMap(for:)) ?? [:]
+        // v6: code-learning creates the ImportProfile EAGERLY (before any
+        // commit), so "re-import" must mean a ROSTER exists, not a profile.
+        let roster = profile.flatMap { fetchRoster(forProfileID: $0.id, in: context) }
+        let existing = roster.map(existingMap(for:)) ?? [:]
         let incoming = incomingMap(for: result)
         return Plan(
             result: result,
             diff: RosterDiffer.diff(existing: existing, incoming: incoming),
-            isReimport: profile != nil,
+            isReimport: roster != nil,
             existingProfileID: profile?.id
         )
     }

@@ -85,6 +85,11 @@ final class ShiftCodeMapping {
     var rawCode: String?
     var shiftType: ShiftType?
     var confidenceLastConfirmed: Double?
+    /// v6: what this code MEANS — "timed" (via shiftType) | "allDay" | "ignore".
+    /// nil reads as timed. Optional for CloudKit.
+    var actionRaw: String?
+    /// Recency stamp: deterministic dedupe when CloudKit materializes duplicates.
+    var lastUsedAt: Date?
 
     var importProfile: ImportProfile?
 

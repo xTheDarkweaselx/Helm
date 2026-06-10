@@ -14,10 +14,14 @@ import Security
 
 @main
 struct HelmApp: App {
+    /// One container for the app AND the App Intents (Siri/Shortcuts can run
+    /// without any scene — they need the same store, not a second stack).
+    static let sharedModelContainer: ModelContainer = makeModelContainer()
+
     let modelContainer: ModelContainer
 
     init() {
-        self.modelContainer = HelmApp.makeModelContainer()
+        self.modelContainer = HelmApp.sharedModelContainer
     }
 
     var body: some Scene {

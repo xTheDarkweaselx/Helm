@@ -134,6 +134,19 @@ nonisolated enum CalendarMode {
     }
 }
 
+/// Month grid | hour-axis week | hour-axis day (v6).
+nonisolated enum CalendarDisplayMode: String, CaseIterable, Sendable {
+    case month, week, day
+
+    var label: String {
+        switch self {
+        case .month: "Month"
+        case .week: "Week"
+        case .day: "Day"
+        }
+    }
+}
+
 nonisolated enum EventAccessState: Sendable {
     case notDetermined
     case fullAccess
