@@ -58,13 +58,14 @@ struct DayDetailView: View {
 }
 
 private struct ShiftAgendaRow: View {
+    @Environment(\.helmAccent) private var accent
     let shift: ShiftItem
     var conflictTitles: [String] = []
 
     var body: some View {
         HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: 2)
-                .fill(Color(hex: shift.colorHex) ?? .accentColor)
+                .fill(Color(hex: shift.colorHex) ?? accent)
                 .frame(width: 4)
             VStack(alignment: .leading, spacing: 2) {
                 Text(shift.title).font(.subheadline.weight(.semibold))
@@ -130,6 +131,7 @@ private struct EventAgendaRow: View {
 }
 
 private struct PreviewAgendaRow: View {
+    @Environment(\.helmAccent) private var accent
     let preview: PreviewItem
     var conflictTitles: [String] = []
 
@@ -144,7 +146,7 @@ private struct PreviewAgendaRow: View {
     var body: some View {
         HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: 2)
-                .fill(Color(hex: preview.colorHex) ?? .accentColor)
+                .fill(Color(hex: preview.colorHex) ?? accent)
                 .frame(width: 4)
             VStack(alignment: .leading, spacing: 2) {
                 Text(preview.title)

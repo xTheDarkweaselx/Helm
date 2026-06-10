@@ -75,6 +75,7 @@ struct OverviewView: View {
     @Query(sort: \Schedule.createdAt, order: .reverse) private var schedules: [Schedule]
     @Query private var instances: [ShiftInstance]
     @AppStorage("hourlyRate") private var hourlyRate: Double = 0
+    @Environment(\.helmAccent) private var accent
 
     /// Open the import flow / create a schedule (owned by ContentView).
     let importRoster: () -> Void
@@ -164,7 +165,7 @@ struct OverviewView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .glassCard(cornerRadius: 14)
         }
     }
 
@@ -204,7 +205,7 @@ struct OverviewView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .glassCard(cornerRadius: 12)
     }
 
     // MARK: Weekly hours chart
@@ -217,7 +218,7 @@ struct OverviewView: View {
                     x: .value("Week", bucket.weekStart.startOfDay(in: calendar), unit: .weekOfYear),
                     y: .value("Hours", bucket.hours)
                 )
-                .foregroundStyle(bucket.weekStart == InsightsMath.weekStart(of: today, calendar: calendar) ? Color.accentColor : Color.accentColor.opacity(0.45))
+                .foregroundStyle(bucket.weekStart == InsightsMath.weekStart(of: today, calendar: calendar) ? accent : accent.opacity(0.45))
                 .cornerRadius(3)
             }
             .chartXAxis {
@@ -230,7 +231,7 @@ struct OverviewView: View {
             .accessibilityLabel(weeklyAXSummary(weekly))
         }
         .padding(14)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .glassCard(cornerRadius: 14)
     }
 
     private func weeklyAXSummary(_ weekly: [InsightsMath.WeekBucket]) -> String {
@@ -248,7 +249,7 @@ struct OverviewView: View {
             ForEach(mix.prefix(5), id: \.key) { slice in
                 HStack(spacing: 8) {
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(Color(hex: slice.colorHex) ?? .accentColor)
+                        .fill(Color(hex: slice.colorHex) ?? accent)
                         .frame(width: 10, height: 10)
                     Text(slice.label).font(.caption)
                     Spacer()
@@ -259,7 +260,7 @@ struct OverviewView: View {
             }
         }
         .padding(14)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .glassCard(cornerRadius: 14)
     }
 
     // MARK: Pay
@@ -274,7 +275,7 @@ struct OverviewView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .glassCard(cornerRadius: 14)
     }
 
     private var quickActions: some View {

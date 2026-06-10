@@ -11,6 +11,7 @@
 
 import Foundation
 import SwiftData
+import HelmDomain // ShiftTags (the v7 tag accessors on ShiftType)
 
 // MARK: - UserProfile
 
@@ -36,6 +37,17 @@ final class UserProfile {
 
     @Relationship(deleteRule: .cascade, inverse: \Schedule.user)
     var schedules: [Schedule]?
+
+    // v7 planning. CloudKit needs every relationship to carry an explicit
+    // inverse — a missing one silently drops the WHOLE store to local-only.
+    @Relationship(deleteRule: .cascade, inverse: \TimeOff.user)
+    var timeOffs: [TimeOff]?
+
+    @Relationship(deleteRule: .cascade, inverse: \AvailabilityRule.user)
+    var availabilityRules: [AvailabilityRule]?
+
+    @Relationship(deleteRule: .cascade, inverse: \AvailabilityWindow.user)
+    var availabilityWindows: [AvailabilityWindow]?
 
     init(id: String = UUID().uuidString, displayName: String? = nil, nameAliases: [String]? = nil) {
         self.id = id
@@ -75,6 +87,17 @@ final class ShiftType {
     /// Minutes-before-start for default reminders, e.g. [60] or [720] (night-before).
     var defaultAlarmOffsets: [Int]?
 
+    // v7 categorisation. CSV-backed (CloudKit-safe), parsed by HelmDomain.ShiftTags.
+    /// Comma-separated tag names, e.g. "Night,Senior".
+    var tagsRaw: String?
+    /// Optional "name|RRGGBB" colour overrides for tags.
+    var tagColorsRaw: String?
+    /// Pinned to the top of the library + picker.
+    var isFavorite: Bool = false
+    /// User ordering in the library / picker (CloudKit-safe alternative to an
+    /// ordered relationship).
+    var sortIndex: Int = 0
+
     @Relationship(deleteRule: .nullify, inverse: \ShiftInstance.shiftType)
     var instances: [ShiftInstance]?
 
@@ -94,6 +117,36 @@ final class ShiftType {
     var workKind: WorkKind {
         get { WorkKind(rawValue: workKindRaw) ?? .worked }
         set { workKindRaw = newValue.rawValue }
+    }
+
+    /// The shift type's tags (parsed/encoded through HelmDomain.ShiftTags so the
+    /// editor and the readers share one rule). Setting also prunes colours for
+    /// any removed tag.
+    var tags: [String] {
+        get { ShiftTags.parse(tagsRaw) }
+        set {
+            tagsRaw = ShiftTags.encode(newValue)
+            let colors = ShiftTags.parseColors(tagColorsRaw)
+            let encoded = ShiftTags.encodeColors(colors, among: ShiftTags.parse(tagsRaw))
+            tagColorsRaw = encoded.isEmpty ? nil : encoded
+        }
+    }
+
+    /// Resolved display colour for one of this type's tags (custom or palette).
+    func colorHex(forTag tag: String) -> String {
+        ShiftTags.colorHex(for: tag, customColors: ShiftTags.parseColors(tagColorsRaw))
+    }
+
+    /// Set or clear a custom colour for a tag (nil clears → falls back to palette).
+    func setTagColor(_ hex: String?, forTag tag: String) {
+        var colors = ShiftTags.parseColors(tagColorsRaw)
+        if let hex, let norm = ShiftTags.normalizedHex(hex) {
+            colors[tag.lowercased()] = norm
+        } else {
+            colors[tag.lowercased()] = nil
+        }
+        let encoded = ShiftTags.encodeColors(colors, among: tags)
+        tagColorsRaw = encoded.isEmpty ? nil : encoded
     }
 
     init(

@@ -20,6 +20,11 @@ struct HelmApp: App {
 
     let modelContainer: ModelContainer
 
+    /// One ThemeManager for the whole app (both scenes share this instance, so
+    /// changing the theme in the macOS Settings window updates the main window
+    /// live). Persists its selection to UserDefaults itself.
+    @State private var theme = ThemeManager()
+
     init() {
         self.modelContainer = HelmApp.sharedModelContainer
     }
@@ -28,9 +33,11 @@ struct HelmApp: App {
         WindowGroup {
             ContentView()
             #if os(macOS)
-                // Liquid Glass: a light, translucent main window.
+                // Liquid Glass: a light, translucent main window, tinted by the
+                // active theme's glass tint when it sets one.
                 .containerBackground(.ultraThinMaterial, for: .window)
             #endif
+                .helmThemed(theme)
         }
         .modelContainer(modelContainer)
         #if os(macOS)
@@ -39,10 +46,11 @@ struct HelmApp: App {
 
         #if os(macOS)
         // Standard Mac Settings window (⌘,) — same form as the sidebar's
-        // Settings destination, minus the navigation chrome.
+        // Settings destination, minus the navigation chrome. Same ThemeManager.
         Settings {
             SettingsForm()
                 .frame(minWidth: 520, idealWidth: 560, minHeight: 480)
+                .helmThemed(theme)
         }
         .modelContainer(modelContainer)
         #endif
@@ -75,6 +83,10 @@ extension HelmApp {
             ShiftCodeMapping.self,
             ImportRun.self,
             CalendarSyncRecord.self,
+            // v7 planning (appended; add-only schema evolution).
+            TimeOff.self,
+            AvailabilityRule.self,
+            AvailabilityWindow.self,
         ])
     }
 

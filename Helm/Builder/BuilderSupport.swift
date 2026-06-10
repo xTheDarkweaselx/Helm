@@ -102,6 +102,7 @@ extension Color {
 
 /// A small colored chip for a shift type / slot.
 struct ShiftTypeChip: View {
+    @Environment(\.helmAccent) private var accent
     let label: String
     var colorHex: String?
     var systemImage: String?
@@ -116,6 +117,6 @@ struct ShiftTypeChip: View {
         .font(.caption.weight(.medium))
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background((Color(hex: colorHex) ?? .accentColor).opacity(0.22), in: Capsule())
+        .background((Color(hex: colorHex) ?? accent).opacity(0.22), in: Capsule())
     }
 }

@@ -121,6 +121,8 @@ struct SettingsForm: View {
                 Text("Optional. Set a flat hourly rate and Overview shows an estimated-pay card (hours × rate, before tax). 0 hides it.")
             }
 
+            ThemePickerSection()
+
             googleSection
 
             cleanupSection

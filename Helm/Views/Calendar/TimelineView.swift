@@ -39,6 +39,7 @@ nonisolated struct DayBlocks {
 }
 
 struct TimelinePane: View {
+    @Environment(\.helmAccent) private var accent
     let days: [DayKey]                       // 1 (day mode) or 7 (week mode)
     let today: DayKey
     let selectedDay: DayKey
@@ -95,13 +96,13 @@ struct TimelinePane: View {
                             .monospacedDigit()
                             .foregroundStyle(day == today ? Color.white : .primary)
                             .frame(width: 24, height: 24)
-                            .background(Circle().fill(day == today ? Color.accentColor : .clear))
+                            .background(Circle().fill(day == today ? accent : .clear))
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 2)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
-                            .fill(day == selectedDay ? Color.accentColor.opacity(0.1) : .clear)
+                            .fill(day == selectedDay ? accent.opacity(0.1) : .clear)
                     )
                 }
                 .buttonStyle(.plain)
@@ -141,7 +142,7 @@ struct TimelinePane: View {
                         .background(
                             (Color(hex: chip.colorHex)
                                 ?? chip.eventColor.map { Color(.sRGB, red: $0.r, green: $0.g, blue: $0.b, opacity: $0.a) }
-                                ?? (chip.isEvent ? Color.secondary : .accentColor)).opacity(0.2),
+                                ?? (chip.isEvent ? Color.secondary : accent)).opacity(0.2),
                             in: Capsule()
                         )
                     }
@@ -185,6 +186,7 @@ struct TimelinePane: View {
 }
 
 struct TimelineDayColumn: View {
+    @Environment(\.helmAccent) private var accent
     let day: DayKey
     let isToday: Bool
     let hourHeight: Double
@@ -241,7 +243,7 @@ struct TimelineDayColumn: View {
             }
         }
         .frame(height: height)
-        .background(isToday ? Color.accentColor.opacity(0.04) : .clear)
+        .background(isToday ? accent.opacity(0.04) : .clear)
         .contentShape(Rectangle())
     }
 
@@ -261,6 +263,7 @@ struct TimelineDayColumn: View {
 }
 
 private struct TimelineBlockView: View {
+    @Environment(\.helmAccent) private var accent
     let block: TimelineBlock
     let placed: TimelineLayoutEngine.Placed
 
@@ -276,7 +279,7 @@ private struct TimelineBlockView: View {
         if let rgba = block.eventColor {
             return Color(.sRGB, red: rgba.r, green: rgba.g, blue: rgba.b, opacity: rgba.a)
         }
-        return block.isEvent ? .secondary : .accentColor
+        return block.isEvent ? .secondary : accent
     }
 
     var body: some View {

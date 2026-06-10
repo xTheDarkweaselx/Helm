@@ -12,6 +12,7 @@ import SwiftData
 import HelmDomain
 
 struct ScheduleEditorView: View {
+    @Environment(\.helmAccent) private var accent
     @Environment(\.modelContext) private var context
     @Bindable var schedule: Schedule
     @State private var isPreviewing = false
@@ -120,7 +121,7 @@ struct ScheduleEditorView: View {
                     } else if let t = slot.shiftType {
                         Text(t.code ?? "?").font(.caption2)
                             .frame(width: 22, height: 18)
-                            .background((Color(hex: t.colorHex) ?? .accentColor).opacity(0.25), in: RoundedRectangle(cornerRadius: 4))
+                            .background((Color(hex: t.colorHex) ?? accent).opacity(0.25), in: RoundedRectangle(cornerRadius: 4))
                     }
                 }
             }

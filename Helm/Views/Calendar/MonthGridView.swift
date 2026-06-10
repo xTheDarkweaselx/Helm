@@ -49,6 +49,7 @@ struct MonthGridView: View {
 }
 
 struct DayCellView: View {
+    @Environment(\.helmAccent) private var accent
     let cell: MonthGrid.Cell
     let summary: DayCellSummary
     let isSelected: Bool
@@ -72,11 +73,11 @@ struct DayCellView: View {
         .clipped() // worst-case chip overflow must never paint into the next row
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Color.accentColor.opacity(0.12) : .clear)
+                .fill(isSelected ? accent.opacity(0.12) : .clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 1.5)
+                .strokeBorder(isSelected ? accent : .clear, lineWidth: 1.5)
         )
         .animation(.spring(duration: 0.18), value: isSelected)
         .contentShape(Rectangle())
@@ -93,7 +94,7 @@ struct DayCellView: View {
                 .monospacedDigit()
                 .foregroundStyle(isToday ? Color.white : .primary)
                 .frame(width: 26, height: 26)
-                .background(Circle().fill(isToday ? Color.accentColor : .clear))
+                .background(Circle().fill(isToday ? accent : .clear))
             if summary.hasConflict {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 8))
@@ -115,11 +116,11 @@ struct DayCellView: View {
 
         VStack(spacing: 2) {
             ForEach(shiftChips) { shift in
-                chip(text: shift.title, color: Color(hex: shift.colorHex) ?? .accentColor, status: nil)
+                chip(text: shift.title, color: Color(hex: shift.colorHex) ?? accent, status: nil)
             }
             ForEach(previewChips) { preview in
                 chip(text: preview.title,
-                     color: Color(hex: preview.colorHex) ?? .accentColor,
+                     color: Color(hex: preview.colorHex) ?? accent,
                      status: preview.status)
             }
             if overflow > 0 {
