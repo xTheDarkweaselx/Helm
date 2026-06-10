@@ -23,6 +23,20 @@ final class CalendarViewModel {
     /// Toggleable calendar sources for the filter menu (v4).
     private(set) var availableCalendars: [CalendarChoice] = []
     var hiddenCalendarIDs: Set<String> = CalendarSourceFilter.hiddenIDs
+
+    static let scopeKey = "calendarSourceScope"
+    /// The Apple/Google/All view switcher (v4.1), persisted. Filtering happens
+    /// at display time, so switching is instant — no refetch.
+    var scope: CalendarScope = CalendarScope(
+        rawValue: UserDefaults.standard.string(forKey: CalendarViewModel.scopeKey) ?? ""
+    ) ?? .all {
+        didSet { UserDefaults.standard.set(scope.rawValue, forKey: Self.scopeKey) }
+    }
+
+    /// Any Google-account calendars present in the system Calendar?
+    var hasGoogleSources: Bool {
+        availableCalendars.contains(where: \.isGoogleSource)
+    }
     /// Bumped by EKEventStoreChanged so .task(id:) reloads the same month.
     private(set) var reloadToken = 0
 

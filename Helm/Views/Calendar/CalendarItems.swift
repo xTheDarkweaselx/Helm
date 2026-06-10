@@ -25,6 +25,27 @@ nonisolated struct ShiftItem: Identifiable, Hashable, Sendable {
     let paidHours: Double?
 }
 
+/// Which provider's events the Calendar tab shows (v4.1: the view switcher).
+nonisolated enum CalendarScope: String, CaseIterable, Sendable {
+    case all, apple, google
+
+    var label: String {
+        switch self {
+        case .all: "All"
+        case .apple: "Apple"
+        case .google: "Google"
+        }
+    }
+
+    func includes(isGoogleSource: Bool) -> Bool {
+        switch self {
+        case .all: true
+        case .apple: !isGoogleSource
+        case .google: isGoogleSource
+        }
+    }
+}
+
 /// Someone-else's event (any non-Helm calendar), flattened for display.
 nonisolated struct EventItem: Identifiable, Hashable, Sendable {
     struct RGBA: Hashable, Sendable {
@@ -39,6 +60,8 @@ nonisolated struct EventItem: Identifiable, Hashable, Sendable {
     let isAllDay: Bool
     let calendarTitle: String
     let color: RGBA?
+    /// From a Google account added to the system Calendar (scope switching).
+    let isGoogleSource: Bool
 }
 
 /// A would-be shift from a pending import/schedule plan.

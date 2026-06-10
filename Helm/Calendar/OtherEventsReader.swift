@@ -39,6 +39,16 @@ nonisolated struct CalendarChoice: Identifiable, Hashable, Sendable {
     let title: String
     let sourceTitle: String // account: "iCloud", "Google", "On My Mac", …
     let color: EventItem.RGBA?
+    let isGoogleSource: Bool
+}
+
+/// Account classification for the Apple/Google view switcher: Google accounts
+/// added via Internet Accounts surface as a CalDAV source titled "Google"
+/// (or "Gmail" on some configurations).
+private nonisolated func isGoogleSource(_ source: EKSource?) -> Bool {
+    guard let title = source?.title else { return false }
+    return title.localizedCaseInsensitiveContains("google")
+        || title.localizedCaseInsensitiveContains("gmail")
 }
 
 @MainActor
@@ -104,7 +114,8 @@ final class OtherEventsReader {
                     id: cal.calendarIdentifier,
                     title: cal.title,
                     sourceTitle: cal.source?.title ?? "Other",
-                    color: rgba(from: cal.cgColor)
+                    color: rgba(from: cal.cgColor),
+                    isGoogleSource: isGoogleSource(cal.source)
                 )
             }
             .sorted { ($0.sourceTitle, $0.title) < ($1.sourceTitle, $1.title) }
@@ -140,7 +151,8 @@ final class OtherEventsReader {
                 end: end,
                 isAllDay: event.isAllDay,
                 calendarTitle: event.calendar?.title ?? "",
-                color: color
+                color: color,
+                isGoogleSource: isGoogleSource(event.calendar?.source)
             )
         }
     }

@@ -121,6 +121,7 @@ struct CalendarView: View {
             // No hours caption in preview mode: suppressed/incoming shifts make
             // the figure misleading there, and that header is about the diff.
             header(monthHours: mode.overlay == nil ? monthHours(shiftBuckets: shiftBuckets) : 0)
+            scopeSwitcher
             if mode.overlay != nil { legend }
             weekdayHeader
             // Size cells AND pages from the actual pane geometry: page width
@@ -187,6 +188,35 @@ struct CalendarView: View {
         .buttonStyle(.borderless)
     }
 
+    /// v4.1: the Apple/Google view switcher. Shown once Google is relevant
+    /// (a Google account in the system Calendar, or Helm signed into Google).
+    @ViewBuilder
+    private var scopeSwitcher: some View {
+        if model.hasGoogleSources || GoogleConfig.isSignedIn {
+            HStack {
+                Picker("Show events from", selection: Binding(
+                    get: { model.scope },
+                    set: { model.scope = $0 }
+                )) {
+                    ForEach(CalendarScope.allCases, id: \.self) { scope in
+                        Text(scope.label).tag(scope)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 260)
+                Spacer()
+            }
+            if model.scope == .google && !model.hasGoogleSources {
+                Label("Your shifts are written to Google's “Helm Shifts” calendar. To also see your other Google events here, add the Google account to the system Calendar (Internet Accounts).",
+                      systemImage: "info.circle")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
     /// v4: choose which system calendars' events appear (Apple/iCloud, Google
     /// accounts added to the system, …) — grouped by account, Apple-style.
     @ViewBuilder
@@ -232,6 +262,13 @@ struct CalendarView: View {
         return total
     }
 
+    /// The day's events under the current Apple/Google scope — every consumer
+    /// (agenda, cell dots, conflicts) goes through this, so the switcher
+    /// governs the whole view consistently.
+    private func scopedEvents(on day: DayKey) -> [EventItem] {
+        (model.eventsByDay[day] ?? []).filter { model.scope.includes(isGoogleSource: $0.isGoogleSource) }
+    }
+
     /// Timed events from EVERY display day a span touches — an overnight
     /// shift's post-midnight tail must see the NEXT day's events too (shifts
     /// bucket to their start day; events bucket to every day they span).
@@ -240,7 +277,7 @@ struct CalendarView: View {
         var seen = Set<String>()
         var out: [EventItem] = []
         for day in DayBucketer.dayKeys(start: start, end: end, in: cal) {
-            for event in model.eventsByDay[day] ?? [] where !event.isAllDay && seen.insert(event.id).inserted {
+            for event in scopedEvents(on: day) where !event.isAllDay && seen.insert(event.id).inserted {
                 out.append(event)
             }
         }
@@ -397,17 +434,18 @@ struct CalendarView: View {
     private func items(for day: DayKey, shiftBuckets: [DayKey: [ShiftItem]]) -> [CalendarDayItem] {
         var items: [CalendarDayItem] = []
         items.append(contentsOf: (shiftBuckets[day] ?? []).map(CalendarDayItem.shift))
-        items.append(contentsOf: (model.eventsByDay[day] ?? []).map(CalendarDayItem.event))
+        items.append(contentsOf: scopedEvents(on: day).map(CalendarDayItem.event))
         items.append(contentsOf: (mode.overlay?.itemsByDay[day] ?? []).map(CalendarDayItem.preview))
         return items.sorted { $0.sortKey < $1.sortKey }
     }
 
     private func cellSummary(for day: DayKey, shiftBuckets: [DayKey: [ShiftItem]]) -> DayCellSummary {
-        DayCellSummary(
+        let events = scopedEvents(on: day)
+        return DayCellSummary(
             shifts: shiftBuckets[day] ?? [],
             previews: mode.overlay?.itemsByDay[day] ?? [],
-            eventCount: model.eventsByDay[day]?.count ?? 0,
-            eventColors: (model.eventsByDay[day] ?? []).prefix(4).map(\.color),
+            eventCount: events.count,
+            eventColors: events.prefix(4).map(\.color),
             hasConflict: dayHasConflict(day, shiftBuckets: shiftBuckets)
         )
     }
