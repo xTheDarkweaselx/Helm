@@ -367,9 +367,12 @@ struct RosterSyncEngine {
     }
 
     private static func shiftType(for draft: DraftShift, cache: inout [String: ShiftType], context: ModelContext) -> ShiftType {
-        let key = draft.code.isEmpty
-            ? "inline:\(draft.startMinuteOfDay ?? 0)-\(draft.endMinuteOfDay ?? 0)"
-            : draft.code
+        // shiftTypeID first: two built types sharing a code must each resolve
+        // themselves (a code-only key would collapse them to one).
+        let key = draft.shiftTypeID
+            ?? (draft.code.isEmpty
+                ? "inline:\(draft.startMinuteOfDay ?? 0)-\(draft.endMinuteOfDay ?? 0)"
+                : draft.code)
         if let cached = cache[key] { return cached }
         // Rota builder: reuse the exact built ShiftType (rich color/break/location),
         // not a synthesized bare one.

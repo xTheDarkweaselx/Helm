@@ -28,6 +28,9 @@ final class ImportCoordinator {
     var plan: RosterSyncEngine.Plan?
 
     func load(from url: URL) async {
+        // A fresh file invalidates any previous plan — a failed commit followed
+        // by "Try another file" must never apply the stale one.
+        plan = nil
         do {
             let data: Data
             do {
@@ -101,6 +104,8 @@ struct ImportView: View {
     @State private var coordinator = ImportCoordinator()
     @State private var isFileImporterPresented = false
     @State private var previewStyle: PreviewStyle = .calendar
+    /// Built ONCE per plan (fetches ShiftType colors); cleared on new loads.
+    @State private var overlay: PreviewOverlay?
 
     enum PreviewStyle: Hashable {
         case calendar, list
@@ -130,8 +135,12 @@ struct ImportView: View {
                 ) { result in
                     if case let .success(urls) = result, let url = urls.first {
                         Task {
+                            overlay = nil
                             await coordinator.load(from: url)
                             coordinator.preparePlan(modelContext: modelContext)
+                            if let plan = coordinator.plan {
+                                overlay = PlanOverlayBuilder.build(from: plan, in: modelContext)
+                            }
                         }
                     } else if case let .failure(error) = result {
                         coordinator.phase = .failed(error.localizedDescription)
@@ -185,17 +194,23 @@ struct ImportView: View {
             .padding(.horizontal)
             .padding(.vertical, 8)
 
-            switch previewStyle {
-            case .calendar:
-                // The headline feature: the pending diff rendered against the
-                // user's real calendar (other events included).
-                if let plan = coordinator.plan {
-                    CalendarView(mode: .preview(PlanOverlayBuilder.build(from: plan, in: modelContext)))
-                } else {
-                    ProgressView()
+            // ZStack (not if/else) so toggling styles never destroys the
+            // calendar's state (selected day, visible month, event cache).
+            ZStack {
+                Group {
+                    if let overlay {
+                        // The headline feature: the pending diff rendered against
+                        // the user's real calendar (other events included).
+                        CalendarView(mode: .preview(overlay))
+                    } else {
+                        ProgressView()
+                    }
                 }
-            case .list:
+                .opacity(previewStyle == .calendar ? 1 : 0)
+                .allowsHitTesting(previewStyle == .calendar)
                 listPreview(result, diff: diff, isReimport: isReimport)
+                    .opacity(previewStyle == .list ? 1 : 0)
+                    .allowsHitTesting(previewStyle == .list)
             }
         }
         .safeAreaInset(edge: .bottom) {
@@ -272,6 +287,8 @@ struct ImportView: View {
         } actions: {
             Button("Try another file") {
                 coordinator.result = nil
+                coordinator.plan = nil
+                overlay = nil
                 coordinator.phase = .idle
                 isFileImporterPresented = true
             }

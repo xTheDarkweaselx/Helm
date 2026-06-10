@@ -28,10 +28,23 @@ public enum DayBucketer {
     ) -> (day: DayKey, endsOnLaterDay: Bool) {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = timeZone
+        return shiftDay(localDate: localDate, start: start, end: end, calendar: cal)
+    }
+
+    /// Calendar-taking overload so hot callers can cache one Calendar per zone.
+    public static func shiftDay(
+        localDate: Date,
+        start: Date?,
+        end: Date?,
+        calendar cal: Calendar
+    ) -> (day: DayKey, endsOnLaterDay: Bool) {
         let day = DayKey(containing: localDate, in: cal)
         var endsLater = false
         if let start, let end, end > start {
-            endsLater = DayKey(containing: end, in: cal) > DayKey(containing: start, in: cal)
+            // Same exclusive-midnight rule as dayKeys: a shift ending at exactly
+            // 00:00 is NOT overnight (no spurious "+1" on 18:00–00:00 lates).
+            let effectiveEnd = end == cal.startOfDay(for: end) ? end.addingTimeInterval(-1) : end
+            endsLater = DayKey(containing: effectiveEnd, in: cal) > DayKey(containing: start, in: cal)
         }
         return (day, endsLater)
     }
@@ -45,19 +58,26 @@ public enum DayBucketer {
         clampedTo window: ClosedRange<DayKey>? = nil
     ) -> [DayKey] {
         guard end >= start else { return [] }
-        let firstDay = DayKey(containing: start, in: calendar)
+        var firstDay = DayKey(containing: start, in: calendar)
         // End-exclusive: an end at EXACT midnight belongs to the previous day.
         let effectiveEnd = end > start && end == calendar.startOfDay(for: end) ? end.addingTimeInterval(-1) : end
-        let lastDay = DayKey(containing: max(start, effectiveEnd), in: calendar)
+        var lastDay = DayKey(containing: max(start, effectiveEnd), in: calendar)
+
+        // Clamp BEFORE walking: an event that started months before the window
+        // must not burn the guardrail on invisible days (it would vanish from
+        // months it plainly overlaps).
+        if let window {
+            firstDay = max(firstDay, window.lowerBound)
+            lastDay = min(lastDay, window.upperBound)
+            guard firstDay <= lastDay else { return [] }
+        }
 
         var keys: [DayKey] = []
         var day = firstDay
-        // A span can't meaningfully exceed the grid; hard cap guards bad data.
+        // Above any real window span (~93 days for month±1); guards corrupt data.
         var guardrail = 0
-        while day <= lastDay, guardrail < 62 {
-            if window == nil || window!.contains(day) {
-                keys.append(day)
-            }
+        while day <= lastDay, guardrail < 130 {
+            keys.append(day)
             day = day.advanced(by: 1, in: calendar)
             guardrail += 1
         }

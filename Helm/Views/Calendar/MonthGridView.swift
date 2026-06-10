@@ -22,6 +22,7 @@ struct MonthGridView: View {
     @Binding var selectedDay: DayKey
     let today: DayKey
     let compact: Bool
+    let cellHeight: CGFloat
     let dayContent: (DayKey) -> DayCellSummary
 
     var body: some View {
@@ -34,7 +35,8 @@ struct MonthGridView: View {
                             summary: dayContent(cell.day),
                             isSelected: cell.day == selectedDay,
                             isToday: cell.day == today,
-                            compact: compact
+                            compact: compact,
+                            cellHeight: cellHeight
                         )
                         .onTapGesture { selectedDay = cell.day }
                     }
@@ -50,6 +52,7 @@ struct DayCellView: View {
     let isSelected: Bool
     let isToday: Bool
     let compact: Bool
+    let cellHeight: CGFloat
 
     private var maxChips: Int { compact ? 1 : 2 }
 
@@ -62,8 +65,9 @@ struct DayCellView: View {
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 2)
-        .frame(maxWidth: .infinity)
-        .frame(height: compact ? 64 : 96)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .frame(height: cellHeight)
+        .clipped() // worst-case chip overflow must never paint into the next row
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(isSelected ? Color.accentColor.opacity(0.12) : .clear)
@@ -92,7 +96,10 @@ struct DayCellView: View {
     private var chips: some View {
         let shiftChips = summary.shifts.prefix(maxChips)
         let remainingSlots = maxChips - shiftChips.count
-        let previewChips = summary.previews.prefix(max(0, remainingSlots + (summary.previews.isEmpty ? 0 : 1)))
+        // Regular cells grant previews one bonus slot (the diff is the point of
+        // preview mode); compact cells have no headroom for it.
+        let bonus = (!compact && !summary.previews.isEmpty) ? 1 : 0
+        let previewChips = summary.previews.prefix(max(0, remainingSlots + bonus))
         let overflow = (summary.shifts.count - shiftChips.count)
             + (summary.previews.count - previewChips.count)
 

@@ -28,8 +28,17 @@ final class CalendarViewModel {
     /// nonisolated deinit; NotificationCenter.removeObserver is thread-safe.
     private nonisolated(unsafe) var storeObserver: NSObjectProtocol?
 
-    /// The display calendar (current locale/zone), captured per use.
-    nonisolated static var displayCalendar: Calendar { Calendar.current }
+    /// The display calendar: GREGORIAN pinned (DayKey/ShiftKey civil days are
+    /// Gregorian; a Japanese/Buddhist system calendar would mis-bucket every
+    /// chip), carrying the user's locale, zone and week start.
+    nonisolated static var displayCalendar: Calendar {
+        let system = Calendar.current
+        var cal = Calendar(identifier: .gregorian)
+        cal.locale = Locale.current
+        cal.timeZone = system.timeZone
+        cal.firstWeekday = system.firstWeekday
+        return cal
+    }
 
     init(initialDay: DayKey? = nil) {
         let cal = Self.displayCalendar

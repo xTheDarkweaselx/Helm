@@ -214,13 +214,19 @@ struct SchedulePreviewView: View {
     let schedule: Schedule
     @State private var coordinator = ScheduleCoordinator()
     @State private var previewStyle: ImportView.PreviewStyle = .calendar
+    @State private var overlay: PreviewOverlay?
 
     var body: some View {
         NavigationStack {
             content
                 .navigationTitle("Preview")
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
-                .task { coordinator.preparePlan(for: schedule, in: context) }
+                .task {
+                    coordinator.preparePlan(for: schedule, in: context)
+                    if let plan = coordinator.plan {
+                        overlay = PlanOverlayBuilder.build(from: plan, in: context)
+                    }
+                }
         }
     }
 
@@ -260,10 +266,17 @@ struct SchedulePreviewView: View {
             .padding(.horizontal)
             .padding(.vertical, 8)
 
-            switch previewStyle {
-            case .calendar:
-                CalendarView(mode: .preview(PlanOverlayBuilder.build(from: plan, in: context)))
-            case .list:
+            // ZStack so toggling never resets the calendar's month/selection.
+            ZStack {
+                Group {
+                    if let overlay {
+                        CalendarView(mode: .preview(overlay))
+                    } else {
+                        ProgressView()
+                    }
+                }
+                .opacity(previewStyle == .calendar ? 1 : 0)
+                .allowsHitTesting(previewStyle == .calendar)
                 List {
                     Section {
                         LabeledContent("Add", value: "\(diff.added.count)")
@@ -274,6 +287,8 @@ struct SchedulePreviewView: View {
                         Text(plan.isReimport ? "Changes to apply" : "New shifts")
                     }
                 }
+                .opacity(previewStyle == .list ? 1 : 0)
+                .allowsHitTesting(previewStyle == .list)
             }
         }
         .safeAreaInset(edge: .bottom) {

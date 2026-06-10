@@ -137,6 +137,35 @@ private func ukCalendar(tz: String = "Europe/London") -> Calendar {
         #expect(keys == [DayKey(year: 2026, month: 6, day: 9)])
     }
 
+    @Test func longRunningEventStillAppearsInALaterWindow() {
+        // Regression: an event starting months before the window must still
+        // contribute its in-window days (the guardrail must not burn out on
+        // pre-window days). Jan 10 – Jul 20 viewed in a May–Aug window.
+        let cal = ukCalendar()
+        let start = cal.date(from: DateComponents(year: 2026, month: 1, day: 10))!
+        let end = cal.date(from: DateComponents(year: 2026, month: 7, day: 20, hour: 12))!
+        let window = DayKey(year: 2026, month: 5, day: 1)...DayKey(year: 2026, month: 8, day: 1)
+        let keys = DayBucketer.dayKeys(start: start, end: end, in: cal, clampedTo: window)
+        #expect(keys.first == DayKey(year: 2026, month: 5, day: 1))
+        #expect(keys.last == DayKey(year: 2026, month: 7, day: 20))
+        #expect(keys.contains(DayKey(year: 2026, month: 6, day: 15)))
+        // Full window coverage: 31 (May) + 30 (June) + 20 (July) days.
+        #expect(keys.count == 81)
+    }
+
+    @Test func midnightEndingShiftIsNotOvernight() {
+        let cal = ukCalendar()
+        let localDate = cal.date(from: DateComponents(year: 2026, month: 6, day: 9, hour: 12))!
+        let start = cal.date(from: DateComponents(year: 2026, month: 6, day: 9, hour: 18))!
+        let midnight = cal.date(from: DateComponents(year: 2026, month: 6, day: 10))!
+        let (_, atMidnight) = DayBucketer.shiftDay(localDate: localDate, start: start, end: midnight, timeZone: cal.timeZone)
+        #expect(!atMidnight) // 18:00–00:00 is a late shift, not overnight
+
+        let pastMidnight = cal.date(from: DateComponents(year: 2026, month: 6, day: 10, minute: 1))!
+        let (_, past) = DayBucketer.shiftDay(localDate: localDate, start: start, end: pastMidnight, timeZone: cal.timeZone)
+        #expect(past) // 18:00–00:01 genuinely crosses
+    }
+
     @Test func windowClampDropsOutOfRangeDays() {
         let cal = ukCalendar()
         let start = cal.date(from: DateComponents(year: 2026, month: 6, day: 28))!
