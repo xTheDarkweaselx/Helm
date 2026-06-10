@@ -10,6 +10,7 @@
 import SwiftUI
 import SwiftData
 import HelmDomain
+import HelmCalendar // CalendarTarget.removeAll (MemberImportVisibility: the using file must import the defining module)
 
 /// iOS/iPadOS sheet wrapper (kept for any modal presentation).
 struct SettingsView: View {
