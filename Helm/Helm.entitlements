@@ -2,30 +2,36 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>aps-environment</key>
-	<string>development</string>
-	<key>com.apple.developer.aps-environment</key>
-	<string>development</string>
-	<key>com.apple.developer.icloud-container-identifiers</key>
-	<array>
-		<string>iCloud.Fusion-Studios.Helm</string>
-	</array>
-	<key>com.apple.developer.icloud-services</key>
-	<array>
-		<string>CloudKit</string>
-	</array>
-	<!-- macOS: sandbox + access required to import a user-picked spreadsheet and
-	     write to Calendar. Ignored on iOS/iPadOS/visionOS (sandbox always on). -->
+	<!-- UNRESTRICTED entitlements only (no provisioning profile required), so
+	     the app always builds and launches under Automatic signing.
+
+	     PARKED until iCloud sync is deliberately enabled via Xcode's
+	     Signing & Capabilities (+ iCloud → CloudKit, container
+	     iCloud.Fusion-Studios.Helm; + Push Notifications if wanted) — these are
+	     RESTRICTED entitlements: signed without a matching provisioning
+	     profile, macOS refuses to launch the app at all. The app degrades
+	     gracefully meanwhile (HelmApp gates CloudKit on the entitlement and
+	     falls back to a local store):
+
+	     com.apple.developer.icloud-container-identifiers = [iCloud.Fusion-Studios.Helm]
+	     com.apple.developer.icloud-services             = [CloudKit]
+	     aps-environment / com.apple.developer.aps-environment = development
+	-->
+
+	<!-- macOS App Sandbox; ignored on iOS/iPadOS/visionOS (always sandboxed). -->
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
 	<!-- Outbound HTTPS for the direct Google Calendar integration (OAuth +
-	     Calendar API). Required on sandboxed macOS; harmless elsewhere. -->
+	     Calendar API). Without this the sandbox blocks DNS/connects:
+	     "A server with the specified hostname could not be found." -->
 	<key>com.apple.security.network.client</key>
 	<true/>
+	<!-- Import a user-picked spreadsheet (and re-import it later). -->
 	<key>com.apple.security.files.user-selected.read-only</key>
 	<true/>
 	<key>com.apple.security.files.bookmarks.app-scope</key>
 	<true/>
+	<!-- Write shifts to Apple Calendar via EventKit on macOS. -->
 	<key>com.apple.security.personal-information.calendars</key>
 	<true/>
 </dict>
