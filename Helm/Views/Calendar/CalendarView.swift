@@ -429,7 +429,8 @@ struct CalendarView: View {
                 colorHex: instance.shiftType?.colorHex,
                 location: instance.locationName,
                 endsOnLaterDay: endsLater,
-                paidHours: instance.computedPaidHours
+                paidHours: instance.computedPaidHours,
+                isAllDay: instance.isAllDay ?? false
             ))
         }
         return byDay

@@ -23,6 +23,8 @@ nonisolated struct ShiftItem: Identifiable, Hashable, Sendable {
     let endsOnLaterDay: Bool      // overnight → "+1" tag
     /// Paid hours if the source computed them (falls back to duration in UI).
     let paidHours: Double?
+    /// Tentative (TBC) shifts are all-day events.
+    let isAllDay: Bool
 }
 
 /// Which provider's events the Calendar tab shows (v4.1: the view switcher).
@@ -78,6 +80,7 @@ nonisolated struct PreviewItem: Identifiable, Hashable, Sendable {
     let colorHex: String?
     let endsOnLaterDay: Bool
     let status: Status
+    let isAllDay: Bool
 }
 
 /// One merged, day-bucketed feed entry.
@@ -97,11 +100,11 @@ nonisolated enum CalendarDayItem: Identifiable, Hashable, Sendable {
     var sortKey: CalendarItemSort.SortKey {
         switch self {
         case let .shift(s):
-            CalendarItemSort.SortKey(isAllDay: false, start: s.start ?? .distantPast, title: s.title)
+            CalendarItemSort.SortKey(isAllDay: s.isAllDay, start: s.start ?? .distantPast, title: s.title)
         case let .event(e):
             CalendarItemSort.SortKey(isAllDay: e.isAllDay, start: e.start, title: e.title)
         case let .preview(p):
-            CalendarItemSort.SortKey(isAllDay: false, start: p.start ?? .distantPast, title: p.title)
+            CalendarItemSort.SortKey(isAllDay: p.isAllDay, start: p.start ?? .distantPast, title: p.title)
         }
     }
 }

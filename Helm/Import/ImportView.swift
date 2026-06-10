@@ -109,8 +109,12 @@ struct ImportView: View {
     @State private var previewStyle: PreviewStyle = .calendar
     /// Built ONCE per plan (fetches ShiftType colors); cleared on new loads.
     @State private var overlay: PreviewOverlay?
-    /// Observed here so the commit button's title tracks the picker live.
-    @AppStorage(CalendarDestinationSetting.key) private var destinationRaw: String = CalendarTargetKind.eventkit.rawValue
+    /// Observed here so the commit button's title tracks the picker live —
+    /// the title must derive from THESE properties (reading the store
+    /// directly never re-renders this view; the button froze on its first
+    /// value in the field).
+    @AppStorage(CalendarDestinationSetting.key) private var destinationsCSV: String = CalendarTargetKind.eventkit.rawValue
+    @AppStorage(GoogleConfig.signedInDefaultsKey) private var googleSignedIn: Bool = false
 
     enum PreviewStyle: Hashable {
         case calendar, list
@@ -253,7 +257,7 @@ struct ImportView: View {
                 } else {
                     LabeledContent("Shifts to add", value: "\(diff?.added.count ?? result.writableCount)")
                 }
-                LabeledContent("Skipped (off / TBC / unmapped)", value: "\(result.drafts.count - result.writableCount)")
+                LabeledContent("Skipped (off / unmapped)", value: "\(result.drafts.count - result.writableCount)")
                 if !result.unmappedCodes.isEmpty {
                     LabeledContent("Unknown codes", value: result.unmappedCodes.joined(separator: ", "))
                         .foregroundStyle(.orange)
@@ -268,8 +272,19 @@ struct ImportView: View {
         }
     }
 
+    /// CalendarDestinationSetting.current, derived from OBSERVED storage so
+    /// SwiftUI re-evaluates when the picker changes.
+    private var resolvedDestinations: Set<CalendarTargetKind> {
+        var kinds = CalendarDestinationSetting.parse(destinationsCSV)
+        if kinds.isEmpty { kinds = [.eventkit] }
+        if kinds.contains(.google), !(GoogleConfig.isConfigured && googleSignedIn) {
+            kinds.remove(.google)
+        }
+        return kinds.isEmpty ? [.eventkit] : kinds
+    }
+
     private func commitTitle(diff: RosterDiff?, isReimport: Bool, result: RosterImportResult) -> String {
-        let destination = SyncSummary.name(for: CalendarDestinationSetting.current)
+        let destination = SyncSummary.name(for: resolvedDestinations)
         guard let diff else { return "Add \(result.writableCount) shifts to \(destination)" }
         if !diff.hasChanges { return "No changes" }
         if isReimport {

@@ -60,7 +60,8 @@ enum PlanOverlayBuilder {
                         end: instance.endUTC,
                         colorHex: instance.shiftType?.colorHex,
                         endsOnLaterDay: endsLater,
-                        status: .removed
+                        status: .removed,
+                        isAllDay: instance.isAllDay ?? false
                     ))
                 }
             }
@@ -101,7 +102,8 @@ enum PlanOverlayBuilder {
             end: draft.end,
             colorHex: colorHex(for: draft, cache: &colorCache, context: context),
             endsOnLaterDay: endsLater,
-            status: status
+            status: status,
+            isAllDay: draft.isAllDay
         )
     }
 

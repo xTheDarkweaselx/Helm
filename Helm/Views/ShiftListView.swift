@@ -235,6 +235,7 @@ private struct ShiftRow: View {
 
     /// Wall-clock time range derived from the shift type's minutes-of-day.
     private var timeRange: String {
+        if instance.isAllDay == true { return "All-day" }
         guard let type = instance.shiftType else { return "—" }
         func fmt(_ minutes: Int) -> String {
             let m = ((minutes % 1440) + 1440) % 1440

@@ -75,7 +75,13 @@ private struct ShiftAgendaRow: View {
                 ConflictNote(titles: conflictTitles)
             }
             Spacer()
-            timeColumn(start: shift.start, end: shift.end, plusOne: shift.endsOnLaterDay)
+            if shift.isAllDay {
+                Text("all-day")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                timeColumn(start: shift.start, end: shift.end, plusOne: shift.endsOnLaterDay)
+            }
         }
         .padding(.vertical, 2)
     }
@@ -149,7 +155,13 @@ private struct PreviewAgendaRow: View {
                 ConflictNote(titles: conflictTitles)
             }
             Spacer()
-            timeColumn(start: preview.start, end: preview.end, plusOne: preview.endsOnLaterDay)
+            if preview.isAllDay {
+                Text("all-day")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                timeColumn(start: preview.start, end: preview.end, plusOne: preview.endsOnLaterDay)
+            }
         }
         .padding(.vertical, 2)
         .opacity(preview.status == .removed ? 0.65 : 1)

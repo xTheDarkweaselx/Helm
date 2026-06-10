@@ -106,6 +106,7 @@ enum ScheduleMaterializer {
             start: day.start,
             end: day.end,
             paidHours: day.paidHours,
+            isAllDay: false, // builder shifts always carry concrete times
             dedupKey: day.dedupKey,
             sourceRow: nil,
             shiftTypeID: day.shiftTypeID,

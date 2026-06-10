@@ -158,6 +158,8 @@ final class ShiftInstance {
     /// Date-only (start-of-day in the shift's time zone). The wall-clock times
     /// come from the `shiftType`; `startUTC`/`endUTC` are derived caches.
     var localDate: Date?
+    /// All-day shift (tentative/TBC rows) — nil reads as false (timed). v6.
+    var isAllDay: Bool?
     var timeZoneIdentifier: String = TimeZone.current.identifier
     var startUTC: Date?
     var endUTC: Date?

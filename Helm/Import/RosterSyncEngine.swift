@@ -332,6 +332,7 @@ struct RosterSyncEngine {
         instance.startUTC = draft.start
         instance.endUTC = draft.end
         instance.computedPaidHours = draft.paidHours
+        instance.isAllDay = draft.isAllDay ? true : nil
         context.insert(instance)
         return instance
     }
@@ -343,6 +344,7 @@ struct RosterSyncEngine {
         instance.startUTC = draft.start
         instance.endUTC = draft.end
         instance.computedPaidHours = draft.paidHours
+        instance.isAllDay = draft.isAllDay ? true : nil
         instance.timeZoneIdentifier = draft.timeZoneIdentifier
     }
 
@@ -380,6 +382,7 @@ struct RosterSyncEngine {
             start: start,
             end: end,
             timeZoneIdentifier: instance.timeZoneIdentifier,
+            isAllDay: instance.isAllDay ?? false,
             alarmOffsetsMinutes: offsets,
             contentHash: ShiftContentHash.make(
                 title: instance.title, startUTC: start, endUTC: end,

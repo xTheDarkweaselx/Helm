@@ -53,6 +53,11 @@ nonisolated struct DraftShift: Identifiable, Sendable {
     let start: Date?
     let end: Date?
     let paidHours: Double?
+    /// Tentative (TBC) shifts write as ALL-DAY events: the worker still owns
+    /// the day even when the roster hasn't committed to times (v6 fix for nine
+    /// silently-dropped real working days). Re-import upgrades them in place:
+    /// code TBC → M changes the dedupKey, so the diff removes + re-adds.
+    let isAllDay: Bool
     let dedupKey: String
     let sourceRow: Int?
     /// When set (rota builder), the engine reuses this exact ShiftType instead of
@@ -176,7 +181,16 @@ enum RosterImporter {
                 drafts.append(draft(for: shift, label: "Off", startMinute: nil, endMinute: nil, resolved: nil, outcome: .skippedOff)); continue
             }
             if ShiftCodeNormalizer.isTentative(shift.normalizedCode) {
-                drafts.append(draft(for: shift, label: "TBC", startMinute: nil, endMinute: nil, resolved: nil, outcome: .skippedTentative)); continue
+                // ALL-DAY event, not a silent skip: midnight-to-midnight in the
+                // shift's zone (internal inclusive-day convention; exporters add
+                // the exclusive +1 themselves).
+                var dayCal = Calendar(identifier: .gregorian)
+                dayCal.timeZone = tz
+                let dayStart = dayCal.startOfDay(for: shift.localDate)
+                drafts.append(draft(for: shift, label: "TBC", startMinute: nil, endMinute: nil,
+                                    resolved: nil, outcome: .willWrite,
+                                    allDay: (start: dayStart, end: dayStart)))
+                continue
             }
 
             // 3) Legend lookup.
@@ -197,7 +211,7 @@ enum RosterImporter {
         return RosterImportResult(drafts: drafts, sourceName: sourceName, unmappedCodes: unmapped.sorted())
     }
 
-    nonisolated private static func draft(for shift: ParsedShift, label: String?, startMinute: Int?, endMinute: Int?, resolved: ResolvedShiftTimes?, outcome: DraftShift.Outcome) -> DraftShift {
+    nonisolated private static func draft(for shift: ParsedShift, label: String?, startMinute: Int?, endMinute: Int?, resolved: ResolvedShiftTimes?, outcome: DraftShift.Outcome, allDay: (start: Date, end: Date)? = nil) -> DraftShift {
         DraftShift(
             localDate: shift.localDate,
             timeZoneIdentifier: shift.timeZoneIdentifier,
@@ -207,9 +221,10 @@ enum RosterImporter {
             location: shift.location,
             startMinuteOfDay: startMinute,
             endMinuteOfDay: endMinute,
-            start: resolved?.start,
-            end: resolved?.end,
+            start: allDay?.start ?? resolved?.start,
+            end: allDay?.end ?? resolved?.end,
             paidHours: resolved?.paidHours(breakMinutes: 0),
+            isAllDay: allDay != nil,
             dedupKey: shift.dedupKeyInput,
             sourceRow: shift.sourceRow,
             shiftTypeID: nil,
