@@ -27,10 +27,12 @@ final class CalendarViewModel {
     private(set) var reloadToken = 0
 
     private let reader = OtherEventsReader()
-    /// nonisolated(unsafe): written once in init (main), read only in the
-    /// nonisolated deinit; NotificationCenter.removeObserver is thread-safe.
-    private nonisolated(unsafe) var storeObserver: NSObjectProtocol?
-    private nonisolated(unsafe) var filterObserver: NSObjectProtocol?
+    /// Not UI state — exempt from observation, which also keeps these as plain
+    /// storage (the @Observable macro's accessors are where isolation
+    /// annotations stop working). Written once in init (main), read only in
+    /// deinit; NotificationCenter.removeObserver is thread-safe.
+    @ObservationIgnored private nonisolated(unsafe) var storeObserver: NSObjectProtocol?
+    @ObservationIgnored private nonisolated(unsafe) var filterObserver: NSObjectProtocol?
 
     /// The display calendar: GREGORIAN pinned (DayKey/ShiftKey civil days are
     /// Gregorian; a Japanese/Buddhist system calendar would mis-bucket every
