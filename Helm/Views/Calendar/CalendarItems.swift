@@ -25,6 +25,10 @@ nonisolated struct ShiftItem: Identifiable, Hashable, Sendable {
     let paidHours: Double?
     /// Tentative (TBC) shifts are all-day events.
     let isAllDay: Bool
+    /// v7: tags inherited from the shift type (for pills + search).
+    var tags: [String] = []
+    /// v7: free-text note (editable inline; searchable).
+    var note: String? = nil
 }
 
 /// Which provider's events the Calendar tab shows (v4.1: the view switcher).

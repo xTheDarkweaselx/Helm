@@ -35,10 +35,10 @@ struct CalendarView: View {
     /// Pager pages: fixed window around the month at first appearance (stable ids).
     private let pagedMonths: [MonthKey]
 
-    init(mode: CalendarMode) {
+    init(mode: CalendarMode, initialDay: DayKey? = nil) {
         self.mode = mode
-        let initialDay = mode.overlay?.firstChangedDay
-        let model = CalendarViewModel(initialDay: initialDay)
+        let resolved = initialDay ?? mode.overlay?.firstChangedDay
+        let model = CalendarViewModel(initialDay: resolved)
         _model = State(initialValue: model)
         let base = model.visibleMonth
         self.pagedMonths = (-120...120).map { base.advanced(by: $0) }
@@ -64,7 +64,8 @@ struct CalendarView: View {
             items: items(for: model.selectedDay, shiftBuckets: shiftBuckets),
             conflicts: conflictTitles(for: model.selectedDay, shiftBuckets: shiftBuckets),
             leave: timeOffLabels(on: model.selectedDay),
-            onRemoveShift: isLive ? { shiftToRemove = $0 } : nil
+            onRemoveShift: isLive ? { shiftToRemove = $0 } : nil,
+            onEditNote: isLive ? { id, note in editNote(id, note) } : nil
         )
         GeometryReader { geo in
             // Layout by ACTUAL width, never by platform.
@@ -109,6 +110,15 @@ struct CalendarView: View {
         } message: {
             Text(removalError ?? "")
         }
+    }
+
+    /// Persist an edited note (app-local — notes are not mirrored to calendar
+    /// events in v7, so this never triggers a re-sync / content-hash churn).
+    private func editNote(_ id: String, _ note: String?) {
+        let descriptor = FetchDescriptor<ShiftInstance>(predicate: #Predicate { $0.id == id })
+        guard let instance = try? modelContext.fetch(descriptor).first else { return }
+        instance.note = note
+        try? modelContext.save()
     }
 
     private func remove(_ shift: ShiftItem) {
@@ -671,7 +681,9 @@ struct CalendarView: View {
                 location: instance.locationName,
                 endsOnLaterDay: endsLater,
                 paidHours: instance.computedPaidHours,
-                isAllDay: instance.isAllDay ?? false
+                isAllDay: instance.isAllDay ?? false,
+                tags: instance.shiftType?.tags ?? [],
+                note: instance.note
             ))
         }
         return byDay

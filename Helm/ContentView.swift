@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import Combine // NotificationCenter publisher (MemberImportVisibility)
+import HelmDomain // DayKey (calendar-jump from search)
 
 /// The app's universal shell: a `NavigationSplitView` (ADR-12) with a permanent,
 /// feature-structured sidebar (standard Mac design): Overview + Shift Types up
@@ -30,8 +31,10 @@ struct ContentView: View {
 
     enum Selection: Hashable {
         case overview
-        case calendar
+        /// v7: carries an optional day so a search result can jump to it.
+        case calendar(DayKey?)
         case shiftTypes
+        case search
         case settings
         /// Not a sidebar row — entered from toolbar/Overview actions. Keeping
         /// the import IN the main window (no sheet) keeps the design coherent.
@@ -81,12 +84,12 @@ struct ContentView: View {
         // Siri/Shortcuts "Show my Helm calendar" (v6). The pending flag covers
         // cold launches where the intent ran before this view subscribed.
         .onReceive(NotificationCenter.default.publisher(for: .helmOpenCalendar)) { _ in
-            selection = .calendar
+            selection = .calendar(nil)
         }
         .task {
             if PendingRoute.openCalendar {
                 PendingRoute.openCalendar = false
-                selection = .calendar
+                selection = .calendar(nil)
             }
         }
         #if DEBUG
@@ -100,8 +103,11 @@ struct ContentView: View {
                 NavigationLink(value: Selection.overview) {
                     Label("Overview", systemImage: "rectangle.grid.2x2")
                 }
-                NavigationLink(value: Selection.calendar) {
+                NavigationLink(value: Selection.calendar(nil)) {
                     Label("Calendar", systemImage: "calendar")
+                }
+                NavigationLink(value: Selection.search) {
+                    Label("Search", systemImage: "magnifyingglass")
                 }
                 NavigationLink(value: Selection.shiftTypes) {
                     Label("Shift Types", systemImage: "clock")
@@ -156,9 +162,15 @@ struct ContentView: View {
         switch selection {
         case .overview, nil:
             OverviewView(importRoster: { selection = .importer }, newSchedule: newSchedule)
-        case .calendar:
-            CalendarView(mode: .live)
+        case let .calendar(day):
+            CalendarView(mode: .live, initialDay: day)
                 .navigationTitle("Calendar")
+        case .search:
+            SearchView(
+                onOpenDay: { selection = .calendar($0) },
+                onOpenRoster: { selection = .roster($0) },
+                onOpenSchedule: { selection = .schedule($0) }
+            )
         case .shiftTypes:
             ShiftTypeLibraryView()
         case .settings:
@@ -169,7 +181,7 @@ struct ContentView: View {
         case .planning:
             PlanningView(quickAdd: { selection = .quickAddShift("") })
         case let .quickAddShift(iso):
-            QuickAddShiftView(dateISO: iso, onDone: { selection = .calendar })
+            QuickAddShiftView(dateISO: iso, onDone: { selection = .calendar(nil) })
         case let .roster(id):
             if let roster = rosters.first(where: { $0.id == id }) {
                 ShiftListView(roster: roster)

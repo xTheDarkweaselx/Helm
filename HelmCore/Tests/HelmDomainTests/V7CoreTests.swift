@@ -235,6 +235,19 @@ private func isHex6(_ s: String) -> Bool {
 
 // MARK: - Snapshot + next-shift rule
 
+@Suite struct SearchMatchTests {
+    @Test func tokenAndCaseAndDiacriticInsensitive() {
+        #expect(SearchMatch.matches("Morning Shift — Café", query: "cafe"))
+        #expect(SearchMatch.matches("Morning Shift at Base 12", query: "base morning"))
+        #expect(!SearchMatch.matches("Morning Shift", query: "morning night")) // AND
+    }
+
+    @Test func emptyQueryNeverMatches() {
+        #expect(!SearchMatch.matches("anything", query: "   "))
+        #expect(!SearchMatch.matches("anything", query: ""))
+    }
+}
+
 @Suite struct SnapshotTests {
     private let cal = ukCal()
 

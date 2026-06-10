@@ -19,6 +19,8 @@ struct DayDetailView: View {
     var leave: [String] = []
     /// Present in .live mode: offer "Remove shift" on shift rows (v4).
     var onRemoveShift: ((ShiftItem) -> Void)?
+    /// Present in .live mode: persist an edited note (shiftID, newNote). v7.
+    var onEditNote: ((String, String?) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -53,14 +55,12 @@ struct DayDetailView: View {
                 List(items) { item in
                     switch item {
                     case let .shift(shift):
-                        ShiftAgendaRow(shift: shift, conflictTitles: conflicts[item.id] ?? [])
-                            .contextMenu {
-                                if let onRemoveShift {
-                                    Button("Remove shift…", systemImage: "trash", role: .destructive) {
-                                        onRemoveShift(shift)
-                                    }
-                                }
-                            }
+                        ShiftAgendaRow(
+                            shift: shift,
+                            conflictTitles: conflicts[item.id] ?? [],
+                            onRemoveShift: onRemoveShift,
+                            onEditNote: onEditNote
+                        )
                     case let .event(event):
                         EventAgendaRow(event: event)
                     case let .preview(preview):
@@ -78,31 +78,76 @@ private struct ShiftAgendaRow: View {
     @Environment(\.helmAccent) private var accent
     let shift: ShiftItem
     var conflictTitles: [String] = []
+    var onRemoveShift: ((ShiftItem) -> Void)?
+    var onEditNote: ((String, String?) -> Void)?
+
+    @State private var editingNote = false
+    @State private var draftNote = ""
 
     var body: some View {
         HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: 2)
                 .fill(Color(hex: shift.colorHex) ?? accent)
                 .frame(width: 4)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(shift.title).font(.subheadline.weight(.semibold))
                 if let location = shift.location, !location.isEmpty {
                     Label(location, systemImage: "mappin.and.ellipse")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                if !shift.tags.isEmpty {
+                    TagPillRow(tags: shift.tags, colorFor: { ShiftTags.colorHex(for: $0, customColors: [:]) })
+                }
                 ConflictNote(titles: conflictTitles)
+                noteArea
             }
             Spacer()
             if shift.isAllDay {
-                Text("all-day")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text("all-day").font(.caption).foregroundStyle(.secondary)
             } else {
                 timeColumn(start: shift.start, end: shift.end, plusOne: shift.endsOnLaterDay)
             }
         }
         .padding(.vertical, 2)
+        .contentShape(Rectangle())
+        .contextMenu {
+            if onEditNote != nil {
+                Button(shift.note?.isEmpty == false ? "Edit note…" : "Add note…", systemImage: "note.text") {
+                    draftNote = shift.note ?? ""
+                    editingNote = true
+                }
+            }
+            if let onRemoveShift {
+                Button("Remove shift…", systemImage: "trash", role: .destructive) { onRemoveShift(shift) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var noteArea: some View {
+        if editingNote {
+            VStack(alignment: .leading, spacing: 4) {
+                TextField("Note", text: $draftNote, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...4)
+                HStack {
+                    Button("Save") {
+                        onEditNote?(shift.id, draftNote.isEmpty ? nil : draftNote)
+                        editingNote = false
+                    }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
+                    Button("Cancel") { editingNote = false }
+                        .buttonStyle(.bordered).controlSize(.small)
+                }
+            }
+            .font(.caption)
+        } else if let note = shift.note, !note.isEmpty {
+            Label(note, systemImage: "note.text")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+        }
     }
 }
 

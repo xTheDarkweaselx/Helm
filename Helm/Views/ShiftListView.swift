@@ -219,6 +219,13 @@ private struct ShiftRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                if let type = instance.shiftType, !type.tags.isEmpty {
+                    TagPillRow(tags: type.tags, colorFor: { type.colorHex(forTag: $0) })
+                }
+                if let note = instance.note, !note.isEmpty {
+                    Label(note, systemImage: "note.text")
+                        .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                }
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
