@@ -85,9 +85,9 @@ struct ShiftListView: View {
                 let context = modelContext
                 Task {
                     do {
-                        let destination = RosterSyncEngine.destination(for: roster, in: context)
-                        let target = try await CalendarTargetProvider.authorizedTarget(for: destination)
-                        try await RosterSyncEngine.delete(roster: roster, target: target, in: context)
+                        let destinations = RosterSyncEngine.destinations(for: roster, in: context)
+                        let targets = try await CalendarTargetProvider.authorizedTargets(for: destinations)
+                        try await RosterSyncEngine.delete(roster: roster, targets: targets, in: context)
                     } catch CalendarAccessError.eventKitDenied {
                         errorMessage = "Helm needs calendar access to remove these events. Enable it for Helm in Settings, then try again."
                     } catch {
@@ -132,9 +132,9 @@ struct ShiftListView: View {
         let context = modelContext
         Task {
             do {
-                let destination = RosterSyncEngine.destination(for: roster, in: context)
-                let target = try await CalendarTargetProvider.authorizedTarget(for: destination)
-                try await RosterSyncEngine.removeInstance(instance, target: target, in: context)
+                let destinations = RosterSyncEngine.destinations(for: roster, in: context)
+                let targets = try await CalendarTargetProvider.authorizedTargets(for: destinations)
+                try await RosterSyncEngine.removeInstance(instance, targets: targets, in: context)
             } catch {
                 errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             }
@@ -190,9 +190,9 @@ struct ShiftListView: View {
         Task {
             defer { applyingReminders = false }
             do {
-                let destination = RosterSyncEngine.destination(for: roster, in: modelContext)
-                let target = try await CalendarTargetProvider.authorizedTarget(for: destination)
-                let n = try await RosterSyncEngine.resync(roster: roster, target: target)
+                let destinations = RosterSyncEngine.destinations(for: roster, in: modelContext)
+                let targets = try await CalendarTargetProvider.authorizedTargets(for: destinations)
+                let n = try await RosterSyncEngine.resync(roster: roster, targets: targets)
                 infoMessage = n == 0
                     ? "This roster has no shifts to update."
                     : "Reminders applied to \(n) shift\(n == 1 ? "" : "s")."

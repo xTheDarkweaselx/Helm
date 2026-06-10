@@ -44,8 +44,8 @@ final class ScheduleCoordinator {
             let pid = profile.id
             if let roster = try? context.fetch(FetchDescriptor<Roster>(predicate: #Predicate { $0.sourceImportProfileID == pid })).first {
                 do {
-                    let target = try await CalendarTargetProvider.authorizedTarget(for: profile.target)
-                    try await RosterSyncEngine.delete(roster: roster, target: target, in: context)
+                    let targets = try await CalendarTargetProvider.authorizedTargets(for: profile.targets)
+                    try await RosterSyncEngine.delete(roster: roster, targets: targets, in: context)
                 } catch {
                     let tolerable = force || (error as? CalendarAccessError) == .eventKitDenied
                     guard tolerable else { throw error }
@@ -74,12 +74,12 @@ final class ScheduleCoordinator {
                 phase = .failed("Nothing to re-sync yet — apply the schedule first.")
                 return
             }
-            let target = try await CalendarTargetProvider.authorizedTarget(for: profile.target)
-            let count = try await RosterSyncEngine.resync(roster: roster, target: target)
+            let targets = try await CalendarTargetProvider.authorizedTargets(for: profile.targets)
+            let count = try await RosterSyncEngine.resync(roster: roster, targets: targets)
             var summary = SyncSummary()
             summary.unchanged = count
             summary.isReimport = true
-            summary.destination = profile.target
+            summary.destinations = profile.targets
             phase = .finished(summary)
         } catch {
             phase = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
@@ -90,8 +90,8 @@ final class ScheduleCoordinator {
         guard let plan else { return }
         phase = .writing
         do {
-            let target = try await CalendarTargetProvider.authorizedTarget()
-            let summary = try await RosterSyncEngine.apply(plan, target: target, in: context)
+            let targets = try await CalendarTargetProvider.authorizedTargets()
+            let summary = try await RosterSyncEngine.apply(plan, targets: targets, in: context)
             phase = .finished(summary)
         } catch CalendarAccessError.eventKitDenied {
             phase = .failed("Calendar access was denied. Enable it for Helm in Settings, then try again. Your schedule is saved.")

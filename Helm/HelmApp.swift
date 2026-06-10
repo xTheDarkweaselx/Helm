@@ -23,6 +23,10 @@ struct HelmApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+            #if os(macOS)
+                // Liquid Glass: a light, translucent main window.
+                .containerBackground(.ultraThinMaterial, for: .window)
+            #endif
         }
         .modelContainer(modelContainer)
         #if os(macOS)

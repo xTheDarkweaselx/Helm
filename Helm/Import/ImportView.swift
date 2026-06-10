@@ -78,8 +78,8 @@ final class ImportCoordinator {
         phase = .writing
 
         do {
-            let target = try await CalendarTargetProvider.authorizedTarget()
-            let summary = try await RosterSyncEngine.apply(plan, target: target, in: modelContext)
+            let targets = try await CalendarTargetProvider.authorizedTargets()
+            let summary = try await RosterSyncEngine.apply(plan, targets: targets, in: modelContext)
             phase = .finished(summary)
         } catch CalendarAccessError.eventKitDenied {
             phase = .failed("Calendar access was denied. Enable it for Helm in Settings, then try again. Your shifts are saved in Helm.")
@@ -99,6 +99,9 @@ final class ImportCoordinator {
 }
 
 struct ImportView: View {
+    /// In-window flow: the host clears the selection when the user is done.
+    var onDone: (() -> Void)? = nil
+
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @State private var coordinator = ImportCoordinator()
@@ -122,38 +125,35 @@ struct ImportView: View {
     ]
 
     var body: some View {
-        NavigationStack {
-            content
-                .navigationTitle("Import roster")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") { dismiss() }
-                    }
+        content
+            .navigationTitle("Import roster")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { close() }
                 }
-                .fileImporter(
-                    isPresented: $isFileImporterPresented,
-                    allowedContentTypes: Self.importTypes,
-                    allowsMultipleSelection: false
-                ) { result in
-                    if case let .success(urls) = result, let url = urls.first {
-                        Task {
-                            overlay = nil
-                            await coordinator.load(from: url)
-                            coordinator.preparePlan(modelContext: modelContext)
-                            if let plan = coordinator.plan {
-                                overlay = PlanOverlayBuilder.build(from: plan, in: modelContext)
-                            }
+            }
+            .fileImporter(
+                isPresented: $isFileImporterPresented,
+                allowedContentTypes: Self.importTypes,
+                allowsMultipleSelection: false
+            ) { result in
+                if case let .success(urls) = result, let url = urls.first {
+                    Task {
+                        overlay = nil
+                        await coordinator.load(from: url)
+                        coordinator.preparePlan(modelContext: modelContext)
+                        if let plan = coordinator.plan {
+                            overlay = PlanOverlayBuilder.build(from: plan, in: modelContext)
                         }
-                    } else if case let .failure(error) = result {
-                        coordinator.phase = .failed(error.localizedDescription)
                     }
+                } else if case let .failure(error) = result {
+                    coordinator.phase = .failed(error.localizedDescription)
                 }
-        }
-        #if os(macOS)
-        // macOS sheets default tiny (~500pt) — the side-by-side calendar
-        // preview needs real room.
-        .frame(minWidth: 940, idealWidth: 1000, minHeight: 620, idealHeight: 700)
-        #endif
+            }
+    }
+
+    private func close() {
+        if let onDone { onDone() } else { dismiss() }
     }
 
     @ViewBuilder
@@ -232,7 +232,7 @@ struct ImportView: View {
                 Text(commitTitle(diff: diff, isReimport: isReimport, result: result))
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
             .controlSize(.large)
             .disabled(!hasChanges)
             .padding()
@@ -288,7 +288,7 @@ struct ImportView: View {
         } description: {
             Text(summary.userDescription)
         } actions: {
-            Button("Done") { dismiss() }.buttonStyle(.borderedProminent)
+            Button("Done") { close() }.buttonStyle(.borderedProminent)
         }
     }
 
@@ -310,26 +310,45 @@ struct ImportView: View {
     }
 }
 
-/// "Add to: Apple Calendar / Google Calendar" — the same destination setting
-/// Settings manages, surfaced where it matters most: right on the preview
-/// (v4.1, user request). Google selectable only when configured + signed in.
+/// "Add to: Apple + Google Calendar" — v5 MULTI-select: both can be on at
+/// once and every apply writes to all of them. Same setting Settings manages.
 struct CalendarDestinationPicker: View {
-    @AppStorage(CalendarDestinationSetting.key) private var destinationRaw: String = CalendarTargetKind.eventkit.rawValue
+    @AppStorage(CalendarDestinationSetting.key) private var destinationsCSV: String = CalendarTargetKind.eventkit.rawValue
     @AppStorage(GoogleConfig.signedInDefaultsKey) private var googleSignedIn: Bool = false
 
     private var googleUsable: Bool { GoogleConfig.isConfigured && googleSignedIn }
+    private var chosen: Set<CalendarTargetKind> {
+        let kinds = CalendarDestinationSetting.parse(destinationsCSV)
+        return kinds.isEmpty ? [.eventkit] : kinds
+    }
 
     var body: some View {
-        Picker("Add to", selection: $destinationRaw) {
-            Text("Apple Calendar").tag(CalendarTargetKind.eventkit.rawValue)
+        Menu {
+            Toggle("Apple Calendar", isOn: binding(for: .eventkit))
             if GoogleConfig.isConfigured {
-                Text("Google Calendar")
-                    .tag(CalendarTargetKind.google.rawValue)
-                    .selectionDisabled(!googleUsable)
+                Toggle("Google Calendar", isOn: binding(for: .google))
+                    .disabled(!googleUsable && !chosen.contains(.google))
             }
+        } label: {
+            Label("Add to: \(SyncSummary.name(for: CalendarDestinationSetting.current))",
+                  systemImage: "calendar.badge.plus")
+                .lineLimit(1)
         }
-        .pickerStyle(.menu)
         .fixedSize()
+        // Run the legacy single-key migration before @AppStorage's default masks it.
+        .onAppear { _ = CalendarDestinationSetting.chosenKinds }
+    }
+
+    private func binding(for kind: CalendarTargetKind) -> Binding<Bool> {
+        Binding(
+            get: { chosen.contains(kind) },
+            set: { isOn in
+                var kinds = chosen
+                if isOn { kinds.insert(kind) } else { kinds.remove(kind) }
+                if kinds.isEmpty { kinds = [.eventkit] } // never write to nowhere
+                destinationsCSV = CalendarDestinationSetting.encode(kinds)
+            }
+        )
     }
 }
 

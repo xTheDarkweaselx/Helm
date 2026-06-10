@@ -100,7 +100,7 @@ enum DemoImport {
         let writer = ShiftCalendarWriter()
         guard await writer.requestAccess() else { log.error("build: no calendar access"); return }
         do {
-            let summary = try await RosterSyncEngine.apply(plan, target: writer, in: modelContext)
+            let summary = try await RosterSyncEngine.apply(plan, targets: [writer], in: modelContext)
             log.notice("build summary: added=\(summary.added) updated=\(summary.updated) removed=\(summary.removed) unchanged=\(summary.unchanged) reimport=\(summary.isReimport)")
         } catch {
             log.error("build failed: \(error, privacy: .public)")

@@ -34,7 +34,7 @@ struct SettingsForm: View {
     /// macOS ⌘, Settings window and the sidebar Settings pane can be alive at
     /// once, and snapshots would silently revert each other's changes.
     @AppStorage(ReminderSetting.offsetsKey) private var reminderOffsetsCSV: String = ReminderOffsets.encode(ReminderSetting.fallback)
-    @AppStorage(CalendarDestinationSetting.key) private var destinationRaw: String = CalendarTargetKind.eventkit.rawValue
+    @AppStorage(CalendarDestinationSetting.key) private var destinationsCSV: String = CalendarTargetKind.eventkit.rawValue
     @AppStorage(GoogleConfig.defaultsKey) private var googleClientID: String = ""
     @AppStorage(GoogleConfig.signedInDefaultsKey) private var googleSignedIn: Bool = false
     @AppStorage(GoogleConfig.accountEmailDefaultsKey) private var googleEmail: String = ""
@@ -49,9 +49,13 @@ struct SettingsForm: View {
 
     private var googleUsable: Bool { GoogleConfig.isConfigured && googleSignedIn }
     private var reminderOffsets: Set<Int> { Set(ReminderOffsets.parse(reminderOffsetsCSV)) }
+    private var chosenDestinations: Set<CalendarTargetKind> {
+        let kinds = CalendarDestinationSetting.parse(destinationsCSV)
+        return kinds.isEmpty ? [.eventkit] : kinds
+    }
     /// Rosters whose events currently live in Google (sign-out makes them unmanageable).
     private var googleRosterCount: Int {
-        importProfiles.filter { $0.target == .google }.count
+        importProfiles.filter { $0.targets.contains(.google) }.count
     }
 
     var body: some View {
@@ -69,24 +73,19 @@ struct SettingsForm: View {
             }
 
             Section {
-                Picker("Add shifts to", selection: $destinationRaw) {
-                    Text("Apple Calendar").tag(CalendarTargetKind.eventkit.rawValue)
-                    if GoogleConfig.isConfigured {
-                        // Always present once configured (a selected-but-removed
-                        // tag would blank the picker after sign-out); selectable
-                        // only while actually signed in.
-                        Text("Google Calendar")
-                            .tag(CalendarTargetKind.google.rawValue)
-                            .selectionDisabled(!googleUsable)
-                    }
+                Toggle("Apple Calendar", isOn: destinationBinding(for: .eventkit))
+                if GoogleConfig.isConfigured {
+                    Toggle("Google Calendar", isOn: destinationBinding(for: .google))
+                        .disabled(!googleUsable && !chosenDestinations.contains(.google))
                 }
-                .pickerStyle(.menu)
             } header: {
-                Text("Calendar destination")
+                Text("Calendar destinations")
             } footer: {
-                if destinationRaw == CalendarTargetKind.google.rawValue && !googleUsable {
-                    Text("Google is signed out — shifts go to Apple Calendar until you sign in again below.")
+                if chosenDestinations.contains(.google) && !googleUsable {
+                    Text("Google is signed out — shifts go only to Apple Calendar until you sign in again below.")
                         .foregroundStyle(.orange)
+                } else if chosenDestinations.count > 1 {
+                    Text("New and updated shifts are written to BOTH calendars. Each roster remembers where its shifts live, so re-applying moves them when you change this.")
                 } else if googleUsable {
                     Text("Each roster remembers where its shifts were written, so re-importing after switching moves them to the new destination.")
                 } else {
@@ -99,9 +98,12 @@ struct SettingsForm: View {
             cleanupSection
         }
         .formStyle(.grouped)
-        // Run the legacy single-value migration so offsetsKey exists before
-        // the @AppStorage default masks it.
-        .onAppear { _ = ReminderSetting.offsets }
+        // Run the legacy single-value migrations so the new keys exist before
+        // the @AppStorage defaults mask them.
+        .onAppear {
+            _ = ReminderSetting.offsets
+            _ = CalendarDestinationSetting.chosenKinds
+        }
     }
 
     // MARK: - Cleanup (v4: delete everything Helm created in a calendar)
@@ -161,6 +163,18 @@ struct SettingsForm: View {
                 cleanupMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             }
         }
+    }
+
+    private func destinationBinding(for kind: CalendarTargetKind) -> Binding<Bool> {
+        Binding(
+            get: { chosenDestinations.contains(kind) },
+            set: { isOn in
+                var kinds = chosenDestinations
+                if isOn { kinds.insert(kind) } else { kinds.remove(kind) }
+                if kinds.isEmpty { kinds = [.eventkit] } // never write to nowhere
+                destinationsCSV = CalendarDestinationSetting.encode(kinds)
+            }
+        )
     }
 
     private func reminderBinding(for minutes: Int) -> Binding<Bool> {

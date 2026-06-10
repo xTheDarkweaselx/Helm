@@ -32,12 +32,14 @@ struct ContentView: View {
         case calendar
         case shiftTypes
         case settings
+        /// Not a sidebar row — entered from toolbar/Overview actions. Keeping
+        /// the import IN the main window (no sheet) keeps the design coherent.
+        case importer
         case roster(String)
         case schedule(String)
     }
 
     @State private var selection: Selection? = .overview
-    @State private var isPresentingImport = false
     @State private var deleteErrorMessage: String?
     @State private var scheduleAwaitingForcedDelete: Schedule?
 
@@ -55,7 +57,6 @@ struct ContentView: View {
         #if os(macOS)
         .frame(minWidth: 720, minHeight: 440)
         #endif
-        .sheet(isPresented: $isPresentingImport) { ImportView() }
         .alert(
             "Couldn't remove this schedule's shifts",
             isPresented: .constant(scheduleAwaitingForcedDelete != nil),
@@ -135,7 +136,7 @@ struct ContentView: View {
     private var detail: some View {
         switch selection {
         case .overview, nil:
-            OverviewView(importRoster: { isPresentingImport = true }, newSchedule: newSchedule)
+            OverviewView(importRoster: { selection = .importer }, newSchedule: newSchedule)
         case .calendar:
             CalendarView(mode: .live)
                 .navigationTitle("Calendar")
@@ -144,6 +145,8 @@ struct ContentView: View {
         case .settings:
             SettingsForm()
                 .navigationTitle("Settings")
+        case .importer:
+            ImportView(onDone: { selection = .overview })
         case let .roster(id):
             if let roster = rosters.first(where: { $0.id == id }) {
                 ShiftListView(roster: roster)
@@ -164,7 +167,7 @@ struct ContentView: View {
         // Settings lives in the sidebar (and ⌘, on macOS) — no toolbar gear.
         ToolbarItem {
             Menu {
-                Button("Import roster…", systemImage: "square.and.arrow.down") { isPresentingImport = true }
+                Button("Import roster…", systemImage: "square.and.arrow.down") { selection = .importer }
                 Button("New schedule", systemImage: "slider.horizontal.3") { newSchedule() }
             } label: {
                 Label("Add", systemImage: "plus")

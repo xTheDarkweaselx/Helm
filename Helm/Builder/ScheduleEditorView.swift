@@ -84,7 +84,7 @@ struct ScheduleEditorView: View {
                 Button("Preview & apply", systemImage: "calendar.badge.checkmark") { isPreviewing = true }
             }
         }
-        .sheet(isPresented: $isPreviewing) { SchedulePreviewView(schedule: schedule) }
+        .navigationDestination(isPresented: $isPreviewing) { SchedulePreviewView(schedule: schedule) }
     }
 
     private var defaultHorizonEnd: Date {
@@ -217,21 +217,14 @@ struct SchedulePreviewView: View {
     @State private var overlay: PreviewOverlay?
 
     var body: some View {
-        NavigationStack {
-            content
-                .navigationTitle("Preview")
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
-                .task {
-                    coordinator.preparePlan(for: schedule, in: context)
-                    if let plan = coordinator.plan {
-                        overlay = PlanOverlayBuilder.build(from: plan, in: context)
-                    }
+        content
+            .navigationTitle("Preview")
+            .task {
+                coordinator.preparePlan(for: schedule, in: context)
+                if let plan = coordinator.plan {
+                    overlay = PlanOverlayBuilder.build(from: plan, in: context)
                 }
-        }
-        #if os(macOS)
-        // macOS sheets default tiny — the side-by-side preview needs room.
-        .frame(minWidth: 940, idealWidth: 1000, minHeight: 620, idealHeight: 700)
-        #endif
+            }
     }
 
     @ViewBuilder
@@ -314,7 +307,7 @@ struct SchedulePreviewView: View {
             } label: {
                 Text(diff.hasChanges ? "Apply to Calendar" : "Re-sync to Calendar").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent).controlSize(.large)
+            .buttonStyle(.glassProminent).controlSize(.large)
             .padding()
         }
     }

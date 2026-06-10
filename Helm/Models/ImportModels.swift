@@ -36,10 +36,11 @@ final class ImportProfile {
     /// How the user's own row/identity is located in the source.
     var meRowIdentity: String?
     var lastImportedAt: Date?
-    /// Which calendar destination this profile's roster was last written to
-    /// ("eventkit" / "google"), stamped at apply time, so delete/resync clean up
-    /// the calendar the events actually live in. Optional for CloudKit; nil
-    /// (pre-existing profiles) reads as .eventkit — correct, they predate Google.
+    /// Which calendar destination(s) this profile's roster was last written to,
+    /// stamped at apply time, so delete/resync clean up every calendar the
+    /// events actually live in. v5: a CSV set ("eventkit,google") — old single
+    /// values parse unchanged. Optional for CloudKit; nil (pre-Google profiles)
+    /// reads as [.eventkit].
     var calendarTargetRaw: String?
     /// For Google: which account the events live in (display email), so signing
     /// into a DIFFERENT account is treated as a destination change (re-apply
@@ -59,9 +60,13 @@ final class ImportProfile {
         set { layoutKindRaw = newValue?.rawValue }
     }
 
-    var target: CalendarTargetKind {
-        get { calendarTargetRaw.flatMap(CalendarTargetKind.init(rawValue:)) ?? .eventkit }
-        set { calendarTargetRaw = newValue.rawValue }
+    var targets: Set<CalendarTargetKind> {
+        get {
+            let kinds = Set((calendarTargetRaw ?? "").split(separator: ",")
+                .compactMap { CalendarTargetKind(rawValue: String($0)) })
+            return kinds.isEmpty ? [.eventkit] : kinds
+        }
+        set { calendarTargetRaw = newValue.map(\.rawValue).sorted().joined(separator: ",") }
     }
 
     init(id: String = UUID().uuidString, name: String? = nil, user: UserProfile? = nil) {

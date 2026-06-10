@@ -62,13 +62,17 @@ struct CalendarView: View {
                 HStack(spacing: 0) {
                     monthPane(shiftBuckets: shiftBuckets, isWide: true)
                     Divider()
-                    dayDetail.frame(width: 300)
+                    dayDetail
+                        .frame(width: 300)
+                        .background(.ultraThinMaterial)
                 }
             } else {
                 VStack(spacing: 0) {
                     monthPane(shiftBuckets: shiftBuckets, isWide: false)
                     Divider()
-                    dayDetail.frame(minHeight: 160, maxHeight: 280)
+                    dayDetail
+                        .frame(minHeight: 160, maxHeight: 280)
+                        .background(.ultraThinMaterial)
                 }
             }
         }
@@ -100,9 +104,9 @@ struct CalendarView: View {
                 let id = shift.id
                 let descriptor = FetchDescriptor<ShiftInstance>(predicate: #Predicate { $0.id == id })
                 guard let instance = try context.fetch(descriptor).first else { return }
-                let destination = instance.roster.map { RosterSyncEngine.destination(for: $0, in: context) } ?? .eventkit
-                let target = try await CalendarTargetProvider.authorizedTarget(for: destination)
-                try await RosterSyncEngine.removeInstance(instance, target: target, in: context)
+                let destinations = instance.roster.map { RosterSyncEngine.destinations(for: $0, in: context) } ?? [.eventkit]
+                let targets = try await CalendarTargetProvider.authorizedTargets(for: destinations)
+                try await RosterSyncEngine.removeInstance(instance, targets: targets, in: context)
             } catch {
                 removalError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             }

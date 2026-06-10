@@ -30,9 +30,19 @@ enum CalendarAccessError: LocalizedError, Equatable {
 
 @MainActor
 enum CalendarTargetProvider {
-    /// An authorized target for the user's current destination.
-    static func authorizedTarget() async throws -> any CalendarTarget {
-        try await authorizedTarget(for: CalendarDestinationSetting.current)
+    /// Authorized targets for ALL the user's current destinations (v5: writes
+    /// can fan out to Apple AND Google). Throws on the first unauthorized one
+    /// — an apply must be all-or-nothing across destinations.
+    static func authorizedTargets() async throws -> [any CalendarTarget] {
+        try await authorizedTargets(for: CalendarDestinationSetting.current)
+    }
+
+    static func authorizedTargets(for kinds: Set<CalendarTargetKind>) async throws -> [any CalendarTarget] {
+        var targets: [any CalendarTarget] = []
+        for kind in kinds.sorted(by: { $0.rawValue < $1.rawValue }) {
+            targets.append(try await authorizedTarget(for: kind))
+        }
+        return targets
     }
 
     static func authorizedTarget(for kind: CalendarTargetKind) async throws -> any CalendarTarget {
