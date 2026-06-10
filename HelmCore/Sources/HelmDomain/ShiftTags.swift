@@ -110,7 +110,8 @@ public enum ShiftTags {
     public static func normalizedHex(_ value: String) -> String? {
         var hex = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if hex.hasPrefix("#") { hex.removeFirst() }
-        guard hex.count == 6, hex.allSatisfy(\.isHexDigit) else { return nil }
+        // ASCII-only: Character.isHexDigit also accepts fullwidth/non-ASCII forms.
+        guard hex.count == 6, hex.allSatisfy({ $0.isASCII && $0.isHexDigit }) else { return nil }
         return hex.uppercased()
     }
 }

@@ -212,8 +212,9 @@ struct TimelineDayColumn: View {
             ZStack(alignment: .topLeading) {
                 // v7: unavailable bands shaded behind the grid.
                 ForEach(Array(bands.enumerated()), id: \.offset) { _, band in
-                    let top = Double(band.startMinute) / 60 * hourHeight
-                    let bandHeight = Double(max(0, band.endMinute - band.startMinute)) / 60 * hourHeight
+                    let top = min(Double(band.startMinute), dayLength) / 60 * hourHeight
+                    let clampedEnd = min(Double(band.endMinute), dayLength)
+                    let bandHeight = max(0, clampedEnd - Double(band.startMinute)) / 60 * hourHeight
                     Rectangle()
                         .fill(Color.orange.opacity(0.08))
                         .frame(width: geo.size.width, height: bandHeight)

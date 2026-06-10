@@ -33,8 +33,8 @@ struct HelmApp: App {
         WindowGroup {
             ContentView()
             #if os(macOS)
-                // Liquid Glass: a light, translucent main window, tinted by the
-                // active theme's glass tint when it sets one.
+                // Liquid Glass: a light, translucent main window. (The theme's
+                // glass tint is applied to GlassCard surfaces, not the window.)
                 .containerBackground(.ultraThinMaterial, for: .window)
             #endif
                 .helmThemed(theme)

@@ -13,7 +13,9 @@ import HelmDomain
 struct QuickAddShiftView: View {
     /// ISO "yyyy-MM-dd" seed; "" = today.
     let dateISO: String
-    let onDone: () -> Void
+    /// Called after a successful add with the day the shift landed on (so the
+    /// caller can jump the calendar there).
+    let onDone: (DayKey?) -> Void
 
     @Environment(\.modelContext) private var context
     @Query(sort: [SortDescriptor(\ShiftType.sortIndex), SortDescriptor(\ShiftType.code)]) private var types: [ShiftType]
@@ -46,7 +48,7 @@ struct QuickAddShiftView: View {
             Section("Shift") {
                 Picker("Shift type", selection: $selectedTypeID) {
                     Text("Custom").tag(String?.none)
-                    ForEach(types) { type in
+                    ForEach(types.filter { $0.workKind != .off }) { type in
                         Text(type.label ?? type.code ?? "Shift").tag(String?.some(type.id))
                     }
                 }
@@ -111,7 +113,7 @@ struct QuickAddShiftView: View {
                     isAllDay: isAllDay,
                     in: context
                 )
-                onDone()
+                onDone(DayKey(containing: date, in: CalendarViewModel.displayCalendar))
             } catch {
                 errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             }

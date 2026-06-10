@@ -71,6 +71,11 @@ enum ManualShiftCoordinator {
         let code = ShiftKey.generatedCode(scope: "manual", code: UUID().uuidString)
         let dedupKey = ShiftKey.make(localDate: dayStart, timeZoneIdentifier: timeZoneIdentifier, code: code)
 
+        // An "off" type (or a degenerate zero-length time) can't be a timed
+        // shift — fall back to an all-day entry instead of a phantom 24h event.
+        var allDay = isAllDay
+        if shiftType?.workKind == .off { allDay = true }
+
         let instance = ShiftInstance(
             localDate: dayStart,
             timeZoneIdentifier: timeZoneIdentifier,
@@ -82,9 +87,8 @@ enum ManualShiftCoordinator {
         )
         instance.overrideKind = .added
         instance.note = note?.isEmpty == false ? note : nil
-        instance.isAllDay = isAllDay ? true : nil
 
-        if isAllDay {
+        if allDay {
             instance.startUTC = dayStart
             instance.endUTC = dayStart
             instance.computedPaidHours = nil
@@ -92,20 +96,31 @@ enum ManualShiftCoordinator {
             let sMin = startMinute ?? shiftType?.startMinuteOfDay ?? 9 * 60
             let eMin = endMinute ?? shiftType?.endMinuteOfDay ?? 17 * 60
             let off = endDayOffset != 0 ? endDayOffset : (shiftType?.endDayOffset ?? 0)
-            if let resolved = ShiftTimeResolver.resolve(localDay: dayStart, startMinuteOfDay: sMin, endMinuteOfDay: eMin, endDayOffset: off, timeZone: tz) {
+            if let resolved = ShiftTimeResolver.resolve(localDay: dayStart, startMinuteOfDay: sMin, endMinuteOfDay: eMin, endDayOffset: off, timeZone: tz), resolved.end > resolved.start {
                 instance.startUTC = resolved.start
                 instance.endUTC = resolved.end
                 instance.computedPaidHours = resolved.paidHours(breakMinutes: shiftType?.breakMinutes ?? 0)
+            } else {
+                // Degenerate (start == end) → all-day rather than a zero-length event.
+                allDay = true
+                instance.startUTC = dayStart
+                instance.endUTC = dayStart
+                instance.computedPaidHours = nil
             }
         }
+        instance.isAllDay = allDay ? true : nil
         context.insert(instance)
 
-        // Remember where it was written so a later removal cleans up the right
-        // calendar(s) (mirrors the import engine's destination stamping).
-        let destinations = CalendarDestinationSetting.chosenKinds
+        // Destination is stamped ONCE on the manual roster's profile and reused
+        // thereafter, so every manual shift lands on the same calendar(s) and a
+        // later per-shift removal cleans up the right place (changing the global
+        // destination between quick-adds can't orphan earlier ones).
+        let chosen = CalendarDestinationSetting.chosenKinds
+        var destinations = chosen
         if let pid = roster.sourceImportProfileID,
            let profile = try? context.fetch(FetchDescriptor<ImportProfile>(predicate: #Predicate { $0.id == pid })).first {
-            profile.targets = destinations
+            if profile.calendarTargetRaw == nil { profile.targets = chosen }
+            destinations = profile.targets
         }
 
         // Write the calendar BEFORE committing (rollback on failure, like the engine).

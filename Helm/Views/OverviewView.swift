@@ -24,7 +24,7 @@ enum NextShiftSelector {
         let candidates = instances.map {
             NextShiftRule.Candidate(id: $0.id, isAllDay: $0.isAllDay ?? false, start: $0.startUTC, localDate: $0.localDate)
         }
-        guard let id = NextShiftRule.nextID(in: candidates, now: .now, calendar: .current) else { return nil }
+        guard let id = NextShiftRule.nextID(in: candidates, now: .now, calendar: CalendarViewModel.displayCalendar) else { return nil }
         return instances.first { $0.id == id }
     }
 }

@@ -51,7 +51,12 @@ struct AvailabilityRuleEditorView: View {
         }
         .formStyle(.grouped)
         .navigationTitle("Weekly Availability")
-        .onDisappear { try? context.save() }
+        .onDisappear {
+            // A weekly rule with no weekdays can never match — drop an abandoned
+            // blank one rather than CloudKit-syncing junk.
+            if rule.weekdays.isEmpty { context.delete(rule) }
+            try? context.save()
+        }
     }
 
     private var weekdayPicker: some View {

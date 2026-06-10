@@ -34,9 +34,13 @@ struct CalendarView: View {
 
     /// Pager pages: fixed window around the month at first appearance (stable ids).
     private let pagedMonths: [MonthKey]
+    /// The route's requested day (live mode); re-applied to the model on change,
+    /// since the @State model is only seeded once per structural identity.
+    private let initialDay: DayKey?
 
     init(mode: CalendarMode, initialDay: DayKey? = nil) {
         self.mode = mode
+        self.initialDay = initialDay
         let resolved = initialDay ?? mode.overlay?.firstChangedDay
         let model = CalendarViewModel(initialDay: resolved)
         _model = State(initialValue: model)
@@ -93,6 +97,12 @@ struct CalendarView: View {
         }
         .task(id: LoadKey(month: model.visibleMonth, token: model.reloadToken)) {
             await model.loadEvents()
+        }
+        .onChange(of: initialDay) { _, new in
+            guard isLive else { return }
+            let target = new ?? DayKey(containing: .now, in: CalendarViewModel.displayCalendar)
+            model.selectedDay = target
+            model.visibleMonth = MonthKey(of: target)
         }
         .confirmationDialog(
             "Remove this shift from your calendar and from Helm?",
@@ -462,9 +472,17 @@ struct CalendarView: View {
     private func availabilityConflictIDs(on day: DayKey, shifts: [ShiftItem]) -> Set<String> {
         guard !availabilityRules.isEmpty || !availabilityWindows.isEmpty else { return [] }
         let cal = CalendarViewModel.displayCalendar
-        let dayStart = day.startOfDay(in: cal)
+        var zoneCals: [String: Calendar] = [:]
         let availShifts: [AvailabilityShift] = shifts.compactMap { s in
             guard !s.isAllDay, let start = s.start, let end = s.end else { return nil }
+            // Minute-of-day measured against the shift's OWN-zone midnight.
+            let zoneCal = zoneCals[s.timeZoneIdentifier] ?? {
+                var c = Calendar(identifier: .gregorian)
+                c.timeZone = TimeZone(identifier: s.timeZoneIdentifier) ?? .current
+                zoneCals[s.timeZoneIdentifier] = c
+                return c
+            }()
+            let dayStart = day.startOfDay(in: zoneCal)
             let sMin = Int(start.timeIntervalSince(dayStart) / 60)
             let eMin = Int(end.timeIntervalSince(dayStart) / 60)
             return AvailabilityShift(id: s.id, day: day, startMinute: sMin, endMinute: eMin, isAllDay: false)
@@ -683,7 +701,8 @@ struct CalendarView: View {
                 paidHours: instance.computedPaidHours,
                 isAllDay: instance.isAllDay ?? false,
                 tags: instance.shiftType?.tags ?? [],
-                note: instance.note
+                note: instance.note,
+                timeZoneIdentifier: zoneID
             ))
         }
         return byDay

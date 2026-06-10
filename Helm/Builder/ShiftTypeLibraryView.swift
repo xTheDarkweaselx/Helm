@@ -169,6 +169,7 @@ struct ShiftTypeLibraryView: View {
 
 struct ShiftTypeEditorView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.helmAccent) private var accent
     @Bindable var type: ShiftType
     @State private var newTag = ""
     @FocusState private var tagFieldFocused: Bool
@@ -296,7 +297,7 @@ struct ShiftTypeEditorView: View {
     }
 
     private var colorBinding: Binding<Color> {
-        Binding(get: { Color(hex: type.colorHex) ?? .accentColor }, set: { type.colorHex = $0.hexString })
+        Binding(get: { Color(hex: type.colorHex) ?? accent }, set: { type.colorHex = $0.hexString })
     }
 
     private func isSelectedColor(_ hex: String) -> Bool {

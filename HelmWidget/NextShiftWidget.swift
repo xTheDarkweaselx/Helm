@@ -29,8 +29,9 @@ struct HelmProvider: TimelineProvider {
         let entry = HelmEntry(date: .now, snapshot: snapshot)
         // Refresh at the next meaningful boundary: the next shift's start/end,
         // else in an hour.
-        let candidates = [snapshot.next?.start, snapshot.next?.end, snapshot.current?.end]
-            .compactMap { $0 }
+        let cal = Calendar.current
+        let nextMidnight = cal.startOfDay(for: cal.date(byAdding: .day, value: 1, to: .now) ?? .now.addingTimeInterval(86400))
+        let candidates = ([snapshot.next?.start, snapshot.next?.end, snapshot.current?.end].compactMap { $0 } + [nextMidnight])
             .filter { $0 > .now }
         let refreshDate = candidates.min() ?? Date.now.addingTimeInterval(3600)
         completion(Timeline(entries: [entry], policy: .after(refreshDate)))
@@ -66,9 +67,17 @@ struct NextShiftWidgetView: View {
         }
     }
 
-    private var next: SnapshotShift? { entry.snapshot.next }
+    /// Drop a "next" whose start has already passed (the snapshot may be a few
+    /// minutes stale between timeline reloads). All-day shifts have no start.
+    private var next: SnapshotShift? {
+        guard let n = entry.snapshot.next else { return nil }
+        if let start = n.start, start <= entry.date { return nil }
+        return n
+    }
+    private var current: SnapshotShift? { entry.snapshot.current }
 
     private var inlineText: String {
+        if let current { return "On now: \(current.title)" }
         guard let next else { return "No upcoming shift" }
         if next.isAllDay { return next.title }
         if let start = next.start {
@@ -81,8 +90,15 @@ struct NextShiftWidgetView: View {
 
     private var small: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("NEXT SHIFT").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
-            if let next {
+            if let current {
+                Text("ON NOW").font(.caption2.weight(.bold)).foregroundStyle(.green)
+                Text(current.title).font(.headline).lineLimit(2)
+                if let end = current.end {
+                    Text("until \(end.formatted(date: .omitted, time: .shortened))")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            } else if let next {
+                Text("NEXT SHIFT").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
                 Text(next.title).font(.headline).lineLimit(2)
                 if next.isAllDay {
                     Text("Times TBC").font(.caption).foregroundStyle(.orange)
@@ -91,6 +107,7 @@ struct NextShiftWidgetView: View {
                     Text(start, format: .dateTime.hour().minute()).font(.title3.weight(.semibold)).foregroundStyle(accent)
                 }
             } else {
+                Text("NEXT SHIFT").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
                 Text("Nothing scheduled").font(.subheadline).foregroundStyle(.secondary)
             }
             Spacer()

@@ -50,6 +50,7 @@ struct ContentView: View {
     @State private var selection: Selection? = .overview
     @State private var deleteErrorMessage: String?
     @State private var scheduleAwaitingForcedDelete: Schedule?
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationSplitView {
@@ -93,8 +94,12 @@ struct ContentView: View {
             }
         }
         // Keep the home/lock-screen widget snapshot fresh (no-ops until the
-        // App Group is configured).
+        // App Group is configured) — on launch and whenever we re-foreground
+        // (so "today"/week roll-overs republish).
         .task { SnapshotWriter.refresh(context: modelContext) }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { SnapshotWriter.refresh(context: modelContext) }
+        }
         #if DEBUG
         .task { await DemoImport.runIfRequested(modelContext: modelContext) }
         #endif
@@ -184,7 +189,7 @@ struct ContentView: View {
         case .planning:
             PlanningView(quickAdd: { selection = .quickAddShift("") })
         case let .quickAddShift(iso):
-            QuickAddShiftView(dateISO: iso, onDone: { selection = .calendar(nil) })
+            QuickAddShiftView(dateISO: iso, onDone: { selection = .calendar($0) })
         case let .roster(id):
             if let roster = rosters.first(where: { $0.id == id }) {
                 ShiftListView(roster: roster)

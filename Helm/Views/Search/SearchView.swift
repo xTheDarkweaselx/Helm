@@ -20,6 +20,7 @@ struct SearchView: View {
     @Query(sort: \ShiftInstance.localDate, order: .reverse) private var instances: [ShiftInstance]
     @Query(sort: \Roster.createdAt, order: .reverse) private var rosters: [Roster]
     @Query(sort: \Schedule.createdAt, order: .reverse) private var schedules: [Schedule]
+    @Environment(\.helmAccent) private var accent
     @State private var query = ""
 
     private var calendar: Calendar { CalendarViewModel.displayCalendar }
@@ -120,7 +121,7 @@ struct SearchView: View {
     private func shiftRow(_ hit: ShiftHit) -> some View {
         HStack(spacing: 10) {
             RoundedRectangle(cornerRadius: 2)
-                .fill(Color(hex: hit.colorHex) ?? .accentColor)
+                .fill(Color(hex: hit.colorHex) ?? accent)
                 .frame(width: 4, height: 30)
             VStack(alignment: .leading, spacing: 2) {
                 Text(hit.title).font(.subheadline.weight(.semibold))
@@ -129,6 +130,7 @@ struct SearchView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 if !hit.tags.isEmpty {
+                    // customColors:[:] is fine while per-tag custom colours aren't writable.
                     TagPillRow(tags: hit.tags, colorFor: { ShiftTags.colorHex(for: $0, customColors: [:]) })
                 }
             }

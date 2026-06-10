@@ -122,6 +122,8 @@ private func isHex6(_ s: String) -> Bool {
         #expect(ShiftTags.normalizedHex("abcdef") == "ABCDEF")
         #expect(ShiftTags.normalizedHex("xyz") == nil)
         #expect(ShiftTags.normalizedHex("12345") == nil)
+        #expect(ShiftTags.normalizedHex("ＡＢＣＤＥＦ") == nil) // fullwidth, not ASCII hex
+        #expect(ShiftTags.normalizedHex("１２３４５６") == nil)
     }
 }
 
@@ -230,6 +232,38 @@ private func isHex6(_ s: String) -> Bool {
         let rule = AvailabilityRuleSpec(id: "r", kind: .unavailable, weekdays: [2], startMinute: 0, endMinute: 1440)
         let allDay = AvailabilityShift(id: "s", day: monday, startMinute: 0, endMinute: 0, isAllDay: true)
         #expect(AvailabilityMerger.conflictingShiftIDs(shifts: [allDay], rules: [rule], windows: [], calendar: cal).isEmpty)
+    }
+
+    // Overnight rule "Unavailable Mondays 22:00 → 06:00" (end ≤ start).
+    private var overnightMondayRule: AvailabilityRuleSpec {
+        AvailabilityRuleSpec(id: "r", kind: .unavailable, weekdays: [2], startMinute: 22 * 60, endMinute: 6 * 60)
+    }
+
+    @Test func overnightRuleSplitsAcrossMidnight() {
+        // Monday gets the evening tail [22:00, 24:00); Tuesday gets [00:00, 06:00).
+        let mon = AvailabilityMerger.bands(on: monday, rules: [overnightMondayRule], windows: [], calendar: cal)
+        #expect(mon.count == 1 && mon[0].startMinute == 1320 && mon[0].endMinute == 1440)
+        let tue = AvailabilityMerger.bands(on: tuesday, rules: [overnightMondayRule], windows: [], calendar: cal)
+        #expect(tue.count == 1 && tue[0].startMinute == 0 && tue[0].endMinute == 360)
+    }
+
+    @Test func overnightRuleFlagsNightShiftsNotDaytime() {
+        let rule = overnightMondayRule
+        let monNight = AvailabilityShift(id: "n", day: monday, startMinute: 23 * 60, endMinute: 24 * 60, isAllDay: false)
+        let tueEarly = AvailabilityShift(id: "e", day: tuesday, startMinute: 0, endMinute: 5 * 60, isAllDay: false)
+        let monDay = AvailabilityShift(id: "d", day: monday, startMinute: 12 * 60, endMinute: 16 * 60, isAllDay: false)
+        let conflicts = AvailabilityMerger.conflictingShiftIDs(shifts: [monNight, tueEarly, monDay], rules: [rule], windows: [], calendar: cal)
+        #expect(conflicts == ["n", "e"])
+    }
+
+    @Test func effectiveRangeBoundsAreInclusive() {
+        let from = monday
+        let to = monday.advanced(by: 7, in: cal) // the next Monday
+        let rule = AvailabilityRuleSpec(id: "r", kind: .unavailable, weekdays: [2], startMinute: 0, endMinute: 720, effectiveFrom: from, effectiveTo: to)
+        #expect(!AvailabilityMerger.bands(on: from, rules: [rule], windows: [], calendar: cal).isEmpty)   // on effectiveFrom
+        #expect(!AvailabilityMerger.bands(on: to, rules: [rule], windows: [], calendar: cal).isEmpty)     // on effectiveTo (inclusive)
+        let afterTo = to.advanced(by: 7, in: cal)
+        #expect(AvailabilityMerger.bands(on: afterTo, rules: [rule], windows: [], calendar: cal).isEmpty) // past effectiveTo
     }
 }
 

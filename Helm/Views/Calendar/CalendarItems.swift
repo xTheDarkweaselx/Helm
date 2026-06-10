@@ -29,6 +29,8 @@ nonisolated struct ShiftItem: Identifiable, Hashable, Sendable {
     var tags: [String] = []
     /// v7: free-text note (editable inline; searchable).
     var note: String? = nil
+    /// The shift's own IANA zone (for tz-correct availability conflict math).
+    var timeZoneIdentifier: String = TimeZone.current.identifier
 }
 
 /// Which provider's events the Calendar tab shows (v4.1: the view switcher).

@@ -35,7 +35,7 @@ enum SnapshotWriter {
                 paidHours: inst.computedPaidHours
             )
         }
-        let snapshot = HelmSnapshotBuilder.build(shifts: inputs, now: .now, calendar: .current)
+        let snapshot = HelmSnapshotBuilder.build(shifts: inputs, now: .now, calendar: CalendarViewModel.displayCalendar)
         write(snapshot)
         LiveActivityController.sync(current: snapshot.current)
         #if canImport(WidgetKit)

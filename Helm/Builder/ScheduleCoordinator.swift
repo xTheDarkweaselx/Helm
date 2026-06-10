@@ -65,6 +65,7 @@ final class ScheduleCoordinator {
         }
         context.delete(schedule)
         try? context.save()
+        SnapshotWriter.refresh(context: context)
     }
 
     /// Full re-write of the schedule's EXISTING shifts to its calendar (v4):

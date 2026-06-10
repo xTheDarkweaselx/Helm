@@ -97,6 +97,7 @@ private struct ShiftAgendaRow: View {
                         .foregroundStyle(.secondary)
                 }
                 if !shift.tags.isEmpty {
+                    // customColors:[:] is fine while per-tag custom colours aren't writable.
                     TagPillRow(tags: shift.tags, colorFor: { ShiftTags.colorHex(for: $0, customColors: [:]) })
                 }
                 ConflictNote(titles: conflictTitles)
