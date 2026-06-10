@@ -213,6 +213,7 @@ struct SchedulePreviewView: View {
     @Environment(\.dismiss) private var dismiss
     let schedule: Schedule
     @State private var coordinator = ScheduleCoordinator()
+    @State private var previewStyle: ImportView.PreviewStyle = .calendar
 
     var body: some View {
         NavigationStack {
@@ -249,14 +250,30 @@ struct SchedulePreviewView: View {
 
     private func planView(_ plan: RosterSyncEngine.Plan) -> some View {
         let diff = plan.diff
-        return List {
-            Section {
-                LabeledContent("Add", value: "\(diff.added.count)")
-                LabeledContent("Update", value: "\(diff.updated.count)")
-                LabeledContent("Remove", value: "\(diff.removed.count)")
-                LabeledContent("Unchanged", value: "\(diff.unchanged.count)")
-            } header: {
-                Text(plan.isReimport ? "Changes to apply" : "New shifts")
+        return VStack(spacing: 0) {
+            Picker("View", selection: $previewStyle) {
+                Label("Calendar", systemImage: "calendar").tag(ImportView.PreviewStyle.calendar)
+                Label("List", systemImage: "list.bullet").tag(ImportView.PreviewStyle.list)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+
+            switch previewStyle {
+            case .calendar:
+                CalendarView(mode: .preview(PlanOverlayBuilder.build(from: plan, in: context)))
+            case .list:
+                List {
+                    Section {
+                        LabeledContent("Add", value: "\(diff.added.count)")
+                        LabeledContent("Update", value: "\(diff.updated.count)")
+                        LabeledContent("Remove", value: "\(diff.removed.count)")
+                        LabeledContent("Unchanged", value: "\(diff.unchanged.count)")
+                    } header: {
+                        Text(plan.isReimport ? "Changes to apply" : "New shifts")
+                    }
+                }
             }
         }
         .safeAreaInset(edge: .bottom) {

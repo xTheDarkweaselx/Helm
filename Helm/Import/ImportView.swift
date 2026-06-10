@@ -100,6 +100,11 @@ struct ImportView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var coordinator = ImportCoordinator()
     @State private var isFileImporterPresented = false
+    @State private var previewStyle: PreviewStyle = .calendar
+
+    enum PreviewStyle: Hashable {
+        case calendar, list
+    }
 
     // Explicit OOXML + legacy-xls + text UTIs only — NOT the broad `.spreadsheet`
     // (which would also offer .numbers/.ods that dead-end on the xlsx parser).
@@ -170,7 +175,45 @@ struct ImportView: View {
         let diff = coordinator.plan?.diff
         let isReimport = coordinator.plan?.isReimport ?? false
         let hasChanges = diff?.hasChanges ?? (result.writableCount > 0)
-        return List {
+        return VStack(spacing: 0) {
+            Picker("View", selection: $previewStyle) {
+                Label("Calendar", systemImage: "calendar").tag(PreviewStyle.calendar)
+                Label("List", systemImage: "list.bullet").tag(PreviewStyle.list)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+
+            switch previewStyle {
+            case .calendar:
+                // The headline feature: the pending diff rendered against the
+                // user's real calendar (other events included).
+                if let plan = coordinator.plan {
+                    CalendarView(mode: .preview(PlanOverlayBuilder.build(from: plan, in: modelContext)))
+                } else {
+                    ProgressView()
+                }
+            case .list:
+                listPreview(result, diff: diff, isReimport: isReimport)
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            Button {
+                Task { await coordinator.commit(modelContext: modelContext) }
+            } label: {
+                Text(commitTitle(diff: diff, isReimport: isReimport, result: result))
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(!hasChanges)
+            .padding()
+        }
+    }
+
+    private func listPreview(_ result: RosterImportResult, diff: RosterDiff?, isReimport: Bool) -> some View {
+        List {
             Section {
                 LabeledContent("Source", value: result.sourceName)
                 if isReimport, let diff {
@@ -195,18 +238,6 @@ struct ImportView: View {
                     DraftRow(draft: draft)
                 }
             }
-        }
-        .safeAreaInset(edge: .bottom) {
-            Button {
-                Task { await coordinator.commit(modelContext: modelContext) }
-            } label: {
-                Text(commitTitle(diff: diff, isReimport: isReimport, result: result))
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(!hasChanges)
-            .padding()
         }
     }
 

@@ -29,6 +29,7 @@ struct ContentView: View {
 
     enum Selection: Hashable {
         case overview
+        case calendar
         case shiftTypes
         case settings
         case roster(String)
@@ -82,6 +83,9 @@ struct ContentView: View {
                 NavigationLink(value: Selection.overview) {
                     Label("Overview", systemImage: "rectangle.grid.2x2")
                 }
+                NavigationLink(value: Selection.calendar) {
+                    Label("Calendar", systemImage: "calendar")
+                }
                 NavigationLink(value: Selection.shiftTypes) {
                     Label("Shift Types", systemImage: "clock")
                 }
@@ -94,7 +98,7 @@ struct ContentView: View {
                 Section("Rosters") {
                     ForEach(importedRosters) { roster in
                         NavigationLink(value: Selection.roster(roster.id)) {
-                            Label(roster.title ?? "Untitled roster", systemImage: "calendar")
+                            Label(roster.title ?? "Untitled roster", systemImage: "tablecells")
                         }
                     }
                 }
@@ -132,6 +136,9 @@ struct ContentView: View {
         switch selection {
         case .overview, nil:
             OverviewView(importRoster: { isPresentingImport = true }, newSchedule: newSchedule)
+        case .calendar:
+            CalendarView(mode: .live)
+                .navigationTitle("Calendar")
         case .shiftTypes:
             ShiftTypeLibraryView()
         case .settings:
