@@ -13,8 +13,6 @@ struct ScheduleSegmentEditorView: View {
     @Environment(\.modelContext) private var context
     @Bindable var segment: ScheduleSegment
 
-    @State private var pickingDay: ExplicitDay?
-
     private var today: Date { Calendar.current.startOfDay(for: .now) }
 
     var body: some View {
@@ -42,13 +40,6 @@ struct ScheduleSegmentEditorView: View {
         }
         .navigationTitle(segment.title ?? (segment.kind == .cyclic ? "Cycle segment" : "Explicit segment"))
         .onDisappear { try? context.save() }
-        .sheet(item: $pickingDay) { day in
-            ShiftTypePickerSheet { type in
-                day.shiftType = type
-                day.isOff = (type == nil)
-                try? context.save()
-            }
-        }
     }
 
     // MARK: - Cyclic
@@ -96,8 +87,11 @@ struct ScheduleSegmentEditorView: View {
                         DatePicker("", selection: sel, displayedComponents: .date).labelsHidden()
                     }
                     Spacer()
-                    Button { pickingDay = day } label: { dayTypeLabel(day) }
-                        .buttonStyle(.plain)
+                    ShiftTypePickerMenu(allowOff: true, onPick: { type in
+                        day.shiftType = type
+                        day.isOff = (type == nil)
+                        try? context.save()
+                    }) { dayTypeLabel(day) }
                 }
             }
             .onDelete { offsets in

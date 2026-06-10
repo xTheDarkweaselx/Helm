@@ -11,7 +11,6 @@ import SwiftData
 struct RotationPatternEditorView: View {
     @Environment(\.modelContext) private var context
     @Bindable var pattern: RotationPattern
-    @State private var pickingSlot: RotationSlot?
 
     private var slots: [RotationSlot] {
         (pattern.slots ?? []).sorted { $0.sortIndex < $1.sortIndex }
@@ -32,15 +31,18 @@ struct RotationPatternEditorView: View {
             }
             Section {
                 ForEach(slots) { slot in
-                    Button { pickingSlot = slot } label: {
+                    ShiftTypePickerMenu(allowOff: true, onPick: { type in
+                        slot.shiftType = type
+                        slot.isOff = (type == nil)
+                        try? context.save()
+                    }) {
                         HStack {
                             Text("Day \(slot.sortIndex + 1)")
                             Spacer()
                             slotLabel(slot)
-                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                            Image(systemName: "chevron.up.chevron.down").font(.caption2).foregroundStyle(.tertiary)
                         }
                     }
-                    .buttonStyle(.plain)
                 }
             } header: {
                 Text("Days")
@@ -50,13 +52,6 @@ struct RotationPatternEditorView: View {
         }
         .navigationTitle("Cycle")
         .onAppear { syncSlots() }
-        .sheet(item: $pickingSlot) { slot in
-            ShiftTypePickerSheet { type in
-                slot.shiftType = type
-                slot.isOff = (type == nil)
-                try? context.save()
-            }
-        }
     }
 
     @ViewBuilder
@@ -69,45 +64,4 @@ struct RotationPatternEditorView: View {
     }
 
     private func syncSlots() { syncRotationSlots(pattern, context: context) }
-}
-
-struct ShiftTypePickerSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @Query(sort: \ShiftType.code) private var types: [ShiftType]
-    var allowOff: Bool = true
-    let onPick: (ShiftType?) -> Void
-
-    var body: some View {
-        NavigationStack {
-            List {
-                if allowOff {
-                    Button { onPick(nil); dismiss() } label: {
-                        Label("Off", systemImage: "moon.zzz")
-                    }
-                }
-                Section("Shift types") {
-                    if types.isEmpty {
-                        Text("No shift types yet. Add some in Shift Types first.")
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(types) { type in
-                        Button { onPick(type); dismiss() } label: {
-                            HStack {
-                                ShiftTypeChip(label: type.code ?? type.label ?? "?", colorHex: type.colorHex)
-                                Text(type.label ?? type.code ?? "Shift").foregroundStyle(.primary)
-                                Spacer()
-                                if type.workKind != .off {
-                                    Text("\(hhmmString(type.startMinuteOfDay))–\(hhmmString(type.endMinuteOfDay))")
-                                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .navigationTitle("Choose shift")
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-        }
-    }
 }

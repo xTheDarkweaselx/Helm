@@ -110,8 +110,9 @@ struct ShiftListView: View {
         // Regenerate the shareable .ics off the render path whenever the content
         // or the reminder setting changes (never during body evaluation).
         .task(id: rosterSignature) { await refreshICS() }
-        .sheet(isPresented: $isEditingReminders) {
-            RosterRemindersSheet(roster: roster) {
+        // In-window (push), not a sheet — consistent with the rest of the app.
+        .navigationDestination(isPresented: $isEditingReminders) {
+            RosterRemindersView(roster: roster) {
                 applyReminders() // push the new offsets onto existing events
             }
         }

@@ -171,7 +171,6 @@ struct ScheduleEditorView: View {
 struct ScheduleExceptionEditorView: View {
     @Environment(\.modelContext) private var context
     @Bindable var exception: ScheduleException
-    @State private var pickingType = false
 
     private let kinds: [OverrideKind] = [.modified, .swapped, .added, .cancelled]
 
@@ -183,7 +182,10 @@ struct ScheduleExceptionEditorView: View {
             }
             if exception.kind != .cancelled {
                 Section("Shift") {
-                    Button { pickingType = true } label: {
+                    ShiftTypePickerMenu(allowOff: false, onPick: { type in
+                        exception.shiftType = type
+                        try? context.save()
+                    }) {
                         HStack {
                             Text("Shift")
                             Spacer()
@@ -194,18 +196,11 @@ struct ScheduleExceptionEditorView: View {
                             }
                         }
                     }
-                    .buttonStyle(.plain)
                 }
             }
         }
         .navigationTitle("Exception")
         .onDisappear { try? context.save() }
-        .sheet(isPresented: $pickingType) {
-            ShiftTypePickerSheet(allowOff: false) { type in
-                exception.shiftType = type
-                try? context.save()
-            }
-        }
     }
 }
 
