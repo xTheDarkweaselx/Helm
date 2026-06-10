@@ -18,26 +18,14 @@ import HelmDomain
 /// all-day (TBC) day wins only when its civil day is STRICTLY earlier than
 /// the next timed shift's civil day.
 enum NextShiftSelector {
+    /// Delegates to the ONE pure rule (HelmDomain.NextShiftRule) shared by the
+    /// dashboard, Siri and the widget snapshot — they can never disagree.
     static func next(in instances: [ShiftInstance]) -> ShiftInstance? {
-        let now = Date.now
-        let calendar = Calendar.current
-        let todayStart = calendar.startOfDay(for: now)
-        let nextTimed = instances
-            .filter { ($0.isAllDay ?? false) == false }
-            .compactMap { instance in instance.startUTC.map { (instance, $0) } }
-            .filter { $0.1 > now }
-            .min { $0.1 < $1.1 }
-        let nextAllDay = instances
-            .filter { ($0.isAllDay ?? false) && ($0.localDate ?? .distantPast) >= todayStart }
-            .min { ($0.localDate ?? .distantFuture) < ($1.localDate ?? .distantFuture) }
-        switch (nextTimed, nextAllDay) {
-        case (nil, nil): return nil
-        case let (timed?, nil): return timed.0
-        case let (nil, allDay?): return allDay
-        case let (timed?, allDay?):
-            let allDayDay = allDay.localDate.map { calendar.startOfDay(for: $0) } ?? .distantFuture
-            return allDayDay < calendar.startOfDay(for: timed.1) ? allDay : timed.0
+        let candidates = instances.map {
+            NextShiftRule.Candidate(id: $0.id, isAllDay: $0.isAllDay ?? false, start: $0.startUTC, localDate: $0.localDate)
         }
+        guard let id = NextShiftRule.nextID(in: candidates, now: .now, calendar: .current) else { return nil }
+        return instances.first { $0.id == id }
     }
 }
 

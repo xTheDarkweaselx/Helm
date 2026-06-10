@@ -16,7 +16,16 @@
 	     com.apple.developer.icloud-container-identifiers = [iCloud.Fusion-Studios.Helm]
 	     com.apple.developer.icloud-services             = [CloudKit]
 	     aps-environment / com.apple.developer.aps-environment = development
+
+	     v7 WIDGETS: the App Group is ALSO parked here for the same reason —
+	     add it via Signing & Capabilities (+ App Groups → group.Fusion-Studios.Helm)
+	     on BOTH the app and the widget target so the developer portal registers
+	     it and the provisioning profiles match. Until then SnapshotWriter
+	     no-ops (the container URL is nil) and the app runs normally:
+
+	     com.apple.security.application-groups = [group.Fusion-Studios.Helm]
 	-->
+
 
 	<!-- macOS App Sandbox; ignored on iOS/iPadOS/visionOS (always sandboxed). -->
 	<key>com.apple.security.app-sandbox</key>

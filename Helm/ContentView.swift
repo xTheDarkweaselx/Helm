@@ -92,6 +92,9 @@ struct ContentView: View {
                 selection = .calendar(nil)
             }
         }
+        // Keep the home/lock-screen widget snapshot fresh (no-ops until the
+        // App Group is configured).
+        .task { SnapshotWriter.refresh(context: modelContext) }
         #if DEBUG
         .task { await DemoImport.runIfRequested(modelContext: modelContext) }
         #endif

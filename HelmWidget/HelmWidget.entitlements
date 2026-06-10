@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- All app extensions are sandboxed. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<!-- MUST match the main app's App Group so the widget reads the snapshot.
+	     Add this via Xcode Signing & Capabilities (+ App Groups) on the widget
+	     target so the developer portal registers it and signing matches. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.Fusion-Studios.Helm</string>
+	</array>
+</dict>
+</plist>

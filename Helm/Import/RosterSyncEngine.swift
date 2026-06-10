@@ -209,6 +209,7 @@ struct RosterSyncEngine {
         }
 
         try context.save()
+        SnapshotWriter.refresh(context: context)
 
         // Dropped-destination cleanup, best-effort, only now that the new
         // calendars and the store are committed. Failure (signed out, denied,
@@ -252,6 +253,7 @@ struct RosterSyncEngine {
         }
         context.delete(roster)
         try context.save()
+        SnapshotWriter.refresh(context: context)
     }
 
     /// The calendar destination(s) this roster's events were last written to
@@ -373,6 +375,7 @@ struct RosterSyncEngine {
         }
         context.delete(instance)
         try context.save()
+        SnapshotWriter.refresh(context: context)
     }
 
     /// Build the calendar draft for an instance, stamping the effective

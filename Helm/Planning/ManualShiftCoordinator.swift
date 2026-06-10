@@ -119,6 +119,7 @@ enum ManualShiftCoordinator {
             }
         }
         try context.save()
+        SnapshotWriter.refresh(context: context)
         return instance
     }
 }
