@@ -8,6 +8,9 @@
 import SwiftUI
 import SwiftData
 import OSLog
+#if os(macOS)
+import Security
+#endif
 
 @main
 struct HelmApp: App {
@@ -67,6 +70,28 @@ extension HelmApp {
         ])
     }
 
+    /// Whether this PROCESS is actually signed with the CloudKit entitlement.
+    /// The ubiquityIdentityToken gate alone is not enough on macOS: with iCloud
+    /// signed in but the build signed WITHOUT the iCloud capability (e.g. "Sign
+    /// to Run Locally" / missing provisioning), CKContainer initialization
+    /// raises an uncatchable NSException on a background thread —
+    /// "In order to use CloudKit, your process must have a
+    /// com.apple.developer.icloud-services entitlement" → EXC_BREAKPOINT.
+    /// Field-hit on the first properly-validating Mac launch.
+    static var processHasCloudKitEntitlement: Bool {
+        #if os(macOS)
+        guard let task = SecTaskCreateFromSelf(nil),
+              let value = SecTaskCopyValueForEntitlement(task, "com.apple.developer.icloud-services" as CFString, nil)
+        else { return false }
+        if let services = value as? [String] { return services.contains("CloudKit") }
+        return false
+        #else
+        // iOS/visionOS: installation enforces provisioning, and the SecTask API
+        // isn't available — the account gate suffices there.
+        true
+        #endif
+    }
+
     /// Build the model container with graceful degradation (ADR-10): CloudKit
     /// private store → local-only store → in-memory. The app must launch and
     /// import-to-calendar must work even with no iCloud account, a CloudKit
@@ -80,7 +105,7 @@ extension HelmApp {
         // ASYNCHRONOUSLY during setup, which a do/catch here cannot rescue — so we
         // must decide up front. Account-less devices fall through to a local store;
         // import-to-calendar still works (ADR-10).
-        if FileManager.default.ubiquityIdentityToken != nil {
+        if FileManager.default.ubiquityIdentityToken != nil, processHasCloudKitEntitlement {
             let cloudConfig = ModelConfiguration(
                 schema: schema,
                 isStoredInMemoryOnly: false,
@@ -92,7 +117,7 @@ extension HelmApp {
                 log.error("CloudKit ModelContainer failed, falling back to local store: \(error, privacy: .public)")
             }
         } else {
-            log.notice("No iCloud account available; using a local store (no sync).")
+            log.notice("CloudKit unavailable (no iCloud account, or the build lacks the iCloud entitlement); using a local store (no sync).")
         }
 
         // 2. Fallback: on-device only (no sync).

@@ -7,9 +7,18 @@
 //  redirect itself, so the reversed-client-id scheme is NOT registered in
 //  CFBundleURLTypes. Cross-platform anchor (UIWindow / NSWindow).
 //
+//  CONCURRENCY: on macOS the session's completion handler is invoked on a
+//  BACKGROUND XPC queue (iOS delivers it on main). The handler must therefore
+//  be @Sendable/non-isolated — a MainActor-inferred closure traps with an
+//  SE-0423 isolation assertion (EXC_BREAKPOINT) the instant consent completes.
+//  CheckedContinuation.resume is documented thread-safe, so we resume directly;
+//  the once-guard is a real Mutex because the completion (XPC queue) and a
+//  failed start() (main thread) genuinely race.
+//
 
 import Foundation
 import AuthenticationServices
+import Synchronization
 #if canImport(UIKit)
 import UIKit
 #elseif canImport(AppKit)
@@ -36,10 +45,19 @@ final class WebAuthPresenter: NSObject, ASWebAuthenticationPresentationContextPr
     /// if nothing retains it while the user is signing in.
     private var session: ASWebAuthenticationSession?
 
-    /// Guards against any double-resume of the continuation (completion handler
-    /// vs. a false `start()`); AS delivers the completion on the main queue.
-    private final class ResumeOnce: @unchecked Sendable {
-        var done = false
+    /// Thread-safe single-resume guard for the continuation. Explicitly
+    /// nonisolated: nesting in a @MainActor class would otherwise isolate
+    /// claim() to the main actor — reintroducing the XPC-queue assertion.
+    nonisolated private final class ResumeOnce: Sendable {
+        private let claimed = Mutex(false)
+        /// True exactly once, for whichever caller gets here first.
+        func claim() -> Bool {
+            claimed.withLock { done in
+                if done { return false }
+                done = true
+                return true
+            }
+        }
     }
 
     func authenticate(url: URL, callbackScheme: String) async throws -> URL {
@@ -49,9 +67,9 @@ final class WebAuthPresenter: NSObject, ASWebAuthenticationPresentationContextPr
             let session = ASWebAuthenticationSession(
                 url: url,
                 callback: .customScheme(callbackScheme)
-            ) { callbackURL, error in
-                guard !once.done else { return }
-                once.done = true
+            ) { @Sendable callbackURL, error in
+                // Runs on a background XPC queue on macOS — keep non-isolated.
+                guard once.claim() else { return }
                 if let callbackURL {
                     continuation.resume(returning: callbackURL)
                 } else if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin {
@@ -63,9 +81,9 @@ final class WebAuthPresenter: NSObject, ASWebAuthenticationPresentationContextPr
             session.presentationContextProvider = self
             session.prefersEphemeralWebBrowserSession = false // keep Google SSO cookies
             self.session = session
-            if !session.start(), !once.done {
-                once.done = true
+            if !session.start(), once.claim() {
                 continuation.resume(throwing: WebAuthError.cannotPresent)
+                self.session = nil
             }
         }
     }

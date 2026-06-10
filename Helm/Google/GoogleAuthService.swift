@@ -79,10 +79,19 @@ actor GoogleAuthService: GoogleAccessTokenProviding {
     /// Re-align the synchronous UserDefaults mirrors with the Keychain truth.
     /// Called at launch: the Keychain survives reinstalls while UserDefaults
     /// doesn't (and vice-versa desyncs would hard-fail or hide the feature).
-    func reconcileMirror() {
+    func reconcileMirror() async {
         let tokens = currentTokens()
-        UserDefaults.standard.set(tokens != nil, forKey: GoogleConfig.signedInDefaultsKey)
-        if let email = tokens?.email {
+        await Self.setMirror(signedIn: tokens != nil, email: tokens?.email)
+    }
+
+    /// The ONLY writer of the sign-in mirror keys, pinned to the main actor:
+    /// UserDefaults delivers KVO synchronously on the CALLING thread, and these
+    /// keys feed live @AppStorage observers in SettingsForm — an off-main write
+    /// from this actor's executor invalidates SwiftUI off the main thread.
+    @MainActor
+    private static func setMirror(signedIn: Bool, email: String?) {
+        UserDefaults.standard.set(signedIn, forKey: GoogleConfig.signedInDefaultsKey)
+        if let email {
             UserDefaults.standard.set(email, forKey: GoogleConfig.accountEmailDefaultsKey)
         } else {
             UserDefaults.standard.removeObject(forKey: GoogleConfig.accountEmailDefaultsKey)
@@ -98,20 +107,18 @@ actor GoogleAuthService: GoogleAccessTokenProviding {
         return tokens
     }
 
-    private func store(_ tokens: StoredTokens) {
+    private func store(_ tokens: StoredTokens) async {
         cached = tokens
         if let data = try? JSONEncoder().encode(tokens) {
             keychain.write(data)
         }
-        UserDefaults.standard.set(true, forKey: GoogleConfig.signedInDefaultsKey)
-        UserDefaults.standard.set(tokens.email, forKey: GoogleConfig.accountEmailDefaultsKey)
+        await Self.setMirror(signedIn: true, email: tokens.email)
     }
 
-    private func clear() {
+    private func clear() async {
         cached = nil
         keychain.delete()
-        UserDefaults.standard.set(false, forKey: GoogleConfig.signedInDefaultsKey)
-        UserDefaults.standard.removeObject(forKey: GoogleConfig.accountEmailDefaultsKey)
+        await Self.setMirror(signedIn: false, email: nil)
     }
 
     // MARK: - Interactive sign-in
@@ -156,7 +163,7 @@ actor GoogleAuthService: GoogleAccessTokenProviding {
         if let previous = currentTokens(), previous.refreshToken != refreshToken {
             _ = try? await urlSession.data(for: GoogleOAuth.revokeRequest(token: previous.refreshToken))
         }
-        store(StoredTokens(
+        await store(StoredTokens(
             refreshToken: refreshToken,
             accessToken: response.accessToken,
             expiry: Date.now.addingTimeInterval(TimeInterval(response.expiresIn)),
@@ -171,7 +178,7 @@ actor GoogleAuthService: GoogleAccessTokenProviding {
             let request = GoogleOAuth.revokeRequest(token: tokens.refreshToken)
             _ = try? await urlSession.data(for: request)
         }
-        clear()
+        await clear()
         log.info("Google signed out")
     }
 
@@ -227,12 +234,12 @@ actor GoogleAuthService: GoogleAccessTokenProviding {
 
         do {
             let refreshed = try await task.value
-            store(refreshed)
+            await store(refreshed)
             lastRefreshCompletedAt = .now
             return refreshed
         } catch GoogleAuthError.reauthenticationRequired {
             // invalid_grant: the refresh token is dead — terminal until re-auth.
-            clear()
+            await clear()
             throw GoogleAuthError.reauthenticationRequired
         }
     }
