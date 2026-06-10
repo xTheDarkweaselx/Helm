@@ -18,6 +18,10 @@ struct CalendarView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \ShiftInstance.localDate) private var instances: [ShiftInstance]
+    // v7 planning overlays.
+    @Query private var timeOffs: [TimeOff]
+    @Query(sort: \AvailabilityRule.createdAt) private var availabilityRules: [AvailabilityRule]
+    @Query(sort: \AvailabilityWindow.localDate) private var availabilityWindows: [AvailabilityWindow]
     @State private var model: CalendarViewModel
     @State private var shiftToRemove: ShiftItem?
     @State private var removalError: String?
@@ -59,6 +63,7 @@ struct CalendarView: View {
             day: model.selectedDay,
             items: items(for: model.selectedDay, shiftBuckets: shiftBuckets),
             conflicts: conflictTitles(for: model.selectedDay, shiftBuckets: shiftBuckets),
+            leave: timeOffLabels(on: model.selectedDay),
             onRemoveShift: isLive ? { shiftToRemove = $0 } : nil
         )
         GeometryReader { geo in
@@ -384,6 +389,8 @@ struct CalendarView: View {
                 return true
             }
         }
+        // v7: a shift clashing with an "unavailable" availability band counts too.
+        if !availabilityConflictIDs(on: day, shifts: shiftBuckets[day] ?? []).isEmpty { return true }
         return false
     }
 
@@ -402,7 +409,71 @@ struct CalendarView: View {
                 .filter { IntervalOverlap.intersects(s, e, $0.start, $0.end) }.map(\.title)
             if !overlapping.isEmpty { map["p:\(preview.id)"] = overlapping }
         }
+        // v7: flag shifts that clash with the user's "unavailable" availability.
+        let availConflicts = availabilityConflictIDs(on: day, shifts: shiftBuckets[day] ?? [])
+        for shift in shiftBuckets[day] ?? [] where availConflicts.contains(shift.id) {
+            map["s:\(shift.id)", default: []].append("Clashes with your availability")
+        }
         return map
+    }
+
+    // MARK: - Planning overlays (v7)
+
+    private var availabilityRuleSpecs: [AvailabilityRuleSpec] {
+        let cal = CalendarViewModel.displayCalendar
+        return availabilityRules.map { r in
+            AvailabilityRuleSpec(
+                id: r.id, kind: r.kind, weekdays: r.weekdays,
+                startMinute: r.startMinuteOfDay, endMinute: r.endMinuteOfDay,
+                effectiveFrom: r.effectiveFrom.map { DayKey(containing: $0, in: cal) },
+                effectiveTo: r.effectiveTo.map { DayKey(containing: $0, in: cal) }
+            )
+        }
+    }
+
+    private var availabilityWindowSpecs: [AvailabilityWindowSpec] {
+        let cal = CalendarViewModel.displayCalendar
+        return availabilityWindows.compactMap { w in
+            guard let d = w.localDate else { return nil }
+            return AvailabilityWindowSpec(
+                id: w.id, kind: w.kind, day: DayKey(containing: d, in: cal),
+                startMinute: w.startMinuteOfDay, endMinute: w.endMinuteOfDay, allDay: w.allDay
+            )
+        }
+    }
+
+    /// Unavailable bands to shade on a day's timeline column.
+    private func availabilityBands(on day: DayKey) -> [AvailabilityBand] {
+        AvailabilityMerger.bands(on: day, rules: availabilityRuleSpecs, windows: availabilityWindowSpecs, calendar: CalendarViewModel.displayCalendar)
+            .filter { $0.kind == .unavailable }
+    }
+
+    /// Ids of this day's shifts that overlap an "unavailable" band.
+    private func availabilityConflictIDs(on day: DayKey, shifts: [ShiftItem]) -> Set<String> {
+        guard !availabilityRules.isEmpty || !availabilityWindows.isEmpty else { return [] }
+        let cal = CalendarViewModel.displayCalendar
+        let dayStart = day.startOfDay(in: cal)
+        let availShifts: [AvailabilityShift] = shifts.compactMap { s in
+            guard !s.isAllDay, let start = s.start, let end = s.end else { return nil }
+            let sMin = Int(start.timeIntervalSince(dayStart) / 60)
+            let eMin = Int(end.timeIntervalSince(dayStart) / 60)
+            return AvailabilityShift(id: s.id, day: day, startMinute: sMin, endMinute: eMin, isAllDay: false)
+        }
+        return AvailabilityMerger.conflictingShiftIDs(shifts: availShifts, rules: availabilityRuleSpecs, windows: availabilityWindowSpecs, calendar: cal)
+    }
+
+    /// Time-off labels covering a day (for the agenda banner).
+    private func timeOffLabels(on day: DayKey) -> [String] {
+        guard !timeOffs.isEmpty else { return [] }
+        let cal = CalendarViewModel.displayCalendar
+        return timeOffs.compactMap { to -> String? in
+            guard let s = to.startDate, let e = to.endDate else { return nil }
+            let sk = DayKey(containing: s, in: cal)
+            let ek = DayKey(containing: e, in: cal)
+            guard sk <= day && day <= ek else { return nil }
+            let name = to.title?.isEmpty == false ? to.title! : to.kind.displayName
+            return to.paid ? name : "\(name) (unpaid)"
+        }
     }
 
     private var legend: some View {
@@ -499,7 +570,8 @@ struct CalendarView: View {
                 selectedDay: model.selectedDay,
                 hourHeight: hourHeight,
                 blocks: { timelineBlocks(for: $0) },
-                onSelectDay: { model.selectedDay = $0 }
+                onSelectDay: { model.selectedDay = $0 },
+                bands: { availabilityBands(on: $0) }
             )
             if case .unavailable = model.accessState {
                 Label("Calendar access is off — only your shifts are shown.", systemImage: "eye.slash")

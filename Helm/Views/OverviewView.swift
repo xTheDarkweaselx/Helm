@@ -74,6 +74,7 @@ struct OverviewView: View {
     @Query(sort: \Roster.createdAt, order: .reverse) private var rosters: [Roster]
     @Query(sort: \Schedule.createdAt, order: .reverse) private var schedules: [Schedule]
     @Query private var instances: [ShiftInstance]
+    @Query private var timeOffs: [TimeOff]
     @AppStorage("hourlyRate") private var hourlyRate: Double = 0
     @Environment(\.helmAccent) private var accent
 
@@ -127,6 +128,7 @@ struct OverviewView: View {
                 weeklyHoursCard(weekly)
                 if mix.count > 1 { typeMixCard(mix) }
                 if hourlyRate > 0 { payCard(monthHours: months.current) }
+                leaveCard
                 quickActions
             }
             .padding(16)
@@ -276,6 +278,52 @@ struct OverviewView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .glassCard(cornerRadius: 14)
+    }
+
+    // MARK: Leave
+
+    @ViewBuilder
+    private var leaveCard: some View {
+        let summary = leaveSummary()
+        if summary.totalDays > 0 {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Leave this year").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                HStack(spacing: 16) {
+                    leaveStat("\(summary.totalDays)d", "booked")
+                    leaveStat("\(summary.paidDays)d", "paid")
+                    if summary.hours > 0 {
+                        leaveStat(summary.hours.formatted(.number.precision(.fractionLength(0...1))) + "h", "credited")
+                    }
+                }
+                if let top = summary.byKind.first {
+                    Text("Mostly \(top.kind.displayName.lowercased()) (\(top.days)d)")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .glassCard(cornerRadius: 14)
+        }
+    }
+
+    private func leaveStat(_ value: String, _ caption: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(value).font(.title3.weight(.bold)).monospacedDigit()
+            Text(caption).font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
+    private func leaveSummary() -> LeaveAccumulator.LeaveSummary {
+        let year = calendar.component(.year, from: .now)
+        let range = DayKey(year: year, month: 1, day: 1)...DayKey(year: year, month: 12, day: 31)
+        let entries: [LeaveEntry] = timeOffs.compactMap { to in
+            guard let s = to.startDate, let e = to.endDate else { return nil }
+            return LeaveEntry(id: to.id,
+                              start: DayKey(containing: s, in: calendar),
+                              end: DayKey(containing: e, in: calendar),
+                              kind: to.kind, paid: to.paid, hoursPerDay: to.hoursPerDay)
+        }
+        return LeaveAccumulator.summary(entries, in: range, calendar: calendar)
     }
 
     private var quickActions: some View {

@@ -46,6 +46,8 @@ struct TimelinePane: View {
     let hourHeight: Double
     let blocks: (DayKey) -> DayBlocks
     let onSelectDay: (DayKey) -> Void
+    /// v7: unavailable availability bands to shade behind a day's column.
+    var bands: (DayKey) -> [AvailabilityBand] = { _ in [] }
 
     private var calendar: Calendar { CalendarViewModel.displayCalendar }
     private static let gutterWidth: CGFloat = 44
@@ -64,7 +66,8 @@ struct TimelinePane: View {
                                 day: day,
                                 isToday: day == today,
                                 hourHeight: hourHeight,
-                                blocks: blocks(day).timed
+                                blocks: blocks(day).timed,
+                                bands: bands(day)
                             )
                             .onTapGesture { onSelectDay(day) }
                             if day != days.last { Divider() }
@@ -191,6 +194,7 @@ struct TimelineDayColumn: View {
     let isToday: Bool
     let hourHeight: Double
     let blocks: [TimelineBlock]
+    var bands: [AvailabilityBand] = []
 
     private var calendar: Calendar { CalendarViewModel.displayCalendar }
 
@@ -206,6 +210,20 @@ struct TimelineDayColumn: View {
 
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
+                // v7: unavailable bands shaded behind the grid.
+                ForEach(Array(bands.enumerated()), id: \.offset) { _, band in
+                    let top = Double(band.startMinute) / 60 * hourHeight
+                    let bandHeight = Double(max(0, band.endMinute - band.startMinute)) / 60 * hourHeight
+                    Rectangle()
+                        .fill(Color.orange.opacity(0.08))
+                        .frame(width: geo.size.width, height: bandHeight)
+                        .overlay(alignment: .leading) {
+                            Rectangle().fill(Color.orange.opacity(0.35)).frame(width: 2)
+                        }
+                        .offset(y: top)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
                 // Hour gridlines (one Canvas — cheap).
                 Canvas { context, size in
                     var hour = 0.0

@@ -15,6 +15,8 @@ struct DayDetailView: View {
     let items: [CalendarDayItem]
     /// CalendarDayItem.id → titles of timed events the item overlaps (v4).
     var conflicts: [String: [String]] = [:]
+    /// v7: time-off labels covering this day (shown as a banner).
+    var leave: [String] = []
     /// Present in .live mode: offer "Remove shift" on shift rows (v4).
     var onRemoveShift: ((ShiftItem) -> Void)?
 
@@ -26,11 +28,26 @@ struct DayDetailView: View {
                 .padding(.vertical, 10)
                 .accessibilityAddTraits(.isHeader)
             Divider()
+            if !leave.isEmpty {
+                ForEach(leave, id: \.self) { label in
+                    Label(label, systemImage: "airplane")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.teal)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 5)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                Divider()
+            }
             if items.isEmpty {
-                ContentUnavailableView {
-                    Label("Nothing on this day", systemImage: "calendar")
-                } description: {
-                    Text("No shifts or events.")
+                if leave.isEmpty {
+                    ContentUnavailableView {
+                        Label("Nothing on this day", systemImage: "calendar")
+                    } description: {
+                        Text("No shifts or events.")
+                    }
+                } else {
+                    Spacer()
                 }
             } else {
                 List(items) { item in

@@ -38,6 +38,10 @@ struct ContentView: View {
         case importer
         case roster(String)
         case schedule(String)
+        /// v7 planning hub (time off + availability).
+        case planning
+        /// v7 one-off shift. Carries an ISO "yyyy-MM-dd" seed ("" = today).
+        case quickAddShift(String)
     }
 
     @State private var selection: Selection? = .overview
@@ -102,6 +106,9 @@ struct ContentView: View {
                 NavigationLink(value: Selection.shiftTypes) {
                     Label("Shift Types", systemImage: "clock")
                 }
+                NavigationLink(value: Selection.planning) {
+                    Label("Planning", systemImage: "calendar.badge.clock")
+                }
                 NavigationLink(value: Selection.settings) {
                     Label("Settings", systemImage: "gearshape")
                 }
@@ -159,6 +166,10 @@ struct ContentView: View {
                 .navigationTitle("Settings")
         case .importer:
             ImportView(onDone: { selection = .overview })
+        case .planning:
+            PlanningView(quickAdd: { selection = .quickAddShift("") })
+        case let .quickAddShift(iso):
+            QuickAddShiftView(dateISO: iso, onDone: { selection = .calendar })
         case let .roster(id):
             if let roster = rosters.first(where: { $0.id == id }) {
                 ShiftListView(roster: roster)
@@ -181,6 +192,8 @@ struct ContentView: View {
             Menu {
                 Button("Import roster…", systemImage: "square.and.arrow.down") { selection = .importer }
                 Button("New schedule", systemImage: "slider.horizontal.3") { newSchedule() }
+                Button("Quick add shift", systemImage: "calendar.badge.plus") { selection = .quickAddShift("") }
+                Button("Plan time off", systemImage: "airplane") { selection = .planning }
             } label: {
                 Label("Add", systemImage: "plus")
             }
