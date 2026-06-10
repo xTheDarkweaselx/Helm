@@ -106,6 +106,8 @@ struct ImportView: View {
     @State private var previewStyle: PreviewStyle = .calendar
     /// Built ONCE per plan (fetches ShiftType colors); cleared on new loads.
     @State private var overlay: PreviewOverlay?
+    /// Observed here so the commit button's title tracks the picker live.
+    @AppStorage(CalendarDestinationSetting.key) private var destinationRaw: String = CalendarTargetKind.eventkit.rawValue
 
     enum PreviewStyle: Hashable {
         case calendar, list
@@ -147,6 +149,11 @@ struct ImportView: View {
                     }
                 }
         }
+        #if os(macOS)
+        // macOS sheets default tiny (~500pt) — the side-by-side calendar
+        // preview needs real room.
+        .frame(minWidth: 940, idealWidth: 1000, minHeight: 620, idealHeight: 700)
+        #endif
     }
 
     @ViewBuilder
@@ -185,12 +192,17 @@ struct ImportView: View {
         let isReimport = coordinator.plan?.isReimport ?? false
         let hasChanges = diff?.hasChanges ?? (result.writableCount > 0)
         return VStack(spacing: 0) {
-            Picker("View", selection: $previewStyle) {
-                Label("Calendar", systemImage: "calendar").tag(PreviewStyle.calendar)
-                Label("List", systemImage: "list.bullet").tag(PreviewStyle.list)
+            HStack(spacing: 12) {
+                Picker("View", selection: $previewStyle) {
+                    Label("Calendar", systemImage: "calendar").tag(PreviewStyle.calendar)
+                    Label("List", systemImage: "list.bullet").tag(PreviewStyle.list)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 240)
+                Spacer()
+                CalendarDestinationPicker()
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
             .padding(.horizontal)
             .padding(.vertical, 8)
 
@@ -257,16 +269,17 @@ struct ImportView: View {
     }
 
     private func commitTitle(diff: RosterDiff?, isReimport: Bool, result: RosterImportResult) -> String {
-        guard let diff else { return "Add \(result.writableCount) shifts to Calendar" }
+        let destination = SyncSummary.name(for: CalendarDestinationSetting.current)
+        guard let diff else { return "Add \(result.writableCount) shifts to \(destination)" }
         if !diff.hasChanges { return "No changes" }
         if isReimport {
             var parts: [String] = []
             if diff.added.count > 0 { parts.append("+\(diff.added.count)") }
             if diff.updated.count > 0 { parts.append("✎\(diff.updated.count)") }
             if diff.removed.count > 0 { parts.append("−\(diff.removed.count)") }
-            return "Apply changes (\(parts.joined(separator: " ")))"
+            return "Apply changes to \(destination) (\(parts.joined(separator: " ")))"
         }
-        return "Add \(diff.added.count) shifts to Calendar"
+        return "Add \(diff.added.count) shifts to \(destination)"
     }
 
     private func finishedView(summary: SyncSummary) -> some View {
@@ -294,6 +307,29 @@ struct ImportView: View {
             }
             .buttonStyle(.borderedProminent)
         }
+    }
+}
+
+/// "Add to: Apple Calendar / Google Calendar" — the same destination setting
+/// Settings manages, surfaced where it matters most: right on the preview
+/// (v4.1, user request). Google selectable only when configured + signed in.
+struct CalendarDestinationPicker: View {
+    @AppStorage(CalendarDestinationSetting.key) private var destinationRaw: String = CalendarTargetKind.eventkit.rawValue
+    @AppStorage(GoogleConfig.signedInDefaultsKey) private var googleSignedIn: Bool = false
+
+    private var googleUsable: Bool { GoogleConfig.isConfigured && googleSignedIn }
+
+    var body: some View {
+        Picker("Add to", selection: $destinationRaw) {
+            Text("Apple Calendar").tag(CalendarTargetKind.eventkit.rawValue)
+            if GoogleConfig.isConfigured {
+                Text("Google Calendar")
+                    .tag(CalendarTargetKind.google.rawValue)
+                    .selectionDisabled(!googleUsable)
+            }
+        }
+        .pickerStyle(.menu)
+        .fixedSize()
     }
 }
 

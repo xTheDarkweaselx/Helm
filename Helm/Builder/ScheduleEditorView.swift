@@ -228,6 +228,10 @@ struct SchedulePreviewView: View {
                     }
                 }
         }
+        #if os(macOS)
+        // macOS sheets default tiny — the side-by-side preview needs room.
+        .frame(minWidth: 940, idealWidth: 1000, minHeight: 620, idealHeight: 700)
+        #endif
     }
 
     @ViewBuilder
@@ -257,12 +261,17 @@ struct SchedulePreviewView: View {
     private func planView(_ plan: RosterSyncEngine.Plan) -> some View {
         let diff = plan.diff
         return VStack(spacing: 0) {
-            Picker("View", selection: $previewStyle) {
-                Label("Calendar", systemImage: "calendar").tag(ImportView.PreviewStyle.calendar)
-                Label("List", systemImage: "list.bullet").tag(ImportView.PreviewStyle.list)
+            HStack(spacing: 12) {
+                Picker("View", selection: $previewStyle) {
+                    Label("Calendar", systemImage: "calendar").tag(ImportView.PreviewStyle.calendar)
+                    Label("List", systemImage: "list.bullet").tag(ImportView.PreviewStyle.list)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 240)
+                Spacer()
+                CalendarDestinationPicker()
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
             .padding(.horizontal)
             .padding(.vertical, 8)
 

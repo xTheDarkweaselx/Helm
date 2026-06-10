@@ -21,9 +21,6 @@ struct CalendarView: View {
     @State private var model: CalendarViewModel
     @State private var shiftToRemove: ShiftItem?
     @State private var removalError: String?
-    #if !os(macOS)
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    #endif
 
     /// Pager pages: fixed window around the month at first appearance (stable ids).
     private let pagedMonths: [MonthKey]
@@ -37,18 +34,15 @@ struct CalendarView: View {
         self.pagedMonths = (-120...120).map { base.advanced(by: $0) }
     }
 
-    private var isRegularWidth: Bool {
-        #if os(macOS)
-        true
-        #else
-        horizontalSizeClass == .regular
-        #endif
-    }
-
     private var isLive: Bool {
         if case .live = mode { return true }
         return false
     }
+
+    /// Side-by-side needs real room: grid ≥ ~360 + agenda 300. Below this the
+    /// stacked layout is used EVEN on macOS — sheets there open ~500pt wide,
+    /// and platform-based branching crushed the grid into ~170pt.
+    private static let sideBySideMinWidth: CGFloat = 680
 
     var body: some View {
         // ONE bucketing pass per body evaluation, shared by all 42 cells and
@@ -61,16 +55,18 @@ struct CalendarView: View {
             conflicts: conflictTitles(for: model.selectedDay, shiftBuckets: shiftBuckets),
             onRemoveShift: isLive ? { shiftToRemove = $0 } : nil
         )
-        Group {
-            if isRegularWidth {
+        GeometryReader { geo in
+            // Layout by ACTUAL width, never by platform.
+            let isWide = geo.size.width >= Self.sideBySideMinWidth
+            if isWide {
                 HStack(spacing: 0) {
-                    monthPane(shiftBuckets: shiftBuckets)
+                    monthPane(shiftBuckets: shiftBuckets, isWide: true)
                     Divider()
-                    dayDetail.frame(width: 320)
+                    dayDetail.frame(width: 300)
                 }
             } else {
                 VStack(spacing: 0) {
-                    monthPane(shiftBuckets: shiftBuckets)
+                    monthPane(shiftBuckets: shiftBuckets, isWide: false)
                     Divider()
                     dayDetail.frame(minHeight: 160, maxHeight: 280)
                 }
@@ -120,22 +116,26 @@ struct CalendarView: View {
 
     // MARK: - Month pane
 
-    private func monthPane(shiftBuckets: [DayKey: [ShiftItem]]) -> some View {
+    private func monthPane(shiftBuckets: [DayKey: [ShiftItem]], isWide: Bool) -> some View {
         VStack(spacing: 8) {
             // No hours caption in preview mode: suppressed/incoming shifts make
             // the figure misleading there, and that header is about the diff.
             header(monthHours: mode.overlay == nil ? monthHours(shiftBuckets: shiftBuckets) : 0)
             if mode.overlay != nil { legend }
             weekdayHeader
-            // Adapt cell height to the actual space (small windows/sheets must
-            // not clip the fixed 6-row grid).
+            // Size cells AND pages from the actual pane geometry: page width
+            // must equal the scroll viewport exactly (containerRelativeFrame
+            // resolved against the SHEET in modal presentations, overlapping
+            // adjacent month pages into doubled numerals).
             GeometryReader { geo in
                 pager(
-                    cellHeight: max(44, min(isRegularWidth ? 96 : 64, (geo.size.height / 6).rounded(.down))),
+                    pageWidth: geo.size.width,
+                    cellHeight: max(40, min(isWide ? 96 : 64, (geo.size.height / 6).rounded(.down))),
+                    isWide: isWide,
                     shiftBuckets: shiftBuckets
                 )
             }
-            .frame(minHeight: 6 * 44)
+            .frame(minHeight: 6 * 40)
             if case .unavailable = model.accessState {
                 Label("Calendar access is off — only your shifts are shown.", systemImage: "eye.slash")
                     .font(.caption)
@@ -154,6 +154,8 @@ struct CalendarView: View {
                      format: .dateTime.month(.wide).year())
                     .font(.title3.weight(.semibold))
                     .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                     .contentTransition(.numericText())
                     .accessibilityAddTraits(.isHeader)
                 if monthHours > 0 {
@@ -305,7 +307,7 @@ struct CalendarView: View {
         .accessibilityHidden(true)
     }
 
-    private func pager(cellHeight: CGFloat, shiftBuckets: [DayKey: [ShiftItem]]) -> some View {
+    private func pager(pageWidth: CGFloat, cellHeight: CGFloat, isWide: Bool, shiftBuckets: [DayKey: [ShiftItem]]) -> some View {
         ScrollView(.horizontal) {
             LazyHStack(spacing: 0) {
                 ForEach(pagedMonths, id: \.self) { month in
@@ -313,11 +315,11 @@ struct CalendarView: View {
                         grid: MonthGrid.make(month: month, calendar: CalendarViewModel.displayCalendar),
                         selectedDay: $model.selectedDay,
                         today: DayKey(containing: .now, in: CalendarViewModel.displayCalendar),
-                        compact: !isRegularWidth,
+                        compact: !isWide,
                         cellHeight: cellHeight,
                         dayContent: { cellSummary(for: $0, shiftBuckets: shiftBuckets) }
                     )
-                    .containerRelativeFrame(.horizontal)
+                    .frame(width: max(pageWidth, 1)) // exact viewport width: no page bleed
                     .id(month)
                 }
             }
@@ -422,5 +424,6 @@ private struct LegendTag: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(color.opacity(0.12), in: Capsule())
+            .fixedSize() // never stretch into giant pills in tight layouts
     }
 }
