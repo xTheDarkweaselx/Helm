@@ -15,6 +15,8 @@ nonisolated struct DayCellSummary {
     let previews: [PreviewItem]
     let eventCount: Int
     let eventColors: [EventItem.RGBA?]
+    /// A shift (or pending preview) overlaps a timed event this day (v4).
+    let hasConflict: Bool
 }
 
 struct MonthGridView: View {
@@ -84,12 +86,19 @@ struct DayCellView: View {
     }
 
     private var numeral: some View {
-        Text("\(cell.day.day)")
-            .font(.callout.weight(isToday ? .bold : .regular))
-            .monospacedDigit()
-            .foregroundStyle(isToday ? Color.white : .primary)
-            .frame(width: 26, height: 26)
-            .background(Circle().fill(isToday ? Color.accentColor : .clear))
+        HStack(spacing: 2) {
+            Text("\(cell.day.day)")
+                .font(.callout.weight(isToday ? .bold : .regular))
+                .monospacedDigit()
+                .foregroundStyle(isToday ? Color.white : .primary)
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(isToday ? Color.accentColor : .clear))
+            if summary.hasConflict {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.orange)
+            }
+        }
     }
 
     @ViewBuilder
@@ -205,6 +214,9 @@ struct DayCellView: View {
         }
         if summary.eventCount > 0 {
             parts.append("\(summary.eventCount) event\(summary.eventCount == 1 ? "" : "s")")
+        }
+        if summary.hasConflict {
+            parts.append("shift overlaps an event")
         }
         return parts.joined(separator: ", ")
     }

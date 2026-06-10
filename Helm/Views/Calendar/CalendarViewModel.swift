@@ -20,6 +20,9 @@ final class CalendarViewModel {
     var selectedDay: DayKey
     private(set) var eventsByDay: [DayKey: [EventItem]] = [:]
     private(set) var accessState: EventAccessState = .notDetermined
+    /// Toggleable calendar sources for the filter menu (v4).
+    private(set) var availableCalendars: [CalendarChoice] = []
+    var hiddenCalendarIDs: Set<String> = CalendarSourceFilter.hiddenIDs
     /// Bumped by EKEventStoreChanged so .task(id:) reloads the same month.
     private(set) var reloadToken = 0
 
@@ -63,6 +66,13 @@ final class CalendarViewModel {
         }
     }
 
+    /// Show/hide a calendar source; persists and reloads.
+    func setCalendar(id: String, hidden: Bool) {
+        CalendarSourceFilter.setHidden(hidden, id: id)
+        hiddenCalendarIDs = CalendarSourceFilter.hiddenIDs
+        reloadToken += 1
+    }
+
     func jumpToToday() {
         let today = DayKey(containing: .now, in: Self.displayCalendar)
         selectedDay = today
@@ -78,8 +88,10 @@ final class CalendarViewModel {
         accessState = await reader.ensureAccess()
         guard case .fullAccess = accessState else {
             eventsByDay = [:]
+            availableCalendars = []
             return
         }
+        availableCalendars = reader.availableCalendars()
         let cal = Self.displayCalendar
         let from = visibleMonth.advanced(by: -1).start(in: cal)
         let to = visibleMonth.advanced(by: 2).start(in: cal)

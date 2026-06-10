@@ -9,6 +9,7 @@
 
 import SwiftUI
 import SwiftData
+import HelmDomain
 
 /// iOS/iPadOS sheet wrapper (kept for any modal presentation).
 struct SettingsView: View {
@@ -28,7 +29,7 @@ struct SettingsView: View {
 /// The actual settings content. Embedded in the sidebar's detail pane, the
 /// macOS Settings window, and the iOS sheet.
 struct SettingsForm: View {
-    @AppStorage(ReminderSetting.key) private var reminderMinutes: Int = ReminderSetting.fallback
+    @State private var reminderOffsets: Set<Int> = []
     @AppStorage(CalendarDestinationSetting.key) private var destinationRaw: String = CalendarTargetKind.eventkit.rawValue
     @AppStorage(GoogleConfig.defaultsKey) private var googleClientID: String = ""
     @AppStorage(GoogleConfig.signedInDefaultsKey) private var googleSignedIn: Bool = false
@@ -38,6 +39,9 @@ struct SettingsForm: View {
     @State private var isSigningIn = false
     @State private var authMessage: String?
     @State private var isConfirmingSignOut = false
+    @State private var removeAllCandidate: CalendarTargetKind?
+    @State private var isCleaningUp = false
+    @State private var cleanupMessage: String?
 
     private var googleUsable: Bool { GoogleConfig.isConfigured && googleSignedIn }
     /// Rosters whose events currently live in Google (sign-out makes them unmanageable).
@@ -48,16 +52,15 @@ struct SettingsForm: View {
     var body: some View {
         Form {
             Section {
-                Picker("Remind me", selection: $reminderMinutes) {
-                    ForEach(ReminderSetting.presets, id: \.minutes) { preset in
-                        Text(preset.label).tag(preset.minutes)
-                    }
+                ForEach(ReminderSetting.presets, id: \.minutes) { preset in
+                    Toggle(preset.label, isOn: reminderBinding(for: preset.minutes))
+                        .disabled(!reminderOffsets.contains(preset.minutes)
+                                  && reminderOffsets.count >= ReminderOffsets.maxCount)
                 }
-                .pickerStyle(.menu)
             } header: {
-                Text("Shift reminder")
+                Text("Default shift reminders")
             } footer: {
-                Text("Applied to shifts as you import them. To update shifts already in your calendar, open a roster and choose “Apply reminders to all shifts”.")
+                Text("\(reminderOffsets.isEmpty ? "No reminders" : ReminderSetting.summary(for: Array(reminderOffsets)).capitalized) — pick up to \(ReminderOffsets.maxCount). Applied to shifts as you import them; a roster can override this from its own page. To update shifts already in your calendar, open a roster and choose “Apply reminders to all shifts”.")
             }
 
             Section {
@@ -87,8 +90,80 @@ struct SettingsForm: View {
             }
 
             googleSection
+
+            cleanupSection
         }
         .formStyle(.grouped)
+        .onAppear { reminderOffsets = Set(ReminderSetting.offsets) }
+    }
+
+    // MARK: - Cleanup (v4: delete everything Helm created in a calendar)
+
+    @ViewBuilder
+    private var cleanupSection: some View {
+        Section {
+            Button("Remove all Helm events from Apple Calendar", role: .destructive) {
+                removeAllCandidate = .eventkit
+            }
+            .disabled(isCleaningUp)
+            if googleUsable {
+                Button("Remove all Helm events from Google Calendar", role: .destructive) {
+                    removeAllCandidate = .google
+                }
+                .disabled(isCleaningUp)
+            }
+            if isCleaningUp {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Removing…").font(.caption).foregroundStyle(.secondary)
+                }
+            } else if let cleanupMessage {
+                Text(cleanupMessage).font(.caption).foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Remove Helm events")
+        } footer: {
+            Text("Deletes every calendar event Helm has created there. Your rosters and schedules stay in Helm — re-import or re-apply to put the events back. To remove a single shift, swipe it in its roster.")
+        }
+        .confirmationDialog(
+            "Remove ALL Helm events from \(removeAllCandidate.map(SyncSummary.name(for:)) ?? "this calendar")?",
+            isPresented: Binding(
+                get: { removeAllCandidate != nil },
+                set: { if !$0 { removeAllCandidate = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: removeAllCandidate
+        ) { kind in
+            Button("Remove all", role: .destructive) { removeAll(from: kind) }
+            Button("Cancel", role: .cancel) {}
+        } message: { kind in
+            Text("Every event in the “Helm Shifts” calendar in \(SyncSummary.name(for: kind)) will be deleted. Helm's own data is untouched.")
+        }
+    }
+
+    private func removeAll(from kind: CalendarTargetKind) {
+        isCleaningUp = true
+        cleanupMessage = nil
+        Task {
+            defer { isCleaningUp = false }
+            do {
+                let target = try await CalendarTargetProvider.authorizedTarget(for: kind)
+                let removed = try await target.removeAll()
+                cleanupMessage = "Removed \(removed) event\(removed == 1 ? "" : "s") from \(SyncSummary.name(for: kind))."
+            } catch {
+                cleanupMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+    }
+
+    private func reminderBinding(for minutes: Int) -> Binding<Bool> {
+        Binding(
+            get: { reminderOffsets.contains(minutes) },
+            set: { isOn in
+                if isOn { reminderOffsets.insert(minutes) } else { reminderOffsets.remove(minutes) }
+                ReminderSetting.setOffsets(Array(reminderOffsets))
+            }
+        )
     }
 
     @ViewBuilder

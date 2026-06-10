@@ -9,6 +9,7 @@
 import SwiftUI
 import SwiftData
 import HelmCalendar
+import HelmDomain
 
 struct ShiftListView: View {
     let roster: Roster
@@ -18,6 +19,8 @@ struct ShiftListView: View {
     @State private var infoMessage: String?
     @State private var applyingReminders = false
     @State private var icsURL: URL?
+    @State private var isEditingReminders = false
+    @State private var instanceToRemove: ShiftInstance?
 
     private var sortedInstances: [ShiftInstance] {
         (roster.instances ?? []).sorted {
@@ -36,6 +39,16 @@ struct ShiftListView: View {
             } else {
                 List(sortedInstances) { instance in
                     ShiftRow(instance: instance)
+                        .swipeActions {
+                            Button("Remove", systemImage: "trash", role: .destructive) {
+                                instanceToRemove = instance
+                            }
+                        }
+                        .contextMenu { // right-click parity on macOS
+                            Button("Remove shift…", systemImage: "trash", role: .destructive) {
+                                instanceToRemove = instance
+                            }
+                        }
                 }
             }
         }
@@ -45,6 +58,9 @@ struct ShiftListView: View {
                 Menu {
                     if let icsURL {
                         ShareLink("Export .ics", item: icsURL)
+                    }
+                    Button("Reminders for this roster…", systemImage: "bell.badge") {
+                        isEditingReminders = true
                     }
                     Button("Apply reminders to all shifts", systemImage: "bell") {
                         applyReminders()
@@ -91,6 +107,35 @@ struct ShiftListView: View {
         // Regenerate the shareable .ics off the render path whenever the content
         // or the reminder setting changes (never during body evaluation).
         .task(id: rosterSignature) { await refreshICS() }
+        .sheet(isPresented: $isEditingReminders) {
+            RosterRemindersSheet(roster: roster) {
+                applyReminders() // push the new offsets onto existing events
+            }
+        }
+        .confirmationDialog(
+            "Remove this shift from your calendar and from Helm?",
+            isPresented: Binding(get: { instanceToRemove != nil }, set: { if !$0 { instanceToRemove = nil } }),
+            titleVisibility: .visible,
+            presenting: instanceToRemove
+        ) { instance in
+            Button("Remove shift", role: .destructive) { remove(instance) }
+            Button("Cancel", role: .cancel) {}
+        } message: { instance in
+            Text("“\(instance.title ?? "Shift")” will be deleted from the calendar and from this roster. Re-importing the same source would add it back.")
+        }
+    }
+
+    private func remove(_ instance: ShiftInstance) {
+        let context = modelContext
+        Task {
+            do {
+                let destination = RosterSyncEngine.destination(for: roster, in: context)
+                let target = try await CalendarTargetProvider.authorizedTarget(for: destination)
+                try await RosterSyncEngine.removeInstance(instance, target: target, in: context)
+            } catch {
+                errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
     }
 
     /// Changes when any shift's identity/title/time or the reminder default changes.
@@ -102,7 +147,8 @@ struct ShiftListView: View {
             return "\(key)|\(title)|\(start)"
         }
         let joined = parts.sorted().joined(separator: ";")
-        return "\(joined)#\(ReminderSetting.minutesBefore)"
+        let offsets = ReminderOffsets.encode(RosterSyncEngine.effectiveReminderOffsets(for: roster))
+        return "\(joined)#\(offsets)"
     }
 
     private func refreshICS() async {

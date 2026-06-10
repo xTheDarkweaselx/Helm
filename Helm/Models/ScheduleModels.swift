@@ -131,6 +131,10 @@ final class Roster {
     var title: String?
     var createdAt: Date = Date.now
     var sourceImportProfileID: String?
+    /// Per-roster reminder override, CSV of minutes-before (v4). nil = inherit
+    /// the global ReminderSetting default; "" = explicitly no reminders.
+    /// Optional for CloudKit; parsed via HelmDomain.ReminderOffsets.
+    var reminderOffsetsRaw: String?
 
     var user: UserProfile?
 

@@ -329,11 +329,32 @@ struct RosterSyncEngine {
         instance.timeZoneIdentifier = draft.timeZoneIdentifier
     }
 
-    /// Build the calendar draft for an instance, stamping the user's current
-    /// default reminder as the alarm offset.
+    /// The reminder offsets an instance's events get: its roster's override
+    /// when set (v4), else the global default. "" override = explicitly none.
+    static func effectiveReminderOffsets(for roster: Roster?) -> [Int] {
+        if let raw = roster?.reminderOffsetsRaw {
+            return ReminderOffsets.parse(raw)
+        }
+        return ReminderSetting.offsets
+    }
+
+    /// Remove ONE shift from its calendar and from Helm. Calendar first, so a
+    /// failed removal leaves the data intact. NOTE: a later re-import/re-apply
+    /// of the same source will diff it as "added" and bring it back — callers
+    /// say so in their confirmation UI.
+    static func removeInstance(_ instance: ShiftInstance, target: any CalendarTarget, in context: ModelContext) async throws {
+        if let key = instance.dedupKey {
+            _ = try await target.remove(dedupKeys: [key])
+        }
+        context.delete(instance)
+        try context.save()
+    }
+
+    /// Build the calendar draft for an instance, stamping the effective
+    /// (per-roster or global) reminders as alarm offsets.
     static func calendarDraft(for instance: ShiftInstance) -> CalendarEventDraft? {
         guard let start = instance.startUTC, let end = instance.endUTC else { return nil }
-        let offsets = ReminderSetting.offsets
+        let offsets = effectiveReminderOffsets(for: instance.roster)
         let title = instance.title ?? instance.shiftType?.label ?? instance.shiftType?.code ?? "Shift"
         return CalendarEventDraft(
             dedupKey: instance.dedupKey ?? instance.id,

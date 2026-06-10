@@ -21,6 +21,8 @@ nonisolated struct ShiftItem: Identifiable, Hashable, Sendable {
     let colorHex: String?
     let location: String?
     let endsOnLaterDay: Bool      // overnight → "+1" tag
+    /// Paid hours if the source computed them (falls back to duration in UI).
+    let paidHours: Double?
 }
 
 /// Someone-else's event (any non-Helm calendar), flattened for display.

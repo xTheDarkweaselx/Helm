@@ -13,6 +13,10 @@ import HelmDomain
 struct DayDetailView: View {
     let day: DayKey
     let items: [CalendarDayItem]
+    /// CalendarDayItem.id → titles of timed events the item overlaps (v4).
+    var conflicts: [String: [String]] = [:]
+    /// Present in .live mode: offer "Remove shift" on shift rows (v4).
+    var onRemoveShift: ((ShiftItem) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -32,11 +36,18 @@ struct DayDetailView: View {
                 List(items) { item in
                     switch item {
                     case let .shift(shift):
-                        ShiftAgendaRow(shift: shift)
+                        ShiftAgendaRow(shift: shift, conflictTitles: conflicts[item.id] ?? [])
+                            .contextMenu {
+                                if let onRemoveShift {
+                                    Button("Remove shift…", systemImage: "trash", role: .destructive) {
+                                        onRemoveShift(shift)
+                                    }
+                                }
+                            }
                     case let .event(event):
                         EventAgendaRow(event: event)
                     case let .preview(preview):
-                        PreviewAgendaRow(preview: preview)
+                        PreviewAgendaRow(preview: preview, conflictTitles: conflicts[item.id] ?? [])
                     }
                 }
                 .listStyle(.plain)
@@ -47,6 +58,7 @@ struct DayDetailView: View {
 
 private struct ShiftAgendaRow: View {
     let shift: ShiftItem
+    var conflictTitles: [String] = []
 
     var body: some View {
         HStack(spacing: 10) {
@@ -60,11 +72,26 @@ private struct ShiftAgendaRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                ConflictNote(titles: conflictTitles)
             }
             Spacer()
             timeColumn(start: shift.start, end: shift.end, plusOne: shift.endsOnLaterDay)
         }
         .padding(.vertical, 2)
+    }
+}
+
+/// "Overlaps: Dentist" — symbol + text, never color alone.
+private struct ConflictNote: View {
+    let titles: [String]
+
+    var body: some View {
+        if !titles.isEmpty {
+            Label("Overlaps: \(titles.joined(separator: ", "))", systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .lineLimit(2)
+        }
     }
 }
 
@@ -97,6 +124,7 @@ private struct EventAgendaRow: View {
 
 private struct PreviewAgendaRow: View {
     let preview: PreviewItem
+    var conflictTitles: [String] = []
 
     private var tag: (symbol: String, text: String, color: Color) {
         switch preview.status {
@@ -118,6 +146,7 @@ private struct PreviewAgendaRow: View {
                 Label(tag.text, systemImage: tag.symbol)
                     .font(.caption.weight(.medium))
                     .foregroundStyle(tag.color)
+                ConflictNote(titles: conflictTitles)
             }
             Spacer()
             timeColumn(start: preview.start, end: preview.end, plusOne: preview.endsOnLaterDay)
