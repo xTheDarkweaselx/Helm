@@ -88,7 +88,7 @@ struct CalendarView: View {
             Button("Remove shift", role: .destructive) { remove(shift) }
             Button("Cancel", role: .cancel) {}
         } message: { shift in
-            Text("“\(shift.title)” will be deleted from the calendar and from its roster. Re-importing the same source would add it back.")
+            Text("“\(shift.title)” will be deleted from the calendar and from its roster. Re-importing the file or re-applying its schedule would add it back.")
         }
         .alert("Couldn't remove shift", isPresented: .constant(removalError != nil)) {
             Button("OK") { removalError = nil }
@@ -122,7 +122,9 @@ struct CalendarView: View {
 
     private func monthPane(shiftBuckets: [DayKey: [ShiftItem]]) -> some View {
         VStack(spacing: 8) {
-            header(monthHours: monthHours(shiftBuckets: shiftBuckets))
+            // No hours caption in preview mode: suppressed/incoming shifts make
+            // the figure misleading there, and that header is about the diff.
+            header(monthHours: mode.overlay == nil ? monthHours(shiftBuckets: shiftBuckets) : 0)
             if mode.overlay != nil { legend }
             weekdayHeader
             // Adapt cell height to the actual space (small windows/sheets must
@@ -228,35 +230,53 @@ struct CalendarView: View {
         return total
     }
 
-    /// Day-level conflict: any shift (or pending non-removed preview) whose
-    /// time intersects a timed event. Half-open — back-to-back is fine.
+    /// Timed events from EVERY display day a span touches — an overnight
+    /// shift's post-midnight tail must see the NEXT day's events too (shifts
+    /// bucket to their start day; events bucket to every day they span).
+    private func timedEvents(spanning start: Date, _ end: Date) -> [EventItem] {
+        let cal = CalendarViewModel.displayCalendar
+        var seen = Set<String>()
+        var out: [EventItem] = []
+        for day in DayBucketer.dayKeys(start: start, end: end, in: cal) {
+            for event in model.eventsByDay[day] ?? [] where !event.isAllDay && seen.insert(event.id).inserted {
+                out.append(event)
+            }
+        }
+        return out
+    }
+
+    /// Day-level conflict: any shift (or pending non-removed preview) bucketed
+    /// on this day whose FULL interval intersects a timed event (next-day tail
+    /// included). Half-open — back-to-back is fine.
     private func dayHasConflict(_ day: DayKey, shiftBuckets: [DayKey: [ShiftItem]]) -> Bool {
-        let events = (model.eventsByDay[day] ?? []).filter { !$0.isAllDay }
-        guard !events.isEmpty else { return false }
         for shift in shiftBuckets[day] ?? [] {
             guard let s = shift.start, let e = shift.end else { continue }
-            if events.contains(where: { IntervalOverlap.intersects(s, e, $0.start, $0.end) }) { return true }
+            if timedEvents(spanning: s, e).contains(where: { IntervalOverlap.intersects(s, e, $0.start, $0.end) }) {
+                return true
+            }
         }
         for preview in mode.overlay?.itemsByDay[day] ?? [] where preview.status != .removed {
             guard let s = preview.start, let e = preview.end else { continue }
-            if events.contains(where: { IntervalOverlap.intersects(s, e, $0.start, $0.end) }) { return true }
+            if timedEvents(spanning: s, e).contains(where: { IntervalOverlap.intersects(s, e, $0.start, $0.end) }) {
+                return true
+            }
         }
         return false
     }
 
     /// For the agenda: item id → titles of the events it overlaps.
     private func conflictTitles(for day: DayKey, shiftBuckets: [DayKey: [ShiftItem]]) -> [String: [String]] {
-        let events = (model.eventsByDay[day] ?? []).filter { !$0.isAllDay }
-        guard !events.isEmpty else { return [:] }
         var map: [String: [String]] = [:]
         for shift in shiftBuckets[day] ?? [] {
             guard let s = shift.start, let e = shift.end else { continue }
-            let overlapping = events.filter { IntervalOverlap.intersects(s, e, $0.start, $0.end) }.map(\.title)
+            let overlapping = timedEvents(spanning: s, e)
+                .filter { IntervalOverlap.intersects(s, e, $0.start, $0.end) }.map(\.title)
             if !overlapping.isEmpty { map["s:\(shift.id)"] = overlapping }
         }
         for preview in mode.overlay?.itemsByDay[day] ?? [] where preview.status != .removed {
             guard let s = preview.start, let e = preview.end else { continue }
-            let overlapping = events.filter { IntervalOverlap.intersects(s, e, $0.start, $0.end) }.map(\.title)
+            let overlapping = timedEvents(spanning: s, e)
+                .filter { IntervalOverlap.intersects(s, e, $0.start, $0.end) }.map(\.title)
             if !overlapping.isEmpty { map["p:\(preview.id)"] = overlapping }
         }
         return map

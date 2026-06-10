@@ -28,6 +28,7 @@ struct RosterRemindersSheet: View {
                 } footer: {
                     Text("Default: \(ReminderSetting.summary(for: ReminderSetting.offsets)). Change it in Settings.")
                 }
+                // (summary is lowercase mid-sentence by design)
 
                 if !useDefault {
                     Section {
@@ -41,7 +42,7 @@ struct RosterRemindersSheet: View {
                     } footer: {
                         Text(selected.isEmpty
                              ? "No reminders for this roster's shifts."
-                             : "\(ReminderSetting.summary(for: Array(selected)).capitalized) — pick up to \(ReminderOffsets.maxCount).")
+                             : "\(ReminderSetting.sentenceSummary(for: Array(selected))) — pick up to \(ReminderOffsets.maxCount).")
                     }
                 }
             }

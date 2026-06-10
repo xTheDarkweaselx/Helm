@@ -62,7 +62,10 @@ struct ShiftListView: View {
                     Button("Reminders for this roster…", systemImage: "bell.badge") {
                         isEditingReminders = true
                     }
-                    Button("Apply reminders to all shifts", systemImage: "bell") {
+                    // Full rewrite of every event — also the restore path after
+                    // "Remove Helm events" in Settings (re-import alone sees
+                    // unchanged shifts and writes nothing).
+                    Button("Re-sync all shifts to calendar", systemImage: "arrow.triangle.2.circlepath") {
                         applyReminders()
                     }
                     .disabled(applyingReminders)
@@ -121,7 +124,7 @@ struct ShiftListView: View {
             Button("Remove shift", role: .destructive) { remove(instance) }
             Button("Cancel", role: .cancel) {}
         } message: { instance in
-            Text("“\(instance.title ?? "Shift")” will be deleted from the calendar and from this roster. Re-importing the same source would add it back.")
+            Text("“\(instance.title ?? "Shift")” will be deleted from the calendar and from this roster. Re-importing the file or re-applying its schedule would add it back.")
         }
     }
 

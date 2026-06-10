@@ -292,13 +292,20 @@ struct SchedulePreviewView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
+            // With no diff, offer a full re-write instead of a dead button —
+            // the restore path after Settings' "Remove Helm events".
             Button {
-                Task { await coordinator.commit(in: context) }
+                Task {
+                    if diff.hasChanges {
+                        await coordinator.commit(in: context)
+                    } else {
+                        await coordinator.resyncExisting(for: schedule, in: context)
+                    }
+                }
             } label: {
-                Text(diff.hasChanges ? "Apply to Calendar" : "No changes").frame(maxWidth: .infinity)
+                Text(diff.hasChanges ? "Apply to Calendar" : "Re-sync to Calendar").frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent).controlSize(.large)
-            .disabled(!diff.hasChanges)
             .padding()
         }
     }

@@ -58,6 +58,34 @@ final class ScheduleCoordinator {
         try? context.save()
     }
 
+    /// Full re-write of the schedule's EXISTING shifts to its calendar (v4):
+    /// the restore path after Settings' "Remove Helm events" — a no-change
+    /// plan writes nothing, so commit() can't bring wiped events back.
+    func resyncExisting(for schedule: Schedule, in context: ModelContext) async {
+        phase = .writing
+        do {
+            let fingerprint = RosterSyncEngine.fingerprint(for: "schedule:\(schedule.id)")
+            guard let profile = try? context.fetch(FetchDescriptor<ImportProfile>(predicate: #Predicate { $0.sourceFingerprint == fingerprint })).first,
+                  let roster = try? {
+                      let pid = profile.id
+                      return try context.fetch(FetchDescriptor<Roster>(predicate: #Predicate { $0.sourceImportProfileID == pid })).first
+                  }()
+            else {
+                phase = .failed("Nothing to re-sync yet — apply the schedule first.")
+                return
+            }
+            let target = try await CalendarTargetProvider.authorizedTarget(for: profile.target)
+            let count = try await RosterSyncEngine.resync(roster: roster, target: target)
+            var summary = SyncSummary()
+            summary.unchanged = count
+            summary.isReimport = true
+            summary.destination = profile.target
+            phase = .finished(summary)
+        } catch {
+            phase = .failed((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+        }
+    }
+
     func commit(in context: ModelContext) async {
         guard let plan else { return }
         phase = .writing

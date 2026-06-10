@@ -30,6 +30,7 @@ final class CalendarViewModel {
     /// nonisolated(unsafe): written once in init (main), read only in the
     /// nonisolated deinit; NotificationCenter.removeObserver is thread-safe.
     private nonisolated(unsafe) var storeObserver: NSObjectProtocol?
+    private nonisolated(unsafe) var filterObserver: NSObjectProtocol?
 
     /// The display calendar: GREGORIAN pinned (DayKey/ShiftKey civil days are
     /// Gregorian; a Japanese/Buddhist system calendar would mis-bucket every
@@ -58,19 +59,31 @@ final class CalendarViewModel {
                 self.reloadToken += 1
             }
         }
+        // Filter toggles propagate to EVERY live instance (sidebar + sheet).
+        self.filterObserver = NotificationCenter.default.addObserver(
+            forName: CalendarSourceFilter.changed, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.hiddenCalendarIDs = CalendarSourceFilter.hiddenIDs
+                self.reloadToken += 1
+            }
+        }
     }
 
     deinit {
         if let storeObserver {
             NotificationCenter.default.removeObserver(storeObserver)
         }
+        if let filterObserver {
+            NotificationCenter.default.removeObserver(filterObserver)
+        }
     }
 
-    /// Show/hide a calendar source; persists and reloads.
+    /// Show/hide a calendar source. Persisting posts the change notification,
+    /// which updates this AND every other live instance uniformly.
     func setCalendar(id: String, hidden: Bool) {
         CalendarSourceFilter.setHidden(hidden, id: id)
-        hiddenCalendarIDs = CalendarSourceFilter.hiddenIDs
-        reloadToken += 1
     }
 
     func jumpToToday() {

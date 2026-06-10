@@ -29,7 +29,10 @@ struct SettingsView: View {
 /// The actual settings content. Embedded in the sidebar's detail pane, the
 /// macOS Settings window, and the iOS sheet.
 struct SettingsForm: View {
-    @State private var reminderOffsets: Set<Int> = []
+    /// Backed by the canonical UserDefaults key (NOT a @State snapshot): the
+    /// macOS ⌘, Settings window and the sidebar Settings pane can be alive at
+    /// once, and snapshots would silently revert each other's changes.
+    @AppStorage(ReminderSetting.offsetsKey) private var reminderOffsetsCSV: String = ReminderOffsets.encode(ReminderSetting.fallback)
     @AppStorage(CalendarDestinationSetting.key) private var destinationRaw: String = CalendarTargetKind.eventkit.rawValue
     @AppStorage(GoogleConfig.defaultsKey) private var googleClientID: String = ""
     @AppStorage(GoogleConfig.signedInDefaultsKey) private var googleSignedIn: Bool = false
@@ -44,6 +47,7 @@ struct SettingsForm: View {
     @State private var cleanupMessage: String?
 
     private var googleUsable: Bool { GoogleConfig.isConfigured && googleSignedIn }
+    private var reminderOffsets: Set<Int> { Set(ReminderOffsets.parse(reminderOffsetsCSV)) }
     /// Rosters whose events currently live in Google (sign-out makes them unmanageable).
     private var googleRosterCount: Int {
         importProfiles.filter { $0.target == .google }.count
@@ -60,7 +64,7 @@ struct SettingsForm: View {
             } header: {
                 Text("Default shift reminders")
             } footer: {
-                Text("\(reminderOffsets.isEmpty ? "No reminders" : ReminderSetting.summary(for: Array(reminderOffsets)).capitalized) — pick up to \(ReminderOffsets.maxCount). Applied to shifts as you import them; a roster can override this from its own page. To update shifts already in your calendar, open a roster and choose “Apply reminders to all shifts”.")
+                Text("\(reminderOffsets.isEmpty ? "No reminders" : ReminderSetting.sentenceSummary(for: Array(reminderOffsets))) — pick up to \(ReminderOffsets.maxCount). Applied to shifts as you import them; a roster can override this from its own page. To update shifts already in your calendar, open a roster and choose “Re-sync all shifts to calendar”.")
             }
 
             Section {
@@ -94,7 +98,9 @@ struct SettingsForm: View {
             cleanupSection
         }
         .formStyle(.grouped)
-        .onAppear { reminderOffsets = Set(ReminderSetting.offsets) }
+        // Run the legacy single-value migration so offsetsKey exists before
+        // the @AppStorage default masks it.
+        .onAppear { _ = ReminderSetting.offsets }
     }
 
     // MARK: - Cleanup (v4: delete everything Helm created in a calendar)
@@ -123,7 +129,7 @@ struct SettingsForm: View {
         } header: {
             Text("Remove Helm events")
         } footer: {
-            Text("Deletes every calendar event Helm has created there. Your rosters and schedules stay in Helm — re-import or re-apply to put the events back. To remove a single shift, swipe it in its roster.")
+            Text("Deletes every calendar event Helm has created there. Your rosters and schedules stay in Helm. To put events back, open a roster and choose “Re-sync all shifts to calendar”, or open a schedule's Preview and choose “Re-sync to Calendar” (a plain re-import sees them as unchanged and writes nothing). To remove a single shift, swipe it in its roster or right-click it in the calendar.")
         }
         .confirmationDialog(
             "Remove ALL Helm events from \(removeAllCandidate.map(SyncSummary.name(for:)) ?? "this calendar")?",
@@ -160,8 +166,9 @@ struct SettingsForm: View {
         Binding(
             get: { reminderOffsets.contains(minutes) },
             set: { isOn in
-                if isOn { reminderOffsets.insert(minutes) } else { reminderOffsets.remove(minutes) }
-                ReminderSetting.setOffsets(Array(reminderOffsets))
+                var offsets = reminderOffsets
+                if isOn { offsets.insert(minutes) } else { offsets.remove(minutes) }
+                reminderOffsetsCSV = ReminderOffsets.encode(Array(offsets))
             }
         )
     }

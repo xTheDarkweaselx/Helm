@@ -17,6 +17,9 @@ import HelmDomain
 /// Which system calendars the user has hidden in the Calendar tab (v4).
 nonisolated enum CalendarSourceFilter {
     static let key = "calendarHiddenCalendarIDs"
+    /// Posted after every change so EVERY live CalendarView (sidebar + a
+    /// preview sheet can coexist) refreshes its events and menu checkmarks.
+    static let changed = Notification.Name("helmCalendarFilterChanged")
 
     static var hiddenIDs: Set<String> {
         Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
@@ -26,6 +29,7 @@ nonisolated enum CalendarSourceFilter {
         var ids = hiddenIDs
         if hidden { ids.insert(id) } else { ids.remove(id) }
         UserDefaults.standard.set(Array(ids).sorted(), forKey: key)
+        NotificationCenter.default.post(name: changed, object: nil)
     }
 }
 

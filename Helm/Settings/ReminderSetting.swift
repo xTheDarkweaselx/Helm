@@ -53,17 +53,26 @@ nonisolated enum ReminderSetting {
         presets.first { $0.minutes == minutes }?.label ?? "\(minutes) minutes before"
     }
 
-    /// Short summary for UI rows: "1 hour + 12 hours before", "None".
+    /// Short summary for UI rows: "1 hour + 12 hours before", "at start",
+    /// "at start + 1 hour before", "none". Lowercase, mid-sentence-ready.
     static func summary(for offsets: [Int]) -> String {
-        guard !offsets.isEmpty else { return "None" }
-        return offsets.sorted().map { compactLabel(for: $0) }.joined(separator: " + ") + " before"
+        guard !offsets.isEmpty else { return "none" }
+        return offsets.sorted()
+            .map { $0 == 0 ? "at start" : compactLabel(for: $0) + " before" }
+            .joined(separator: " + ")
+    }
+
+    /// summary(for:) with just the first character capitalized (never
+    /// .capitalized — that Title Cases Every Word).
+    static func sentenceSummary(for offsets: [Int]) -> String {
+        let s = summary(for: offsets)
+        return s.prefix(1).uppercased() + s.dropFirst()
     }
 
     private static func compactLabel(for minutes: Int) -> String {
         switch minutes {
-        case 0: "at start"
-        case let m where m % 1440 == 0: "\(m / 1440) day\(m == 1440 ? "" : "s")"
-        case let m where m % 60 == 0: "\(m / 60) hour\(m == 60 ? "" : "s")"
+        case let m where m % 1440 == 0 && m > 0: "\(m / 1440) day\(m == 1440 ? "" : "s")"
+        case let m where m % 60 == 0 && m > 0: "\(m / 60) hour\(m == 60 ? "" : "s")"
         default: "\(minutes) min"
         }
     }
