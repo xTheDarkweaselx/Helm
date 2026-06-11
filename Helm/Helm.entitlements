@@ -2,45 +2,35 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- UNRESTRICTED entitlements only (no provisioning profile required), so
-	     the app always builds and launches under Automatic signing.
-
-	     PARKED until iCloud sync is deliberately enabled via Xcode's
-	     Signing & Capabilities (+ iCloud → CloudKit, container
-	     iCloud.Fusion-Studios.Helm; + Push Notifications if wanted) — these are
-	     RESTRICTED entitlements: signed without a matching provisioning
-	     profile, macOS refuses to launch the app at all. The app degrades
-	     gracefully meanwhile (HelmApp gates CloudKit on the entitlement and
-	     falls back to a local store):
-
-	     com.apple.developer.icloud-container-identifiers = [iCloud.Fusion-Studios.Helm]
-	     com.apple.developer.icloud-services             = [CloudKit]
-	     aps-environment / com.apple.developer.aps-environment = development
-
-	     v7 WIDGETS: the App Group is ALSO parked here for the same reason —
-	     add it via Signing & Capabilities (+ App Groups → group.Fusion-Studios.Helm)
-	     on BOTH the app and the widget target so the developer portal registers
-	     it and the provisioning profiles match. Until then SnapshotWriter
-	     no-ops (the container URL is nil) and the app runs normally:
-
-	     com.apple.security.application-groups = [group.Fusion-Studios.Helm]
-	-->
-
-
-	<!-- macOS App Sandbox; ignored on iOS/iPadOS/visionOS (always sandboxed). -->
+	<key>aps-environment</key>
+	<string>development</string>
+	<key>com.apple.developer.aps-environment</key>
+	<string>development</string>
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.Fusion-Studios.Helm</string>
+	</array>
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudDocuments</string>
+		<string>CloudKit</string>
+	</array>
+	<key>com.apple.developer.ubiquity-container-identifiers</key>
+	<array>
+		<string>iCloud.Fusion-Studios.Helm</string>
+	</array>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
-	<!-- Outbound HTTPS for the direct Google Calendar integration (OAuth +
-	     Calendar API). Without this the sandbox blocks DNS/connects:
-	     "A server with the specified hostname could not be found." -->
-	<key>com.apple.security.network.client</key>
-	<true/>
-	<!-- Import a user-picked spreadsheet (and re-import it later). -->
-	<key>com.apple.security.files.user-selected.read-only</key>
-	<true/>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.Fusion-Studios.Helm</string>
+	</array>
 	<key>com.apple.security.files.bookmarks.app-scope</key>
 	<true/>
-	<!-- Write shifts to Apple Calendar via EventKit on macOS. -->
+	<key>com.apple.security.files.user-selected.read-only</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
 	<key>com.apple.security.personal-information.calendars</key>
 	<true/>
 </dict>

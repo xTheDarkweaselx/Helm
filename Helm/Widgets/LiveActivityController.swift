@@ -35,8 +35,12 @@ enum LiveActivityController {
     }
 
     #if os(iOS)
+    // `nonisolated`: ActivityKit's `Activity` is not Sendable, so its awaited
+    // `update`/`end` calls must not cross an actor boundary. Running off the
+    // MainActor keeps each Activity in the same isolation region (`current` is
+    // a Sendable HelmDomain value, so handing it in is safe).
     @available(iOS 16.2, *)
-    private static func reconcile(current: SnapshotShift?) async {
+    nonisolated private static func reconcile(current: SnapshotShift?) async {
         let running = Activity<ShiftActivityAttributes>.activities
 
         guard let current, let start = current.start, let end = current.end else {

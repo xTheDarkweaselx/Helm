@@ -1,9 +1,9 @@
 //
 //  HelmWidgetBundle.swift
-//  HelmWidget (STAGED — add to the widget target in Xcode; see README.md)
+//  HelmWidget
 //
-//  The widget extension's entry point. Replace Xcode's auto-generated bundle
-//  file with this one (Target Membership: HelmWidget only).
+//  @main entry point for the widget extension. Registers the Home/lock-screen
+//  widget and (on iOS) the on-shift Live Activity.
 //
 
 import WidgetKit

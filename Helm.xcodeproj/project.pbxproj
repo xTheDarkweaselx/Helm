@@ -10,6 +10,10 @@
 		666A88282FD788010014534A /* HelmCalendar in Frameworks */ = {isa = PBXBuildFile; productRef = 666A88272FD788010014534A /* HelmCalendar */; };
 		666A882A2FD788010014534A /* HelmDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 666A88292FD788010014534A /* HelmDomain */; };
 		666A882C2FD788010014534A /* HelmParsing in Frameworks */ = {isa = PBXBuildFile; productRef = 666A882B2FD788010014534A /* HelmParsing */; };
+		66B2BA782FDA10BC006BD79B /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 66B2BA772FDA10BC006BD79B /* WidgetKit.framework */; };
+		66B2BA7A2FDA10BC006BD79B /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 66B2BA792FDA10BC006BD79B /* SwiftUI.framework */; };
+		66B2BA872FDA10BE006BD79B /* HelmWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 66B2BA752FDA10BC006BD79B /* HelmWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		66B2BA9A2FDA110B006BD79B /* HelmDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 66B2BA992FDA110B006BD79B /* HelmDomain */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -27,12 +31,37 @@
 			remoteGlobalIDString = 666A87CC2FD76EC70014534A;
 			remoteInfo = Helm;
 		};
+		66B2BA852FDA10BE006BD79B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 666A87C52FD76EC70014534A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 66B2BA742FDA10BC006BD79B;
+			remoteInfo = HelmWidgetExtension;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		66B2BA882FDA10BE006BD79B /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				66B2BA872FDA10BE006BD79B /* HelmWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		666A87CD2FD76EC70014534A /* Helm: Command Your Rota.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Helm: Command Your Rota.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		666A87DE2FD76EC90014534A /* HelmTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HelmTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		666A87E82FD76EC90014534A /* HelmUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HelmUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		66B2BA752FDA10BC006BD79B /* HelmWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HelmWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		66B2BA772FDA10BC006BD79B /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = /System/Library/Frameworks/WidgetKit.framework; sourceTree = "<absolute>"; };
+		66B2BA792FDA10BC006BD79B /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = /System/Library/Frameworks/SwiftUI.framework; sourceTree = "<absolute>"; };
+		66B2BA982FDA10D4006BD79B /* HelmWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HelmWidgetExtension.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -42,6 +71,13 @@
 				Info.plist,
 			);
 			target = 666A87CC2FD76EC70014534A /* Helm */;
+		};
+		66B2BA8C2FDA10BE006BD79B /* Exceptions for "HelmWidget" folder in "HelmWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 66B2BA742FDA10BC006BD79B /* HelmWidgetExtension */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -62,6 +98,14 @@
 		666A87EB2FD76EC90014534A /* HelmUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = HelmUITests;
+			sourceTree = "<group>";
+		};
+		66B2BA7B2FDA10BC006BD79B /* HelmWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				66B2BA8C2FDA10BE006BD79B /* Exceptions for "HelmWidget" folder in "HelmWidgetExtension" target */,
+			);
+			path = HelmWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -91,15 +135,28 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		66B2BA722FDA10BC006BD79B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				66B2BA7A2FDA10BC006BD79B /* SwiftUI.framework in Frameworks */,
+				66B2BA782FDA10BC006BD79B /* WidgetKit.framework in Frameworks */,
+				66B2BA9A2FDA110B006BD79B /* HelmDomain in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		666A87C42FD76EC70014534A = {
 			isa = PBXGroup;
 			children = (
+				66B2BA982FDA10D4006BD79B /* HelmWidgetExtension.entitlements */,
 				666A87CF2FD76EC70014534A /* Helm */,
 				666A87E12FD76EC90014534A /* HelmTests */,
 				666A87EB2FD76EC90014534A /* HelmUITests */,
+				66B2BA7B2FDA10BC006BD79B /* HelmWidget */,
+				66B2BA762FDA10BC006BD79B /* Frameworks */,
 				666A87CE2FD76EC70014534A /* Products */,
 			);
 			sourceTree = "<group>";
@@ -110,8 +167,18 @@
 				666A87CD2FD76EC70014534A /* Helm: Command Your Rota.app */,
 				666A87DE2FD76EC90014534A /* HelmTests.xctest */,
 				666A87E82FD76EC90014534A /* HelmUITests.xctest */,
+				66B2BA752FDA10BC006BD79B /* HelmWidgetExtension.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		66B2BA762FDA10BC006BD79B /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				66B2BA772FDA10BC006BD79B /* WidgetKit.framework */,
+				66B2BA792FDA10BC006BD79B /* SwiftUI.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -124,10 +191,12 @@
 				666A87C92FD76EC70014534A /* Sources */,
 				666A87CA2FD76EC70014534A /* Frameworks */,
 				666A87CB2FD76EC70014534A /* Resources */,
+				66B2BA882FDA10BE006BD79B /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				66B2BA862FDA10BE006BD79B /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				666A87CF2FD76EC70014534A /* Helm */,
@@ -188,6 +257,29 @@
 			productReference = 666A87E82FD76EC90014534A /* HelmUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		66B2BA742FDA10BC006BD79B /* HelmWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 66B2BA8B2FDA10BE006BD79B /* Build configuration list for PBXNativeTarget "HelmWidgetExtension" */;
+			buildPhases = (
+				66B2BA712FDA10BC006BD79B /* Sources */,
+				66B2BA722FDA10BC006BD79B /* Frameworks */,
+				66B2BA732FDA10BC006BD79B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				66B2BA7B2FDA10BC006BD79B /* HelmWidget */,
+			);
+			name = HelmWidgetExtension;
+			packageProductDependencies = (
+				66B2BA992FDA110B006BD79B /* HelmDomain */,
+			);
+			productName = HelmWidgetExtension;
+			productReference = 66B2BA752FDA10BC006BD79B /* HelmWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -195,7 +287,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2650;
+				LastSwiftUpdateCheck = 2700;
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					666A87CC2FD76EC70014534A = {
@@ -208,6 +300,9 @@
 					666A87E72FD76EC90014534A = {
 						CreatedOnToolsVersion = 26.5;
 						TestTargetID = 666A87CC2FD76EC70014534A;
+					};
+					66B2BA742FDA10BC006BD79B = {
+						CreatedOnToolsVersion = 27.0;
 					};
 				};
 			};
@@ -231,6 +326,7 @@
 				666A87CC2FD76EC70014534A /* Helm */,
 				666A87DD2FD76EC90014534A /* HelmTests */,
 				666A87E72FD76EC90014534A /* HelmUITests */,
+				66B2BA742FDA10BC006BD79B /* HelmWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -251,6 +347,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		666A87E62FD76EC90014534A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		66B2BA732FDA10BC006BD79B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -281,6 +384,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		66B2BA712FDA10BC006BD79B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -293,6 +403,11 @@
 			isa = PBXTargetDependency;
 			target = 666A87CC2FD76EC70014534A /* Helm */;
 			targetProxy = 666A87E92FD76EC90014534A /* PBXContainerItemProxy */;
+		};
+		66B2BA862FDA10BE006BD79B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 66B2BA742FDA10BC006BD79B /* HelmWidgetExtension */;
+			targetProxy = 66B2BA852FDA10BE006BD79B /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -617,6 +732,94 @@
 			};
 			name = Release;
 		};
+		66B2BA892FDA10BE006BD79B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = HelmWidget/HelmWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8RUSX2C6R9;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HelmWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = HelmWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "Fusion-Studios.Helm.HelmWidget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Debug;
+		};
+		66B2BA8A2FDA10BE006BD79B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = HelmWidget/HelmWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8RUSX2C6R9;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HelmWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = HelmWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "Fusion-Studios.Helm.HelmWidget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -656,6 +859,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		66B2BA8B2FDA10BE006BD79B /* Build configuration list for PBXNativeTarget "HelmWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				66B2BA892FDA10BE006BD79B /* Debug */,
+				66B2BA8A2FDA10BE006BD79B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -677,6 +889,11 @@
 		666A882B2FD788010014534A /* HelmParsing */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = HelmParsing;
+		};
+		66B2BA992FDA110B006BD79B /* HelmDomain */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 666A88262FD788010014534A /* XCLocalSwiftPackageReference "HelmCore" */;
+			productName = HelmDomain;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
