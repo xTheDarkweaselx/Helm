@@ -23,5 +23,9 @@
 	<string>Helm adds your imported work shifts to your calendar and updates or removes them when you re-import a changed roster, so your calendar always matches your latest schedule.</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>Helm adds your imported work shifts to your calendar.</string>
+	<!-- v7: the app starts the "on shift now" Live Activity (the widget
+	     extension renders it). Harmless before the widget target exists. -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 </dict>
 </plist>
