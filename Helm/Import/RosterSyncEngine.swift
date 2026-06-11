@@ -96,8 +96,112 @@ struct RosterSyncEngine {
         let result = plan.result
         let fingerprint = fingerprint(for: result.sourceName)
 
-        // Find or create the profile + roster.
-        let profile = fetchProfile(fingerprint: fingerprint, in: context) ?? {
+        // ── STAGE (read-only) ────────────────────────────────────────────────
+        // NOTHING below mutates the store until every calendar write succeeds.
+        // The old shape mutated first and relied on rollback() in the catch —
+        // but these writes can suspend for MINUTES under Google throttling and
+        // the main context autosaves, so a mid-await commit silently turned
+        // rollback() into a no-op, leaving store and calendars diverged.
+        let existingProfile = fetchProfile(fingerprint: fingerprint, in: context)
+        let existingRoster = existingProfile.flatMap { fetchRoster(forProfileID: $0.id, in: context) }
+
+        var existingByKey: [String: ShiftInstance] = [:]
+        for instance in existingRoster?.instances ?? [] {
+            if let key = instance.dedupKey { existingByKey[key] = instance }
+        }
+
+        // Destination migration: a re-apply aimed at a DIFFERENT destination
+        // set than this roster's events live in (Apple ↔ Google ↔ both, or a
+        // different Google account). Decided from PRE-apply state; DROPPED
+        // destinations are only cleaned up AFTER the new-target writes succeed
+        // and SwiftData commits — a destructive pre-write side effect can't be
+        // rolled back, so failure must degrade to a recoverable duplicate,
+        // never a hole in every calendar.
+        let newKinds = Set(targets.compactMap { CalendarTargetKind(rawValue: $0.kind) })
+        let oldKinds = existingProfile?.targets ?? [.eventkit]
+        let newAccount = newKinds.contains(.google) ? GoogleConfig.accountEmail : nil
+        let accountChanged = newKinds.contains(.google) && oldKinds.contains(.google)
+            && existingProfile?.calendarAccount != nil && newAccount != nil
+            && existingProfile?.calendarAccount != newAccount
+        let isMigration = plan.isReimport && (oldKinds != newKinds || accountChanged) && !existingByKey.isEmpty
+        let oldKeys = Array(existingByKey.keys)
+
+        // Last-wins on duplicate keys (matches incomingMap, used for the diff).
+        // The trapping uniqueKeysWithValues: would crash on two same-day same-code rows.
+        let incomingByKey = Dictionary(
+            result.drafts.filter(\.isWritable).map { (key(for: $0), $0) },
+            uniquingKeysWith: { _, last in last })
+
+        let removedKeys = plan.diff.removed
+
+        // Calendar drafts staged STRAIGHT from the plan's source data via
+        // stagedDraft(for:) — the pure twin of calendarDraft(for:) over the
+        // instance the commit phase will create/update.
+        var draftsToWrite: [CalendarEventDraft] = []
+        for key in plan.diff.added {
+            guard let draft = incomingByKey[key],
+                  let staged = stagedDraft(for: draft, roster: existingRoster, in: context) else { continue }
+            draftsToWrite.append(staged)
+        }
+        for key in plan.diff.updated {
+            guard let draft = incomingByKey[key], existingByKey[key] != nil,
+                  let staged = stagedDraft(for: draft, roster: existingRoster, in: context) else { continue }
+            draftsToWrite.append(staged)
+        }
+
+        // Migrating destinations: every CURRENT target must receive the FULL
+        // roster (unchanged + user-authored shifts included), not just the diff
+        // — newly-added destinations have nothing yet, and dropped ones are
+        // about to lose their copy. Survivors are read (not mutated) at their
+        // stored content; updated rows are staged at their NEW content; added
+        // rows join at theirs. Upserts are idempotent, so over-writing is safe.
+        if isMigration {
+            let removedSet = Set(removedKeys)
+            let updatedSet = Set(plan.diff.updated)
+            var migrated: [CalendarEventDraft] = []
+            for instance in existingRoster?.instances ?? [] {
+                if let key = instance.dedupKey, removedSet.contains(key) { continue }
+                if let key = instance.dedupKey, updatedSet.contains(key),
+                   let draft = incomingByKey[key],
+                   let staged = stagedDraft(for: draft, roster: existingRoster, in: context) {
+                    migrated.append(staged)
+                } else if let cal = calendarDraft(for: instance) {
+                    migrated.append(cal)
+                }
+            }
+            for key in plan.diff.added {
+                guard let draft = incomingByKey[key],
+                      let staged = stagedDraft(for: draft, roster: existingRoster, in: context) else { continue }
+                migrated.append(staged)
+            }
+            draftsToWrite = migrated
+        }
+
+        // ── WRITE CALENDARS (still nothing mutated — a throw is clean) ───────
+        // v7.2: work in small chunks and report progress — Google throttling
+        // can stretch a big roster into minutes, and silence reads as a hang.
+        let progressTotal = targets.count * (removedKeys.count + draftsToWrite.count)
+        if progressTotal > 0 {
+            SyncProgress.shared.begin("Updating \(SyncSummary.name(for: newKinds))…", total: progressTotal)
+        }
+        defer { SyncProgress.shared.end() }
+        for target in targets {
+            // Always remove removed keys: on a newly-added destination they
+            // don't exist and both adapters tolerate missing keys; on a
+            // RETAINED destination during migration this is the only thing
+            // that deletes them (the full rewrite only covers survivors).
+            for chunk in removedKeys.chunks(of: 8) {
+                _ = try await target.remove(dedupKeys: chunk)
+                SyncProgress.shared.advance(chunk.count)
+            }
+            for chunk in draftsToWrite.chunks(of: 8) {
+                _ = try await target.write(chunk)
+                SyncProgress.shared.advance(chunk.count)
+            }
+        }
+
+        // ── COMMIT (all mutations + save, with no await in between) ──────────
+        let profile = existingProfile ?? {
             let p = ImportProfile(name: result.sourceName)
             p.sourceFingerprint = fingerprint
             p.layoutKindRaw = LayoutKind.list.rawValue
@@ -105,9 +209,11 @@ struct RosterSyncEngine {
             return p
         }()
         profile.lastImportedAt = .now
+        profile.targets = newKinds
+        profile.calendarAccount = newAccount
 
         let title = result.displayName ?? result.sourceName
-        let roster = fetchRoster(forProfileID: profile.id, in: context) ?? {
+        let roster = existingRoster ?? {
             let r = Roster(title: title)
             r.sourceImportProfileID = profile.id
             context.insert(r)
@@ -115,60 +221,19 @@ struct RosterSyncEngine {
         }()
         roster.title = title // keep in sync (e.g. a renamed schedule)
 
-        var existingByKey: [String: ShiftInstance] = [:]
-        for instance in roster.instances ?? [] {
-            if let key = instance.dedupKey { existingByKey[key] = instance }
-        }
-
-        // Destination migration: a re-apply aimed at a DIFFERENT destination
-        // set than this roster's events live in (Apple ↔ Google ↔ both, or a
-        // different Google account). Decided here, but DROPPED destinations are
-        // only cleaned up AFTER the new-target writes succeed and SwiftData
-        // commits — a destructive pre-write side effect can't be rolled back,
-        // so failure must degrade to a recoverable duplicate, never a hole in
-        // every calendar.
-        let newKinds = Set(targets.compactMap { CalendarTargetKind(rawValue: $0.kind) })
-        let oldKinds = profile.targets
-        let newAccount = newKinds.contains(.google) ? GoogleConfig.accountEmail : nil
-        let accountChanged = newKinds.contains(.google) && oldKinds.contains(.google)
-            && profile.calendarAccount != nil && newAccount != nil
-            && profile.calendarAccount != newAccount
-        let isMigration = plan.isReimport && (oldKinds != newKinds || accountChanged) && !existingByKey.isEmpty
-        let oldKeys = Array(existingByKey.keys) // captured before any mutation
-        profile.targets = newKinds
-        profile.calendarAccount = newAccount
-        // Last-wins on duplicate keys (matches incomingMap, used for the diff).
-        // The trapping uniqueKeysWithValues: would crash on two same-day same-code rows.
-        let incomingByKey = Dictionary(
-            result.drafts.filter(\.isWritable).map { (key(for: $0), $0) },
-            uniquingKeysWith: { _, last in last })
-
         var typeCache: [String: ShiftType] = [:]
-        var removedKeys: [String] = []
-        var draftsToWrite: [CalendarEventDraft] = []
-
-        // Removed: delete instances no longer present (RosterDiffer already excluded user-authored).
         for key in plan.diff.removed {
-            if let instance = existingByKey[key] {
-                context.delete(instance)
-            }
-            removedKeys.append(key)
+            if let instance = existingByKey[key] { context.delete(instance) }
         }
-
-        // Added: create new instances.
         for key in plan.diff.added {
             guard let draft = incomingByKey[key] else { continue }
             let type = shiftType(for: draft, cache: &typeCache, context: context)
-            let instance = makeInstance(from: draft, type: type, roster: roster, context: context)
-            if let cal = calendarDraft(for: instance) { draftsToWrite.append(cal) }
+            _ = makeInstance(from: draft, type: type, roster: roster, context: context)
         }
-
-        // Updated: mutate existing instances in place.
         for key in plan.diff.updated {
             guard let draft = incomingByKey[key], let instance = existingByKey[key] else { continue }
             let type = shiftType(for: draft, cache: &typeCache, context: context)
             apply(draft: draft, to: instance, type: type)
-            if let cal = calendarDraft(for: instance) { draftsToWrite.append(cal) }
         }
 
         let run = ImportRun(importProfile: profile)
@@ -177,49 +242,6 @@ struct RosterSyncEngine {
         run.removedCount = plan.diff.removed.count
         run.skippedCount = result.drafts.count - result.writableCount
         context.insert(run)
-
-        // Migrating destinations: every CURRENT target must receive the FULL
-        // roster (unchanged + user-authored shifts included), not just the diff
-        // — newly-added destinations have nothing yet, and dropped ones are
-        // about to lose their copy. Upserts are idempotent on all targets, so
-        // over-writing is safe.
-        if isMigration {
-            let removedSet = Set(removedKeys)
-            draftsToWrite = (roster.instances ?? [])
-                .filter { !removedSet.contains($0.dedupKey ?? "") }
-                .compactMap(calendarDraft(for:))
-        }
-
-        // Write the calendars BEFORE committing SwiftData, so a calendar failure
-        // (e.g. access revoked) rolls the data changes back instead of leaving the
-        // store and the calendars permanently out of sync. The SwiftData mutations
-        // above are still uncommitted at this point.
-        // v7.2: work in small chunks and report progress — Google throttling
-        // can stretch a big roster into minutes, and silence reads as a hang.
-        let progressTotal = targets.count * (removedKeys.count + draftsToWrite.count)
-        if progressTotal > 0 {
-            SyncProgress.shared.begin("Updating \(SyncSummary.name(for: newKinds))…", total: progressTotal)
-        }
-        defer { SyncProgress.shared.end() }
-        do {
-            for target in targets {
-                // Always remove removed keys: on a newly-added destination they
-                // don't exist and both adapters tolerate missing keys; on a
-                // RETAINED destination during migration this is the only thing
-                // that deletes them (the full rewrite only covers survivors).
-                for chunk in removedKeys.chunks(of: 8) {
-                    _ = try await target.remove(dedupKeys: chunk)
-                    SyncProgress.shared.advance(chunk.count)
-                }
-                for chunk in draftsToWrite.chunks(of: 8) {
-                    _ = try await target.write(chunk)
-                    SyncProgress.shared.advance(chunk.count)
-                }
-            }
-        } catch {
-            context.rollback()
-            throw error
-        }
 
         try context.save()
         SnapshotWriter.refresh(context: context)
@@ -423,6 +445,49 @@ struct RosterSyncEngine {
                 location: instance.locationName, timeZoneIdentifier: instance.timeZoneIdentifier
             )
         )
+    }
+
+    /// The PURE twin of `calendarDraft(for:)` for a shift that has NOT been
+    /// persisted yet: built straight from the source `DraftShift` so the
+    /// write-first apply can stage calendar work before any model mutation.
+    /// Must produce identical output to `calendarDraft(for:)` over the instance
+    /// the commit phase will create — the title goes through the SAME type
+    /// resolution `shiftType(for:)` will perform, just read-only.
+    private static func stagedDraft(for draft: DraftShift, roster: Roster?, in context: ModelContext) -> CalendarEventDraft? {
+        guard let start = draft.start, let end = draft.end else { return nil }
+        let title = stagedTitle(for: draft, in: context)
+        return CalendarEventDraft(
+            dedupKey: draft.dedupKey,
+            title: title,
+            location: draft.location,
+            start: start,
+            end: end,
+            timeZoneIdentifier: draft.timeZoneIdentifier,
+            isAllDay: draft.isAllDay,
+            alarmOffsetsMinutes: effectiveReminderOffsets(for: roster),
+            contentHash: ShiftContentHash.make(
+                title: title, startUTC: start, endUTC: end,
+                location: draft.location, timeZoneIdentifier: draft.timeZoneIdentifier
+            )
+        )
+    }
+
+    /// What `title(for:type:)` WILL produce once `shiftType(for:)` resolves —
+    /// computed read-only (no inserts): the same id-first / code lookup, and
+    /// for a type that would be freshly created, the same label fallback chain
+    /// (a created type's label is always non-nil, so type.label wins).
+    private static func stagedTitle(for draft: DraftShift, in context: ModelContext) -> String {
+        if let t = draft.title { return t }
+        var type: ShiftType?
+        if let id = draft.shiftTypeID {
+            let d = FetchDescriptor<ShiftType>(predicate: #Predicate { $0.id == id })
+            type = try? context.fetch(d).first
+        }
+        if type == nil { type = fetchShiftType(for: draft, context: context) }
+        if let type { return type.label ?? type.code ?? "Shift" }
+        return draft.label
+            ?? draft.startMinuteOfDay.map { hhmm($0) + (draft.endMinuteOfDay.map { "\u{2013}" + hhmm($0) } ?? "") }
+            ?? (draft.code.isEmpty ? "Shift" : draft.code)
     }
 
     /// All calendar drafts for a roster (for .ics export and re-apply).
