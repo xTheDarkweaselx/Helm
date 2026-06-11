@@ -51,6 +51,10 @@ struct ContentView: View {
     @State private var deleteErrorMessage: String?
     @State private var scheduleAwaitingForcedDelete: Schedule?
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(SyncProgress.self) private var syncProgress
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    #endif
 
     var body: some View {
         NavigationSplitView {
@@ -112,6 +116,19 @@ struct ContentView: View {
     }
 
     private var sidebar: some View {
+        sidebarList
+            #if os(iOS)
+            // Compact (iPhone): the detail-pane HUD is invisible while the
+            // collapsed sidebar is frontmost — mirror it here.
+            .overlay(alignment: .bottom) {
+                if horizontalSizeClass == .compact {
+                    SyncProgressHUD().padding(.bottom, 14).padding(.horizontal, 16)
+                }
+            }
+            #endif
+    }
+
+    private var sidebarList: some View {
         List(selection: $selection) {
             Section {
                 NavigationLink(value: Selection.overview) {
@@ -220,6 +237,7 @@ struct ContentView: View {
                 Button("Import roster…", systemImage: "square.and.arrow.down") { selection = .importer }
                 Button("New schedule", systemImage: "slider.horizontal.3") { newSchedule() }
                 Button("Quick add shift", systemImage: "calendar.badge.plus") { selection = .quickAddShift("") }
+                    .disabled(syncProgress.isActive)
                 Button("Plan time off", systemImage: "airplane") { selection = .planning }
             } label: {
                 Label("Add", systemImage: "plus")

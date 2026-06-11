@@ -62,6 +62,7 @@ struct ShiftListView: View {
                 } actions: {
                     Button("Add shift", systemImage: "plus") { isAddingShift = true }
                         .buttonStyle(.borderedProminent)
+                        .disabled(syncProgress.isActive)
                 }
             } else {
                 List {
@@ -71,19 +72,25 @@ struct ShiftListView: View {
                             ForEach(group.shifts) { instance in
                                 ShiftRow(instance: instance, accent: accent)
                                     .contentShape(Rectangle())
-                                    .onTapGesture { editingShift = instance }
+                                    .onTapGesture {
+                                        guard !syncProgress.isActive else { return }
+                                        editingShift = instance
+                                    }
                                     .swipeActions {
                                         Button("Remove", systemImage: "trash", role: .destructive) {
                                             instanceToRemove = instance
                                         }
+                                        .disabled(syncProgress.isActive)
                                     }
                                     .contextMenu { // right-click parity on macOS
                                         Button("Edit shift…", systemImage: "pencil") {
                                             editingShift = instance
                                         }
+                                        .disabled(syncProgress.isActive)
                                         Button("Remove shift…", systemImage: "trash", role: .destructive) {
                                             instanceToRemove = instance
                                         }
+                                        .disabled(syncProgress.isActive)
                                     }
                             }
                         } header: {
@@ -237,7 +244,9 @@ struct ShiftListView: View {
         var edited = 0
         for instance in instances {
             if instance.isAllDay == true {
-                tbc += 1
+                // "TBC" means an IMPORTED tentative row; a user-made all-day
+                // shift (.added/.modified) is deliberate, not awaiting times.
+                if instance.overrideKind == .none { tbc += 1 }
             } else if let paid = instance.computedPaidHours {
                 hours += paid
             } else if let s = instance.startUTC, let e = instance.endUTC, e > s {
@@ -273,13 +282,18 @@ struct ShiftListView: View {
         }
     }
 
-    /// Changes when any shift's identity/title/time or the reminder default changes.
+    /// Changes when any shift's identity/title/times/all-day/location or the
+    /// reminder default changes (drives .ics regeneration — the editor can now
+    /// change end/location/all-day without touching title/start).
     private var rosterSignature: String {
         let parts: [String] = (roster.instances ?? []).map { inst in
             let key = inst.dedupKey ?? inst.id
             let title = inst.title ?? ""
             let start = Int(inst.startUTC?.timeIntervalSince1970 ?? 0)
-            return "\(key)|\(title)|\(start)"
+            let end = Int(inst.endUTC?.timeIntervalSince1970 ?? 0)
+            let allDay = inst.isAllDay == true ? "1" : "0"
+            let location = inst.locationName ?? ""
+            return "\(key)|\(title)|\(start)|\(end)|\(allDay)|\(location)"
         }
         let joined = parts.sorted().joined(separator: ";")
         let offsets = ReminderOffsets.encode(RosterSyncEngine.effectiveReminderOffsets(for: roster))
@@ -358,11 +372,19 @@ private struct ShiftRow: View {
                     Text(instance.title ?? instance.shiftType?.label ?? instance.shiftType?.code ?? "Shift")
                         .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
-                    if instance.overrideKind != .none {
+                    switch instance.overrideKind {
+                    case .added:
+                        Image(systemName: "plus.circle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Added by you")
+                    case .modified, .swapped, .cancelled:
                         Image(systemName: "pencil.circle.fill")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                             .accessibilityLabel("Edited by you")
+                    case .none:
+                        EmptyView()
                     }
                 }
                 if let location = instance.locationName, !location.isEmpty {
@@ -397,17 +419,23 @@ private struct ShiftRow: View {
     @ViewBuilder
     private var timeBadge: some View {
         if instance.isAllDay == true {
-            Text("Times TBC")
-                .font(.caption2.weight(.semibold))
-                .padding(.horizontal, 7)
-                .padding(.vertical, 2)
-                .background(Color.orange.opacity(0.16), in: Capsule())
-                .foregroundStyle(.orange)
-        } else if instance.shiftType?.workKind == .off {
-            Text("Off")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if instance.overrideKind == .none {
+                // Imported without times — genuinely awaiting confirmation.
+                Text("Times TBC")
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Color.orange.opacity(0.16), in: Capsule())
+                    .foregroundStyle(.orange)
+            } else {
+                // Deliberately all-day (user-added/edited) — not a warning.
+                Text("All-day")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         } else if let start = instance.startUTC, let end = instance.endUTC, end > start {
+            // Resolved times win even over an "off" type — the user confirmed
+            // them in the editor, so show them.
             HStack(spacing: 3) {
                 Text("\(timeText(start))–\(timeText(end))")
                     .font(.caption.monospacedDigit())
@@ -421,6 +449,10 @@ private struct ShiftRow: View {
                         .foregroundStyle(typeColor)
                 }
             }
+        } else if instance.shiftType?.workKind == .off {
+            Text("Off")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         } else {
             Text("—").font(.caption).foregroundStyle(.tertiary)
         }
@@ -438,6 +470,9 @@ private struct ShiftRow: View {
     private func endsOnLaterDay(_ start: Date, _ end: Date) -> Bool {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = TimeZone(identifier: instance.timeZoneIdentifier) ?? .current
-        return !cal.isDate(start, inSameDayAs: end)
+        // Exclusive-midnight rule (same as the calendar): ending exactly at
+        // 00:00 belongs to the PREVIOUS day, so it isn't "+1".
+        let effectiveEnd = end == cal.startOfDay(for: end) ? end.addingTimeInterval(-1) : end
+        return !cal.isDate(start, inSameDayAs: effectiveEnd)
     }
 }

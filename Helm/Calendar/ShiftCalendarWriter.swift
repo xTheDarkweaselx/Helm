@@ -79,6 +79,24 @@ final class ShiftCalendarWriter: CalendarTarget {
                                        from: drafts.map(\.start).min()!,
                                        to: drafts.map(\.end).max()!)
 
+        // v7.3: a single-draft EDIT can move a shift far outside the windowed
+        // lookup (±1 day padding) — missing the old event would create a
+        // DUPLICATE instead of moving it. For the single-draft path, fall back
+        // once to the wide scan so the upsert always reattaches to the original
+        // event. (Bulk imports write at source dates — always in-window — and
+        // must not pay a wide scan per chunk.)
+        if drafts.count == 1, let draft = drafts.first {
+            let url = eventURL(for: draft.dedupKey).absoluteString
+            if existingByURL[url] == nil {
+                for event in allHelmEvents(in: calendar) {
+                    if event.url?.absoluteString == url {
+                        existingByURL[url] = event
+                        break
+                    }
+                }
+            }
+        }
+
         var staged: [(key: String, action: CalendarWriteAction, event: EKEvent)] = []
         for draft in drafts {
             let url = eventURL(for: draft.dedupKey)

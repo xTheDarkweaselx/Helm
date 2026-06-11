@@ -20,6 +20,7 @@ struct QuickAddShiftView: View {
     let onDone: (DayKey?) -> Void
 
     @Environment(\.modelContext) private var context
+    @Environment(SyncProgress.self) private var syncProgress
     @Query(sort: [SortDescriptor(\ShiftType.sortIndex), SortDescriptor(\ShiftType.code)]) private var types: [ShiftType]
 
     @State private var date = Date.now
@@ -81,7 +82,7 @@ struct QuickAddShiftView: View {
                 } label: {
                     if saving { ProgressView() } else { Text("Add shift") }
                 }
-                .disabled(saving)
+                .disabled(saving || syncProgress.isActive)
                 .buttonStyle(.borderedProminent)
             }
         }
