@@ -235,3 +235,26 @@ import Testing
         #expect(url.absoluteString == "https://www.googleapis.com/calendar/v3/calendars/cal1/events/\(id)")
     }
 }
+
+@Suite struct GoogleRetryClassificationTests {
+    @Test func retriesRateAndQuotaAndServerErrors() {
+        // The classic machine reasons.
+        #expect(GoogleCalendarTarget.isRetryable(status: 403, reason: "rateLimitExceeded", message: "Rate Limit Exceeded"))
+        #expect(GoogleCalendarTarget.isRetryable(status: 403, reason: "userRateLimitExceeded", message: "x"))
+        #expect(GoogleCalendarTarget.isRetryable(status: 403, reason: "quotaExceeded", message: "x"))
+        // 429 + 5xx always.
+        #expect(GoogleCalendarTarget.isRetryable(status: 429, reason: nil, message: ""))
+        #expect(GoogleCalendarTarget.isRetryable(status: 503, reason: nil, message: ""))
+    }
+
+    @Test func retriesA403RateLimitWithNoMachineReason() {
+        // The field-hit case: 403 with only the human message, no `reason`.
+        #expect(GoogleCalendarTarget.isRetryable(status: 403, reason: nil, message: "Rate Limit Exceeded"))
+    }
+
+    @Test func doesNotRetryRealPermissionDenials() {
+        #expect(!GoogleCalendarTarget.isRetryable(status: 403, reason: "insufficientPermissions", message: "Insufficient Permission"))
+        #expect(!GoogleCalendarTarget.isRetryable(status: 404, reason: nil, message: "Not Found"))
+        #expect(!GoogleCalendarTarget.isRetryable(status: 400, reason: "badRequest", message: "Bad Request"))
+    }
+}

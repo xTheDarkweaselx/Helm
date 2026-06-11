@@ -54,8 +54,33 @@ public actor GoogleCalendarTarget: CalendarTarget {
     public static let calendarIDDefaultsKey = "googleHelmCalendarID"
 
     private static let apiBase = URL(string: "https://www.googleapis.com/calendar/v3")!
-    private static let maxConcurrentRequests = 4
-    private static let maxAttempts = 5
+    // Google's per-user write quota trips easily on a bulk import (a real roster
+    // is ~200+ events). Keep the burst small and back off generously: a low
+    // concurrency means a rate-limited request's backoff blocks new ones too, so
+    // the group self-throttles, and more attempts let a request wait out a full
+    // per-minute quota window instead of failing the whole import.
+    private static let maxConcurrentRequests = 2
+    private static let maxAttempts = 8
+
+    /// Whether a non-2xx response should be retried (with backoff). 429 and 5xx
+    /// always; 403 only when it's a RATE/QUOTA limit (not a real permission
+    /// denial). Detection is deliberately broad — Google returns 403 rate limits
+    /// under several `reason` strings and sometimes only a "Rate Limit Exceeded"
+    /// message with no machine reason — so we also sniff the message.
+    nonisolated static func isRetryable(status: Int, reason: String?, message: String) -> Bool {
+        if status == 429 { return true }
+        if (500..<600).contains(status) { return true }
+        if status == 403 {
+            switch reason {
+            case "rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded", "dailyLimitExceeded":
+                return true
+            default:
+                return message.range(of: "rate limit", options: .caseInsensitive) != nil
+                    || message.range(of: "quota", options: .caseInsensitive) != nil
+            }
+        }
+        return false
+    }
 
     private let tokens: any GoogleAccessTokenProviding
     private let session: URLSession
@@ -322,16 +347,16 @@ public actor GoogleCalendarTarget: CalendarTarget {
                 continue
             }
 
-            let isRateLimited = http.statusCode == 429
-                || (http.statusCode == 403 && (reason == "rateLimitExceeded" || reason == "userRateLimitExceeded"))
-            let isServerError = (500..<600).contains(http.statusCode)
-            guard (isRateLimited || isServerError), attempt < Self.maxAttempts else { throw error }
+            guard Self.isRetryable(status: http.statusCode, reason: reason, message: message),
+                  attempt < Self.maxAttempts else { throw error }
 
             // Clamp the server's Retry-After: a malformed/huge/non-finite value
             // must neither trap the UInt64 conversion nor stall an import.
+            // Otherwise exponential backoff + full jitter, capped at 32s so a
+            // request can ride out a per-minute quota window (attempt 7 ≈ 32s).
             let retryAfter = (http.value(forHTTPHeaderField: "Retry-After")).flatMap(Double.init)
             let safeRetryAfter = (retryAfter?.isFinite == true) ? min(max(retryAfter!, 0), 60) : nil
-            let backoff = safeRetryAfter ?? Double.random(in: 0...(0.5 * pow(2, Double(attempt - 1))))
+            let backoff = safeRetryAfter ?? Double.random(in: 0...min(32, 0.5 * pow(2, Double(attempt - 1))))
             try await Task.sleep(nanoseconds: UInt64(backoff * 1_000_000_000)) // throws on cancellation
         }
     }
