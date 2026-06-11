@@ -2,8 +2,12 @@
 //  ShiftListView.swift
 //  Helm
 //
-//  Detail pane: the shifts of a selected roster. Re-import to update in place
-//  (idempotent); the overflow menu removes the roster and its calendar events.
+//  Detail pane: the shifts of a selected roster. v7.3 redesign — a glass
+//  summary header (shifts/hours/TBC/range), month-grouped sections, modern
+//  rows (type colour bar, tags, notes, TBC + overnight + edited badges), and
+//  the roster is now EDITABLE: tap a shift to edit it (set real times on a
+//  TBC), add one-off shifts into this roster, or re-import an updated file —
+//  all in-window pushes, never sheets.
 //
 
 import SwiftUI
@@ -16,8 +20,12 @@ struct ShiftListView: View {
     /// Called after the roster (and its events) are gone — the host navigates
     /// away instead of leaving a stale placeholder.
     var onDeleted: () -> Void = {}
+    /// Routes to the import flow (re-import the source / an updated version).
+    var onImportUpdate: () -> Void = {}
+
     @Environment(\.modelContext) private var modelContext
     @Environment(SyncProgress.self) private var syncProgress
+    @Environment(\.helmAccent) private var accent
     @State private var isConfirmingDelete = false
     @State private var errorMessage: String?
     @State private var infoMessage: String?
@@ -25,6 +33,10 @@ struct ShiftListView: View {
     @State private var icsURL: URL?
     @State private var isEditingReminders = false
     @State private var instanceToRemove: ShiftInstance?
+    @State private var editingShift: ShiftInstance?
+    @State private var isAddingShift = false
+
+    private var calendar: Calendar { CalendarViewModel.displayCalendar }
 
     private var sortedInstances: [ShiftInstance] {
         (roster.instances ?? []).sorted {
@@ -32,36 +44,68 @@ struct ShiftListView: View {
         }
     }
 
+    /// Shifts grouped by civil month, in date order.
+    private var monthGroups: [(month: MonthKey, shifts: [ShiftInstance])] {
+        let grouped = Dictionary(grouping: sortedInstances) { instance in
+            MonthKey(containing: instance.localDate ?? .distantPast, in: calendar)
+        }
+        return grouped.keys.sorted().map { (month: $0, shifts: grouped[$0] ?? []) }
+    }
+
     var body: some View {
         Group {
             if sortedInstances.isEmpty {
-                ContentUnavailableView(
-                    "No shifts",
-                    systemImage: "calendar",
-                    description: Text("This roster has no shifts yet.")
-                )
+                ContentUnavailableView {
+                    Label("No shifts", systemImage: "calendar")
+                } description: {
+                    Text("This roster has no shifts yet.")
+                } actions: {
+                    Button("Add shift", systemImage: "plus") { isAddingShift = true }
+                        .buttonStyle(.borderedProminent)
+                }
             } else {
-                List(sortedInstances) { instance in
-                    ShiftRow(instance: instance)
-                        .swipeActions {
-                            Button("Remove", systemImage: "trash", role: .destructive) {
-                                instanceToRemove = instance
+                List {
+                    summarySection
+                    ForEach(monthGroups, id: \.month) { group in
+                        Section {
+                            ForEach(group.shifts) { instance in
+                                ShiftRow(instance: instance, accent: accent)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { editingShift = instance }
+                                    .swipeActions {
+                                        Button("Remove", systemImage: "trash", role: .destructive) {
+                                            instanceToRemove = instance
+                                        }
+                                    }
+                                    .contextMenu { // right-click parity on macOS
+                                        Button("Edit shift…", systemImage: "pencil") {
+                                            editingShift = instance
+                                        }
+                                        Button("Remove shift…", systemImage: "trash", role: .destructive) {
+                                            instanceToRemove = instance
+                                        }
+                                    }
                             }
+                        } header: {
+                            Text(monthTitle(group.month))
                         }
-                        .contextMenu { // right-click parity on macOS
-                            Button("Remove shift…", systemImage: "trash", role: .destructive) {
-                                instanceToRemove = instance
-                            }
-                        }
+                    }
                 }
             }
         }
         .navigationTitle(roster.title ?? "Roster")
         .toolbar {
             ToolbarItem {
+                Button("Add shift", systemImage: "plus") { isAddingShift = true }
+                    .disabled(syncProgress.isActive)
+            }
+            ToolbarItem {
                 Menu {
                     if let icsURL {
                         ShareLink("Export .ics", item: icsURL)
+                    }
+                    Button("Import updated file…", systemImage: "square.and.arrow.down") {
+                        onImportUpdate()
                     }
                     Button("Reminders for this roster…", systemImage: "bell.badge") {
                         isEditingReminders = true
@@ -116,11 +160,17 @@ struct ShiftListView: View {
         // Regenerate the shareable .ics off the render path whenever the content
         // or the reminder setting changes (never during body evaluation).
         .task(id: rosterSignature) { await refreshICS() }
-        // In-window (push), not a sheet — consistent with the rest of the app.
+        // In-window pushes (no sheets): reminders, shift editor, add-shift.
         .navigationDestination(isPresented: $isEditingReminders) {
             RosterRemindersView(roster: roster) {
                 applyReminders() // push the new offsets onto existing events
             }
+        }
+        .navigationDestination(item: $editingShift) { instance in
+            ShiftEditorView(instance: instance)
+        }
+        .navigationDestination(isPresented: $isAddingShift) {
+            QuickAddShiftView(dateISO: "", rosterID: roster.id, onDone: { _ in isAddingShift = false })
         }
         .themedPane() // v7.1 wash
         .confirmationDialog(
@@ -135,6 +185,80 @@ struct ShiftListView: View {
             Text("“\(instance.title ?? "Shift")” will be deleted from the calendar and from this roster. Re-importing the file or re-applying its schedule would add it back.")
         }
     }
+
+    // MARK: - Summary header
+
+    @ViewBuilder
+    private var summarySection: some View {
+        let stats = rosterStats()
+        Section {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 16) {
+                    summaryStat(value: "\(stats.count)", caption: "shifts")
+                    summaryStat(value: stats.hours.formatted(.number.precision(.fractionLength(0...1))) + " h", caption: "scheduled")
+                    if stats.tbc > 0 {
+                        summaryStat(value: "\(stats.tbc)", caption: "TBC", tint: .orange)
+                    }
+                    if stats.edited > 0 {
+                        summaryStat(value: "\(stats.edited)", caption: "edited")
+                    }
+                    Spacer(minLength: 0)
+                }
+                if let range = stats.rangeText {
+                    Label(range, systemImage: "calendar")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.vertical, 4)
+            .listRowBackground(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+        }
+    }
+
+    private func summaryStat(value: String, caption: String, tint: Color? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(value)
+                .font(.title3.weight(.bold))
+                .monospacedDigit()
+                .foregroundStyle(tint ?? .primary)
+            Text(caption)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func rosterStats() -> (count: Int, hours: Double, tbc: Int, edited: Int, rangeText: String?) {
+        let instances = sortedInstances
+        var hours = 0.0
+        var tbc = 0
+        var edited = 0
+        for instance in instances {
+            if instance.isAllDay == true {
+                tbc += 1
+            } else if let paid = instance.computedPaidHours {
+                hours += paid
+            } else if let s = instance.startUTC, let e = instance.endUTC, e > s {
+                hours += e.timeIntervalSince(s) / 3600
+            }
+            if instance.overrideKind != .none { edited += 1 }
+        }
+        var rangeText: String?
+        if let first = instances.first?.localDate, let last = instances.last?.localDate {
+            let f = first.formatted(.dateTime.day().month())
+            let l = last.formatted(.dateTime.day().month().year())
+            rangeText = first == last ? l : "\(f) – \(l)"
+        }
+        return (instances.count, hours, tbc, edited, rangeText)
+    }
+
+    private func monthTitle(_ month: MonthKey) -> String {
+        month.start(in: calendar).formatted(.dateTime.month(.wide).year())
+    }
+
+    // MARK: - Actions (unchanged behaviour)
 
     private func remove(_ instance: ShiftInstance) {
         let context = modelContext
@@ -213,50 +337,107 @@ struct ShiftListView: View {
     }
 }
 
+// MARK: - Row
+
 private struct ShiftRow: View {
     let instance: ShiftInstance
+    let accent: Color
+
+    private var typeColor: Color {
+        Color(hex: instance.shiftType?.colorHex) ?? accent
+    }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(instance.title ?? instance.shiftType?.label ?? instance.shiftType?.code ?? "Shift")
-                    .font(.headline)
+        HStack(alignment: .top, spacing: 10) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(typeColor)
+                .frame(width: 4)
+                .padding(.vertical, 2)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 5) {
+                    Text(instance.title ?? instance.shiftType?.label ?? instance.shiftType?.code ?? "Shift")
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    if instance.overrideKind != .none {
+                        Image(systemName: "pencil.circle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Edited by you")
+                    }
+                }
                 if let location = instance.locationName, !location.isEmpty {
-                    Text(location)
+                    Label(location, systemImage: "mappin.and.ellipse")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
                 if let type = instance.shiftType, !type.tags.isEmpty {
                     TagPillRow(tags: type.tags, colorFor: { type.colorHex(forTag: $0) })
                 }
                 if let note = instance.note, !note.isEmpty {
                     Label(note, systemImage: "note.text")
-                        .font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
                 }
             }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 2) {
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 3) {
                 if let date = instance.localDate {
-                    Text(date, format: .dateTime.weekday().day().month())
-                        .font(.subheadline)
+                    Text(date, format: .dateTime.weekday().day())
+                        .font(.subheadline.weight(.medium))
+                        .monospacedDigit()
                 }
-                Text(timeRange)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                timeBadge
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 3)
     }
 
-    /// Wall-clock time range derived from the shift type's minutes-of-day.
-    private var timeRange: String {
-        if instance.isAllDay == true { return "All-day" }
-        guard let type = instance.shiftType else { return "—" }
-        func fmt(_ minutes: Int) -> String {
-            let m = ((minutes % 1440) + 1440) % 1440
-            return String(format: "%02d:%02d", m / 60, m % 60)
+    @ViewBuilder
+    private var timeBadge: some View {
+        if instance.isAllDay == true {
+            Text("Times TBC")
+                .font(.caption2.weight(.semibold))
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(Color.orange.opacity(0.16), in: Capsule())
+                .foregroundStyle(.orange)
+        } else if instance.shiftType?.workKind == .off {
+            Text("Off")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if let start = instance.startUTC, let end = instance.endUTC, end > start {
+            HStack(spacing: 3) {
+                Text("\(timeText(start))–\(timeText(end))")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                if endsOnLaterDay(start, end) {
+                    Text("+1")
+                        .font(.system(size: 9, weight: .bold))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(typeColor.opacity(0.18), in: Capsule())
+                        .foregroundStyle(typeColor)
+                }
+            }
+        } else {
+            Text("—").font(.caption).foregroundStyle(.tertiary)
         }
-        if type.workKind == .off { return "Off" }
-        return "\(fmt(type.startMinuteOfDay))–\(fmt(type.endMinuteOfDay))"
+    }
+
+    /// Wall-clock in the SHIFT's own zone (edited shifts may differ from the
+    /// type's template times, so never derive from the type here).
+    private func timeText(_ date: Date) -> String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: instance.timeZoneIdentifier) ?? .current
+        let c = cal.dateComponents([.hour, .minute], from: date)
+        return String(format: "%02d:%02d", c.hour ?? 0, c.minute ?? 0)
+    }
+
+    private func endsOnLaterDay(_ start: Date, _ end: Date) -> Bool {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: instance.timeZoneIdentifier) ?? .current
+        return !cal.isDate(start, inSameDayAs: end)
     }
 }

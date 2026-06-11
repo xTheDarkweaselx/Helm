@@ -46,6 +46,10 @@ enum ManualShiftCoordinator {
 
     /// Add (and calendar-write) a one-off shift. Times come from `shiftType` unless
     /// custom minutes are supplied; an all-day shift uses the midnight convention.
+    /// `rosterID` targets an EXISTING roster (v7.3 "expand a roster manually");
+    /// nil → the dedicated "Manual Shifts" roster. Either way the instance is
+    /// marked .added (user-authored), so a later re-import never clobbers it,
+    /// and its dedup key is namespaced so it can't collide with source rows.
     @discardableResult
     static func addShift(
         date: Date,
@@ -58,6 +62,7 @@ enum ManualShiftCoordinator {
         endMinute: Int?,
         endDayOffset: Int,
         isAllDay: Bool,
+        rosterID: String? = nil,
         in context: ModelContext
     ) async throws -> ShiftInstance {
         let tz = TimeZone(identifier: timeZoneIdentifier) ?? .current
@@ -65,7 +70,13 @@ enum ManualShiftCoordinator {
         cal.timeZone = tz
         let dayStart = cal.startOfDay(for: date)
 
-        let roster = manualRoster(in: context)
+        let roster: Roster
+        if let rosterID,
+           let existing = try? context.fetch(FetchDescriptor<Roster>(predicate: #Predicate { $0.id == rosterID })).first {
+            roster = existing
+        } else {
+            roster = manualRoster(in: context)
+        }
         // Unique, stable, namespaced key so the calendar upsert/removal works and
         // never collides with imports or schedules.
         let code = ShiftKey.generatedCode(scope: "manual", code: UUID().uuidString)
@@ -111,10 +122,10 @@ enum ManualShiftCoordinator {
         instance.isAllDay = allDay ? true : nil
         context.insert(instance)
 
-        // Destination is stamped ONCE on the manual roster's profile and reused
-        // thereafter, so every manual shift lands on the same calendar(s) and a
-        // later per-shift removal cleans up the right place (changing the global
-        // destination between quick-adds can't orphan earlier ones).
+        // Destinations: an EXISTING roster's shifts go where that roster's
+        // events already live; the manual roster stamps the global choice ONCE
+        // and reuses it (changing the global destination between quick-adds
+        // can't orphan earlier ones).
         let chosen = CalendarDestinationSetting.chosenKinds
         var destinations = chosen
         if let pid = roster.sourceImportProfileID,

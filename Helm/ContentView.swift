@@ -62,15 +62,16 @@ struct ContentView: View {
                 .toolbar { toolbarContent }
         } detail: {
             NavigationStack { detail }
+                // v7.2: bulk calendar work (import/delete/re-sync) reports
+                // progress here — centred on the CONTENT pane (window-centred
+                // read as off-centre next to the sidebar), never blocking.
+                .overlay(alignment: .bottom) {
+                    SyncProgressHUD().padding(.bottom, 14).padding(.horizontal, 16)
+                }
         }
         #if os(macOS)
         .frame(minWidth: 720, minHeight: 440)
         #endif
-        // v7.2: bulk calendar work (import/delete/re-sync) reports progress
-        // here — visible wherever you are, never blocking the UI.
-        .overlay(alignment: .bottom) {
-            SyncProgressHUD().padding(.bottom, 14).padding(.horizontal, 16)
-        }
         .alert(
             "Couldn't remove this schedule's shifts",
             isPresented: .constant(scheduleAwaitingForcedDelete != nil),
@@ -198,7 +199,7 @@ struct ContentView: View {
             QuickAddShiftView(dateISO: iso, onDone: { selection = .calendar($0) })
         case let .roster(id):
             if let roster = rosters.first(where: { $0.id == id }) {
-                ShiftListView(roster: roster, onDeleted: { selection = .overview })
+                ShiftListView(roster: roster, onDeleted: { selection = .overview }, onImportUpdate: { selection = .importer })
             } else { placeholder }
         case let .schedule(id):
             if let schedule = schedules.first(where: { $0.id == id }) {

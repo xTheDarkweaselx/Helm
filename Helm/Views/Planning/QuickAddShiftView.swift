@@ -13,6 +13,8 @@ import HelmDomain
 struct QuickAddShiftView: View {
     /// ISO "yyyy-MM-dd" seed; "" = today.
     let dateISO: String
+    /// v7.3: add into an EXISTING roster (nil → the "Manual Shifts" roster).
+    var rosterID: String? = nil
     /// Called after a successful add with the day the shift landed on (so the
     /// caller can jump the calendar there).
     let onDone: (DayKey?) -> Void
@@ -85,7 +87,7 @@ struct QuickAddShiftView: View {
         }
         .formStyle(.grouped)
         .themedPane() // v7.1 wash (iOS; passthrough on macOS)
-        .navigationTitle("Quick Add Shift")
+        .navigationTitle(rosterID == nil ? "Quick Add Shift" : "Add Shift")
         .onAppear {
             guard !seeded else { return }
             seeded = true
@@ -112,6 +114,7 @@ struct QuickAddShiftView: View {
                     endMinute: custom ? endMinute : nil,
                     endDayOffset: overnight ? 1 : 0,
                     isAllDay: isAllDay,
+                    rosterID: rosterID,
                     in: context
                 )
                 onDone(DayKey(containing: date, in: CalendarViewModel.displayCalendar))
