@@ -113,7 +113,7 @@ public enum TimelineLayoutEngine {
             }
             // Lowest column whose last block ended at-or-before this start
             // (half-open: equal boundary does NOT overlap).
-            var column = columnEnds.firstIndex { $0 <= item.start } ?? columnEnds.count
+            let column = columnEnds.firstIndex { $0 <= item.start } ?? columnEnds.count
             if column == columnEnds.count { columnEnds.append(item.end) } else { columnEnds[column] = item.end }
             assignments.append((index, column))
             clusterMaxEnd = max(clusterMaxEnd, item.end)

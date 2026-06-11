@@ -46,7 +46,13 @@ struct NextShiftWidget: Widget {
         }
         .configurationDisplayName("Next Shift")
         .description("Your next shift and this week's hours.")
+        // Accessory (lock-screen) families exist only on iOS — the target
+        // also builds for macOS/visionOS, where those symbols are unavailable.
+        #if os(iOS)
         .supportedFamilies([.systemSmall, .systemMedium, .accessoryRectangular, .accessoryInline])
+        #else
+        .supportedFamilies([.systemSmall, .systemMedium])
+        #endif
     }
 }
 
@@ -56,10 +62,12 @@ struct NextShiftWidgetView: View {
 
     var body: some View {
         switch family {
+        #if os(iOS)
         case .accessoryInline:
             Label(inlineText, systemImage: "briefcase")
         case .accessoryRectangular:
             rectangular
+        #endif
         case .systemMedium:
             medium
         default:
