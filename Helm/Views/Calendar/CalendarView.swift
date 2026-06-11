@@ -120,6 +120,7 @@ struct CalendarView: View {
         } message: {
             Text(removalError ?? "")
         }
+        .themedPane(.plain) // v7.1 wash
     }
 
     /// Persist an edited note (app-local — notes are not mirrored to calendar

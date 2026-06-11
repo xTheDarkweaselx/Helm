@@ -50,6 +50,7 @@ struct RotationPatternEditorView: View {
                 Text("Tap a day to set its shift or mark it off. The cycle repeats from its start date.")
             }
         }
+        .themedPane() // v7.1 wash
         .navigationTitle("Cycle")
         .onAppear { syncSlots() }
     }

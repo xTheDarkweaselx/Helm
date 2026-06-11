@@ -79,6 +79,7 @@ struct ScheduleEditorView: View {
                 Button("Add exception", systemImage: "plus") { addException() }
             }
         }
+        .themedPane() // v7.1 wash
         .navigationTitle(schedule.title?.isEmpty == false ? schedule.title! : "Schedule")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

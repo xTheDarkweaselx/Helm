@@ -13,8 +13,10 @@ import SwiftUI
 
 extension View {
     /// Drop-in glass background: theme-tinted ultra-thin material in a rounded
-    /// rectangle. Tint is kept faint (≤ 0.08) so legibility never suffers, and
-    /// only applied when the theme actually sets one (Default leaves it plain).
+    /// rectangle. The tint is faint (0.12 light / 0.16 dark — strong enough to
+    /// read now that the canvas BEHIND cards is washed too, still well under
+    /// the legibility ceiling) and only applied when the theme sets one
+    /// (Default leaves it plain).
     func glassCard(cornerRadius: CGFloat = 14) -> some View {
         modifier(GlassCardBackground(cornerRadius: cornerRadius))
     }
@@ -23,6 +25,7 @@ extension View {
 private struct GlassCardBackground: ViewModifier {
     let cornerRadius: CGFloat
     @Environment(\.helmGlassTint) private var glassTint
+    @Environment(\.colorScheme) private var scheme
 
     func body(content: Content) -> some View {
         content.background {
@@ -30,7 +33,7 @@ private struct GlassCardBackground: ViewModifier {
             ZStack {
                 shape.fill(.ultraThinMaterial)
                 if let glassTint {
-                    shape.fill(glassTint.opacity(0.07))
+                    shape.fill(glassTint.opacity(scheme == .dark ? 0.16 : 0.12))
                 }
             }
         }

@@ -90,6 +90,7 @@ struct ShiftTypeLibraryView: View {
         .navigationDestination(item: $editing) { type in
             ShiftTypeEditorView(type: type)
         }
+        .themedPane() // v7.1 wash
     }
 
     private var pendingRefCount: Int { pendingDeletion.reduce(0) { $0 + referenceCount($1) } }
@@ -227,6 +228,7 @@ struct ShiftTypeEditorView: View {
             }
         }
         .formStyle(.grouped)
+        .themedPane() // v7.1 wash (iOS; passthrough on macOS)
         .navigationTitle(titleText)
         #if os(macOS)
         .navigationSubtitle(type.workKind == .off ? "Off" : "\(hhmmString(type.startMinuteOfDay))–\(hhmmString(type.endMinuteOfDay))")

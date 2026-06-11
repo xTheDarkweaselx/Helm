@@ -50,6 +50,7 @@ struct AvailabilityRuleEditorView: View {
             }
         }
         .formStyle(.grouped)
+        .themedPane() // v7.1 wash (iOS; passthrough on macOS)
         .navigationTitle("Weekly Availability")
         .onDisappear {
             // A weekly rule with no weekdays can never match — drop an abandoned
@@ -125,6 +126,7 @@ struct AvailabilityWindowEditorView: View {
             }
         }
         .formStyle(.grouped)
+        .themedPane() // v7.1 wash (iOS; passthrough on macOS)
         .navigationTitle("One-off Availability")
         .onDisappear { try? context.save() }
     }

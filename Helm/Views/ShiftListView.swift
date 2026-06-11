@@ -116,6 +116,7 @@ struct ShiftListView: View {
                 applyReminders() // push the new offsets onto existing events
             }
         }
+        .themedPane() // v7.1 wash
         .confirmationDialog(
             "Remove this shift from your calendar and from Helm?",
             isPresented: Binding(get: { instanceToRemove != nil }, set: { if !$0 { instanceToRemove = nil } }),

@@ -81,6 +81,7 @@ struct OverviewView: View {
                 dashboard
             }
         }
+        .themedPane(.plain) // v7.1 wash
         .navigationTitle("Overview")
     }
 

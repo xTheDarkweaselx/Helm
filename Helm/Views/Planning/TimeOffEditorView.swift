@@ -55,6 +55,7 @@ struct TimeOffEditorView: View {
             }
         }
         .formStyle(.grouped)
+        .themedPane() // v7.1 wash (iOS; passthrough on macOS)
         .navigationTitle(timeOff.title?.isEmpty == false ? timeOff.title! : timeOff.kind.displayName)
         .onDisappear { commit() }
     }

@@ -41,6 +41,9 @@ final class ThemeManager {
     var accent: Color { palette.accentHex.flatMap { Color(hex: $0) } ?? .accentColor }
     var secondary: Color? { palette.secondaryHex.flatMap { Color(hex: $0) } }
     var glassTint: Color? { palette.glassTintHex.flatMap { Color(hex: $0) } }
+    /// v7.1 chrome wash gradient stops (nil for Default → unthemed chrome).
+    var backgroundTop: Color? { palette.backgroundTopHex.flatMap { Color(hex: $0) } }
+    var backgroundBottom: Color? { palette.backgroundBottomHex.flatMap { Color(hex: $0) } }
 
     var resolvedColorScheme: ColorScheme? {
         switch palette.scheme {
@@ -62,6 +65,12 @@ private struct HelmSecondaryKey: EnvironmentKey {
 private struct HelmGlassTintKey: EnvironmentKey {
     static let defaultValue: Color? = nil
 }
+private struct HelmBackgroundTopKey: EnvironmentKey {
+    static let defaultValue: Color? = nil
+}
+private struct HelmBackgroundBottomKey: EnvironmentKey {
+    static let defaultValue: Color? = nil
+}
 
 extension EnvironmentValues {
     /// The theme accent for shape/Canvas fills (never nil — defaults to .accentColor).
@@ -78,6 +87,15 @@ extension EnvironmentValues {
         get { self[HelmGlassTintKey.self] }
         set { self[HelmGlassTintKey.self] = newValue }
     }
+    /// v7.1 chrome wash stops — nil (the defaults) means unthemed chrome.
+    var helmBackgroundTop: Color? {
+        get { self[HelmBackgroundTopKey.self] }
+        set { self[HelmBackgroundTopKey.self] = newValue }
+    }
+    var helmBackgroundBottom: Color? {
+        get { self[HelmBackgroundBottomKey.self] }
+        set { self[HelmBackgroundBottomKey.self] = newValue }
+    }
 }
 
 extension View {
@@ -89,6 +107,8 @@ extension View {
             .environment(\.helmAccent, theme.accent)
             .environment(\.helmSecondary, theme.secondary)
             .environment(\.helmGlassTint, theme.glassTint)
+            .environment(\.helmBackgroundTop, theme.backgroundTop)
+            .environment(\.helmBackgroundBottom, theme.backgroundBottom)
             .tint(theme.accent)
             .preferredColorScheme(theme.resolvedColorScheme)
     }

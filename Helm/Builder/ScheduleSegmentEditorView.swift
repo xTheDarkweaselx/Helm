@@ -38,6 +38,7 @@ struct ScheduleSegmentEditorView: View {
                 explicitSection
             }
         }
+        .themedPane() // v7.1 wash
         .navigationTitle(segment.title ?? (segment.kind == .cyclic ? "Cycle segment" : "Explicit segment"))
         .onDisappear { try? context.save() }
     }

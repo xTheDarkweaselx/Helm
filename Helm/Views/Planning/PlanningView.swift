@@ -38,6 +38,7 @@ struct PlanningView: View {
                 Text("Adds a single shift to your calendar without importing a file or building a schedule.")
             }
         }
+        .themedPane() // v7.1 wash
         .navigationTitle("Planning")
         .navigationDestination(item: $editingTimeOff) { TimeOffEditorView(timeOff: $0) }
         .navigationDestination(item: $editingRule) { AvailabilityRuleEditorView(rule: $0) }

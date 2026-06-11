@@ -160,6 +160,7 @@ struct ContentView: View {
                 }
             }
         }
+        .themedPane() // v7.1 wash (iOS; passthrough on macOS — glass sidebar samples the window)
         #if os(macOS)
         .listStyle(.sidebar)
         #endif

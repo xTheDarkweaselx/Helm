@@ -85,6 +85,7 @@ struct SearchView: View {
         }
         .navigationTitle("Search")
         .searchable(text: $query, placement: .toolbar, prompt: "Search shifts, rosters, notes…")
+        .themedPane() // v7.1 wash
     }
 
     private struct ShiftHit: Identifiable {

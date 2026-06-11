@@ -33,9 +33,14 @@ struct HelmApp: App {
         WindowGroup {
             ContentView()
             #if os(macOS)
-                // Liquid Glass: a light, translucent main window. (The theme's
-                // glass tint is applied to GlassCard surfaces, not the window.)
-                .containerBackground(.ultraThinMaterial, for: .window)
+                // Liquid Glass window: the same ultra-thin frost as ever, with
+                // the active theme's wash composited over it (Default = no wash
+                // = byte-identical). The Liquid Glass sidebar samples this, so
+                // it tints with the theme for free.
+                // ORDER MATTERS: .helmThemed must stay OUTSIDE/AFTER this —
+                // its environment feeds the containerBackground closure; moved
+                // inside, every theme silently loses its window wash.
+                .containerBackground(for: .window) { ThemedWindowBackground() }
             #endif
                 .helmThemed(theme)
         }

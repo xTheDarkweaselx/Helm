@@ -84,6 +84,7 @@ struct QuickAddShiftView: View {
             }
         }
         .formStyle(.grouped)
+        .themedPane() // v7.1 wash (iOS; passthrough on macOS)
         .navigationTitle("Quick Add Shift")
         .onAppear {
             guard !seeded else { return }

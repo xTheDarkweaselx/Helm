@@ -63,6 +63,12 @@ public struct ThemePalette: Sendable, Identifiable, Equatable, Codable {
     public let scheme: ThemeScheme
     /// Optional tint laid faintly over glass materials (kept subtle in the UI).
     public let glassTintHex: String?
+    /// v7.1 chrome wash: top-leading stop of the whole-app background gradient
+    /// (RRGGBB). nil → unthemed system chrome (the Default). Wash OPACITY is an
+    /// app-side scheme-keyed constant, deliberately not stored here.
+    public let backgroundTopHex: String?
+    /// Bottom-trailing stop. Pair invariant (tested): both nil or both set.
+    public let backgroundBottomHex: String?
 
     public init(
         id: String,
@@ -71,7 +77,9 @@ public struct ThemePalette: Sendable, Identifiable, Equatable, Codable {
         accentHex: String?,
         secondaryHex: String? = nil,
         scheme: ThemeScheme,
-        glassTintHex: String? = nil
+        glassTintHex: String? = nil,
+        backgroundTopHex: String? = nil,
+        backgroundBottomHex: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -80,6 +88,8 @@ public struct ThemePalette: Sendable, Identifiable, Equatable, Codable {
         self.secondaryHex = secondaryHex
         self.scheme = scheme
         self.glassTintHex = glassTintHex
+        self.backgroundTopHex = backgroundTopHex
+        self.backgroundBottomHex = backgroundBottomHex
     }
 }
 
@@ -89,32 +99,50 @@ public enum ThemeCatalog {
     public static let defaultID = "default"
 
     public static let all: [ThemePalette] = [
+        // Every optional nil — the byte-identical-to-unthemed guard.
         ThemePalette(id: "default", name: "Default", vibe: .classic,
                      accentHex: nil, scheme: .system, glassTintHex: nil),
 
         // Professional
         ThemePalette(id: "slate", name: "Slate", vibe: .professional,
-                     accentHex: "3A4A5E", secondaryHex: "6E8CA8", scheme: .system),
+                     accentHex: "3A4A5E", secondaryHex: "6E8CA8", scheme: .system,
+                     glassTintHex: "6E8CA8",
+                     backgroundTopHex: "5E7287", backgroundBottomHex: "8FA3B8"),
         ThemePalette(id: "graphite", name: "Graphite", vibe: .professional,
-                     accentHex: "5B6770", secondaryHex: "8A99A6", scheme: .light),
+                     accentHex: "5B6770", secondaryHex: "8A99A6", scheme: .light,
+                     glassTintHex: "8A99A6",
+                     backgroundTopHex: "AEBAC6", backgroundBottomHex: "D8DEE4"),
 
         // Vibrant
         ThemePalette(id: "electric", name: "Electric", vibe: .vibrant,
-                     accentHex: "7B2FF7", secondaryHex: "00C2FF", scheme: .system),
+                     accentHex: "7B2FF7", secondaryHex: "00C2FF", scheme: .system,
+                     glassTintHex: "4C72D8",
+                     backgroundTopHex: "6E3BD8", backgroundBottomHex: "2BA9D8"),
         ThemePalette(id: "sunrise", name: "Sunrise", vibe: .vibrant,
-                     accentHex: "FF7A1A", secondaryHex: "FF3D77", scheme: .light),
+                     accentHex: "FF7A1A", secondaryHex: "FF3D77", scheme: .light,
+                     glassTintHex: "FF8A4D",
+                     backgroundTopHex: "FFE3C2", backgroundBottomHex: "FFB59B"),
 
-        // Dark-first
+        // Dark-first (deep tinted washes — the surfaces must read as the hue,
+        // not stay system charcoal)
         ThemePalette(id: "midnight", name: "Midnight", vibe: .dark,
-                     accentHex: "5E9BFF", secondaryHex: "8E7BFF", scheme: .dark, glassTintHex: "0E1726"),
+                     accentHex: "5E9BFF", secondaryHex: "8E7BFF", scheme: .dark,
+                     glassTintHex: "1B2B4D",
+                     backgroundTopHex: "0E1830", backgroundBottomHex: "233356"),
         ThemePalette(id: "carbon", name: "Carbon", vibe: .dark,
-                     accentHex: "9AE6B4", secondaryHex: "4FD1C5", scheme: .dark, glassTintHex: "111315"),
+                     accentHex: "9AE6B4", secondaryHex: "4FD1C5", scheme: .dark,
+                     glassTintHex: "1F3530",
+                     backgroundTopHex: "141719", backgroundBottomHex: "1A2C26"),
 
         // Seasonal
         ThemePalette(id: "forest", name: "Forest", vibe: .seasonal,
-                     accentHex: "2E7D5B", secondaryHex: "8FB339", scheme: .system),
+                     accentHex: "2E7D5B", secondaryHex: "8FB339", scheme: .system,
+                     glassTintHex: "4F8C68",
+                     backgroundTopHex: "3E7A5C", backgroundBottomHex: "7FA65A"),
         ThemePalette(id: "aurora", name: "Aurora", vibe: .seasonal,
-                     accentHex: "C84CC8", secondaryHex: "4CC8C8", scheme: .dark, glassTintHex: "141029"),
+                     accentHex: "C84CC8", secondaryHex: "4CC8C8", scheme: .dark,
+                     glassTintHex: "301C55",
+                     backgroundTopHex: "2A1245", backgroundBottomHex: "0E3A3F"),
     ]
 
     /// The Default palette (never nil — the resolution floor).

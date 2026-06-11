@@ -44,6 +44,8 @@ private func isHex6(_ s: String) -> Bool {
             if let a = theme.accentHex { #expect(isHex6(a), "bad accent \(theme.id)") }
             if let s = theme.secondaryHex { #expect(isHex6(s), "bad secondary \(theme.id)") }
             if let g = theme.glassTintHex { #expect(isHex6(g), "bad glass \(theme.id)") }
+            if let t = theme.backgroundTopHex { #expect(isHex6(t), "bad bgTop \(theme.id)") }
+            if let b = theme.backgroundBottomHex { #expect(isHex6(b), "bad bgBottom \(theme.id)") }
         }
     }
 
@@ -53,6 +55,69 @@ private func isHex6(_ s: String) -> Bool {
         #expect(d.accentHex == nil)        // falls through to system accent
         #expect(d.scheme == .system)
         #expect(d.glassTintHex == nil)
+        // The byte-identical contract: no wash, ever, for Default.
+        #expect(d.backgroundTopHex == nil)
+        #expect(d.backgroundBottomHex == nil)
+    }
+
+    @Test func washPairIsAllOrNothing() {
+        for t in ThemeCatalog.all {
+            #expect((t.backgroundTopHex == nil) == (t.backgroundBottomHex == nil), "\(t.id)")
+            if let top = t.backgroundTopHex, let bottom = t.backgroundBottomHex {
+                #expect(top != bottom, "\(t.id) wash must be a real gradient")
+            }
+        }
+    }
+
+    /// The policy the chrome relies on: every non-Default theme visibly
+    /// restyles (wash + glass + accent + secondary all present).
+    @Test func everyNonDefaultThemeStylesChrome() {
+        for t in ThemeCatalog.all where t.id != ThemeCatalog.defaultID {
+            #expect(t.backgroundTopHex != nil, "\(t.id)")
+            #expect(t.glassTintHex != nil, "\(t.id)")
+            #expect(t.accentHex != nil, "\(t.id)")
+            #expect(t.secondaryHex != nil, "\(t.id)")
+        }
+    }
+
+    /// Relative luminance of an RRGGBB hex (sRGB-linearised, WCAG weights).
+    private func luminance(_ hex: String) -> Double {
+        let v = UInt64(hex, radix: 16) ?? 0
+        func lin(_ c: Double) -> Double {
+            c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+        }
+        let r = lin(Double((v >> 16) & 0xFF) / 255)
+        let g = lin(Double((v >> 8) & 0xFF) / 255)
+        let b = lin(Double(v & 0xFF) / 255)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+
+    /// Dark themes must wash dark, light themes light (legibility floor —
+    /// catches a future hex typo that would paint a white wash on Midnight).
+    @Test func washLuminanceMatchesScheme() {
+        for t in ThemeCatalog.all {
+            guard let top = t.backgroundTopHex, let bottom = t.backgroundBottomHex else { continue }
+            switch t.scheme {
+            case .dark:
+                #expect(luminance(top) < 0.30 && luminance(bottom) < 0.30, "\(t.id)")
+            case .light:
+                #expect(luminance(top) > 0.30 && luminance(bottom) > 0.30, "\(t.id)")
+            case .system:
+                break // mid-band by design; reads on both bases
+            }
+        }
+    }
+
+    @Test func paletteCodableRoundTrips() throws {
+        for palette in [ThemeCatalog.default, ThemeCatalog.palette(id: "midnight")] {
+            let data = try JSONEncoder().encode(palette)
+            let back = try JSONDecoder().decode(ThemePalette.self, from: data)
+            #expect(back == palette)
+        }
+        // Forward-compat: a pre-v7.1 blob without the wash keys decodes nil.
+        let legacy = Data(#"{"id":"x","name":"X","vibe":"classic","scheme":"system"}"#.utf8)
+        let decoded = try JSONDecoder().decode(ThemePalette.self, from: legacy)
+        #expect(decoded.backgroundTopHex == nil && decoded.backgroundBottomHex == nil)
     }
 
     @Test func unknownAndNilResolveToDefault() {

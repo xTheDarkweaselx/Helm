@@ -46,6 +46,7 @@ struct RosterRemindersView: View {
             }
         }
         .formStyle(.grouped)
+        .themedPane() // v7.1 wash (iOS; passthrough on macOS)
         .navigationTitle("Reminders")
         .onAppear {
             guard !loaded else { return }

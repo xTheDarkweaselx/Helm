@@ -144,6 +144,7 @@ struct ImportView: View {
 
     var body: some View {
         content
+            .themedPane(.plain) // v7.1 wash
             .navigationTitle("Import roster")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

@@ -128,6 +128,7 @@ struct SettingsForm: View {
             cleanupSection
         }
         .formStyle(.grouped)
+        .themedPane() // v7.1 wash (iOS; passthrough on macOS)
         // Run the legacy single-value migrations so the new keys exist before
         // the @AppStorage defaults mask them.
         .onAppear {
