@@ -194,14 +194,27 @@ struct RosterSyncEngine {
         // (e.g. access revoked) rolls the data changes back instead of leaving the
         // store and the calendars permanently out of sync. The SwiftData mutations
         // above are still uncommitted at this point.
+        // v7.2: work in small chunks and report progress — Google throttling
+        // can stretch a big roster into minutes, and silence reads as a hang.
+        let progressTotal = targets.count * (removedKeys.count + draftsToWrite.count)
+        if progressTotal > 0 {
+            SyncProgress.shared.begin("Updating \(SyncSummary.name(for: newKinds))…", total: progressTotal)
+        }
+        defer { SyncProgress.shared.end() }
         do {
             for target in targets {
                 // Always remove removed keys: on a newly-added destination they
                 // don't exist and both adapters tolerate missing keys; on a
                 // RETAINED destination during migration this is the only thing
                 // that deletes them (the full rewrite only covers survivors).
-                if !removedKeys.isEmpty { _ = try await target.remove(dedupKeys: removedKeys) }
-                if !draftsToWrite.isEmpty { _ = try await target.write(draftsToWrite) }
+                for chunk in removedKeys.chunks(of: 8) {
+                    _ = try await target.remove(dedupKeys: chunk)
+                    SyncProgress.shared.advance(chunk.count)
+                }
+                for chunk in draftsToWrite.chunks(of: 8) {
+                    _ = try await target.write(chunk)
+                    SyncProgress.shared.advance(chunk.count)
+                }
             }
         } catch {
             context.rollback()
@@ -249,7 +262,17 @@ struct RosterSyncEngine {
     static func delete(roster: Roster, targets: [any CalendarTarget], in context: ModelContext) async throws {
         let keys = (roster.instances ?? []).compactMap(\.dedupKey)
         if !keys.isEmpty {
-            for target in targets { _ = try await target.remove(dedupKeys: keys) }
+            SyncProgress.shared.begin("Removing \(keys.count) shift\(keys.count == 1 ? "" : "s")…",
+                                      total: keys.count * targets.count)
+        }
+        defer { SyncProgress.shared.end() }
+        if !keys.isEmpty {
+            for target in targets {
+                for chunk in keys.chunks(of: 8) {
+                    _ = try await target.remove(dedupKeys: chunk)
+                    SyncProgress.shared.advance(chunk.count)
+                }
+            }
         }
         context.delete(roster)
         try context.save()
@@ -371,6 +394,8 @@ struct RosterSyncEngine {
     /// say so in their confirmation UI.
     static func removeInstance(_ instance: ShiftInstance, targets: [any CalendarTarget], in context: ModelContext) async throws {
         if let key = instance.dedupKey {
+            SyncProgress.shared.begin("Removing shift…", total: nil)
+            defer { SyncProgress.shared.end() }
             for target in targets { _ = try await target.remove(dedupKeys: [key]) }
         }
         context.delete(instance)
@@ -413,7 +438,15 @@ struct RosterSyncEngine {
     static func resync(roster: Roster, targets: [any CalendarTarget]) async throws -> Int {
         let drafts = drafts(for: roster)
         guard !drafts.isEmpty else { return 0 }
-        for target in targets { _ = try await target.write(drafts) }
+        SyncProgress.shared.begin("Re-syncing \(drafts.count) shift\(drafts.count == 1 ? "" : "s")…",
+                                  total: drafts.count * targets.count)
+        defer { SyncProgress.shared.end() }
+        for target in targets {
+            for chunk in drafts.chunks(of: 8) {
+                _ = try await target.write(chunk)
+                SyncProgress.shared.advance(chunk.count)
+            }
+        }
         return drafts.count
     }
 

@@ -50,10 +50,17 @@ final class ScheduleCoordinator {
                 // `force` is tolerated — anything else aborts with nothing
                 // deleted so the caller can warn.
                 let keys = (roster.instances ?? []).compactMap(\.dedupKey)
+                if !keys.isEmpty {
+                    SyncProgress.shared.begin("Removing \(keys.count) shift\(keys.count == 1 ? "" : "s")…",
+                                              total: keys.count * profile.targets.count)
+                }
                 for kind in profile.targets.sorted(by: { $0.rawValue < $1.rawValue }) {
                     do {
                         let target = try await CalendarTargetProvider.authorizedTarget(for: kind)
-                        if !keys.isEmpty { _ = try await target.remove(dedupKeys: keys) }
+                        for chunk in keys.chunks(of: 8) {
+                            _ = try await target.remove(dedupKeys: chunk)
+                            SyncProgress.shared.advance(chunk.count)
+                        }
                     } catch {
                         let tolerable = force || (kind == .eventkit && (error as? CalendarAccessError) == .eventKitDenied)
                         guard tolerable else { throw error }
@@ -66,6 +73,7 @@ final class ScheduleCoordinator {
         context.delete(schedule)
         try? context.save()
         SnapshotWriter.refresh(context: context)
+        SyncProgress.shared.end()
     }
 
     /// Full re-write of the schedule's EXISTING shifts to its calendar (v4):

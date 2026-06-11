@@ -43,6 +43,7 @@ struct HelmApp: App {
                 .containerBackground(for: .window) { ThemedWindowBackground() }
             #endif
                 .helmThemed(theme)
+                .environment(SyncProgress.shared)
         }
         .modelContainer(modelContainer)
         #if os(macOS)
@@ -56,6 +57,7 @@ struct HelmApp: App {
             SettingsForm()
                 .frame(minWidth: 520, idealWidth: 560, minHeight: 480)
                 .helmThemed(theme)
+                .environment(SyncProgress.shared)
         }
         .modelContainer(modelContainer)
         #endif

@@ -13,7 +13,11 @@ import HelmDomain
 
 struct ShiftListView: View {
     let roster: Roster
+    /// Called after the roster (and its events) are gone — the host navigates
+    /// away instead of leaving a stale placeholder.
+    var onDeleted: () -> Void = {}
     @Environment(\.modelContext) private var modelContext
+    @Environment(SyncProgress.self) private var syncProgress
     @State private var isConfirmingDelete = false
     @State private var errorMessage: String?
     @State private var infoMessage: String?
@@ -68,11 +72,12 @@ struct ShiftListView: View {
                     Button("Re-sync all shifts to calendar", systemImage: "arrow.triangle.2.circlepath") {
                         applyReminders()
                     }
-                    .disabled(applyingReminders)
+                    .disabled(applyingReminders || syncProgress.isActive)
                     Divider()
                     Button("Remove from Calendar & delete", systemImage: "trash", role: .destructive) {
                         isConfirmingDelete = true
                     }
+                    .disabled(syncProgress.isActive)
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")
                 }
@@ -88,6 +93,7 @@ struct ShiftListView: View {
                         let destinations = RosterSyncEngine.destinations(for: roster, in: context)
                         let targets = try await CalendarTargetProvider.authorizedTargets(for: destinations)
                         try await RosterSyncEngine.delete(roster: roster, targets: targets, in: context)
+                        onDeleted()
                     } catch CalendarAccessError.eventKitDenied {
                         errorMessage = "Helm needs calendar access to remove these events. Enable it for Helm in Settings, then try again."
                     } catch {

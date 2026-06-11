@@ -185,7 +185,11 @@ struct SettingsForm: View {
         isCleaningUp = true
         cleanupMessage = nil
         Task {
-            defer { isCleaningUp = false }
+            defer {
+                isCleaningUp = false
+                SyncProgress.shared.end()
+            }
+            SyncProgress.shared.begin("Removing all Helm events from \(SyncSummary.name(for: kind))…", total: nil)
             do {
                 let target = try await CalendarTargetProvider.authorizedTarget(for: kind)
                 let removed = try await target.removeAll()

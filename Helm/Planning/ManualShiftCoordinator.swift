@@ -123,8 +123,11 @@ enum ManualShiftCoordinator {
             destinations = profile.targets
         }
 
-        // Write the calendar BEFORE committing (rollback on failure, like the engine).
+        // Write the calendar BEFORE committing (rollback on failure, like the
+        // engine). Even one Google write can sit in retry backoff — show it.
         if let draft = RosterSyncEngine.calendarDraft(for: instance) {
+            SyncProgress.shared.begin("Adding shift to \(SyncSummary.name(for: destinations))…", total: nil)
+            defer { SyncProgress.shared.end() }
             do {
                 let targets = try await CalendarTargetProvider.authorizedTargets(for: destinations)
                 for target in targets { _ = try await target.write([draft]) }
