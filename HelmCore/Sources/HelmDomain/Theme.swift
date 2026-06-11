@@ -20,7 +20,7 @@ public enum ThemeScheme: String, Sendable, CaseIterable, Codable {
     case dark
 }
 
-/// The flavour a theme belongs to — used to group the picker into sections.
+/// The flavour a theme belongs to — shown as a caption on the picker cards.
 public enum ThemeVibe: String, Sendable, CaseIterable, Codable {
     case classic
     case professional
@@ -35,17 +35,6 @@ public enum ThemeVibe: String, Sendable, CaseIterable, Codable {
         case .vibrant: "Vibrant"
         case .dark: "Dark"
         case .seasonal: "Seasonal"
-        }
-    }
-
-    /// Stable ordering for the picker sections.
-    public var sortOrder: Int {
-        switch self {
-        case .classic: 0
-        case .professional: 1
-        case .vibrant: 2
-        case .dark: 3
-        case .seasonal: 4
         }
     }
 }
@@ -155,12 +144,5 @@ public enum ThemeCatalog {
     public static func palette(id: String?) -> ThemePalette {
         guard let id, let found = all.first(where: { $0.id == id }) else { return `default` }
         return found
-    }
-
-    /// Themes grouped by vibe in display order (for the picker sections).
-    public static var grouped: [(vibe: ThemeVibe, palettes: [ThemePalette])] {
-        Dictionary(grouping: all, by: \.vibe)
-            .sorted { $0.key.sortOrder < $1.key.sortOrder }
-            .map { (vibe: $0.key, palettes: $0.value) }
     }
 }

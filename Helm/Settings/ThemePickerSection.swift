@@ -16,6 +16,11 @@
 
 import SwiftUI
 import HelmDomain
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 
 struct ThemePickerSection: View {
     @Environment(ThemeManager.self) private var theme
@@ -33,11 +38,11 @@ struct ThemePickerSection: View {
                     )
                 }
             }
-            .padding(.vertical, 4) // room for the 2pt selection ring
+            .padding(.vertical, 4) // breathing room above/below the grid
         } header: {
             Text("Appearance")
         } footer: {
-            Text("Tap a theme to apply it instantly. “Default” follows your system accent and light/dark setting.")
+            Text("Choose a theme to apply it instantly. “Default” follows your system accent and light/dark setting.")
         }
     }
 }
@@ -48,7 +53,10 @@ private struct ThemePreviewCard: View {
     let isSelected: Bool
     let select: () -> Void
 
-    @Environment(\.colorScheme) private var systemScheme
+    /// Render-refresh trigger: when the surrounding scheme flips (Default /
+    /// system themes), the cards re-evaluate. The VALUE is deliberately not
+    /// used for .system previews — see osIsDark.
+    @Environment(\.colorScheme) private var environmentScheme
 
     // Resolved palette colours (all nil-gated, so Default renders system-honest).
     private var accent: Color { palette.accentHex.flatMap { Color(hex: $0) } ?? .accentColor }
@@ -57,10 +65,28 @@ private struct ThemePreviewCard: View {
     private var bgBottom: Color? { palette.backgroundBottomHex.flatMap { Color(hex: $0) } }
     private var glass: Color? { palette.glassTintHex.flatMap { Color(hex: $0) } }
 
-    /// The card previews under the THEME's scheme (system themes follow the
-    /// surrounding app) — a dark theme must look dark in a light app.
+    /// The true OS appearance. The environment's colorScheme can't be used for
+    /// .system previews: an active forced-scheme theme (e.g. Midnight) overrides
+    /// the whole window, which would make every .system card preview dark too.
+    private var osIsDark: Bool {
+        #if os(macOS)
+        NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        #else
+        let style = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.traitCollection.userInterfaceStyle
+        return style == .dark
+        #endif
+    }
+
+    /// The card previews under the scheme the THEME would resolve to — a dark
+    /// theme looks dark in a light app, and a .system theme follows the OS.
     private var isDarkPreview: Bool {
-        palette.scheme == .dark || (palette.scheme == .system && systemScheme == .dark)
+        switch palette.scheme {
+        case .dark: true
+        case .light: false
+        case .system: osIsDark
+        }
     }
 
     var body: some View {
@@ -90,6 +116,7 @@ private struct ThemePreviewCard: View {
                     .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity)
+            .contentShape(Rectangle()) // whole cell tappable, gaps included
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
@@ -102,7 +129,14 @@ private struct ThemePreviewCard: View {
 
     private var mock: some View {
         let base: Color = isDarkPreview ? Color(white: 0.11) : Color(white: 0.97)
-        let washOpacity: Double = isDarkPreview ? 0.55 : 0.25
+        // The REAL recipe for the surface this platform's cards preview
+        // (window on macOS, panes on iOS) — no duplicated literals to drift.
+        let previewScheme: ColorScheme = isDarkPreview ? .dark : .light
+        #if os(macOS)
+        let washOpacity = ThemeWashStrength.window(previewScheme)
+        #else
+        let washOpacity = ThemeWashStrength.pane(previewScheme)
+        #endif
         return ZStack {
             base
             if let bgTop {

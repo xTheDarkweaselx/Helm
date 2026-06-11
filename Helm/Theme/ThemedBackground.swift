@@ -64,15 +64,21 @@ struct ThemedPaneBackground: ViewModifier {
     }
 
     let base: Base
+    /// false → behave exactly like the nil-wash (Default) path. Used by views
+    /// embedded in an already-washed host (e.g. the calendar in preview mode)
+    /// so the gradient doesn't restart mid-screen.
+    var active: Bool = true
     @Environment(\.helmBackgroundTop) private var top
     @Environment(\.helmBackgroundBottom) private var bottom
     @Environment(\.colorScheme) private var scheme
 
+    private var washTop: Color? { active ? top : nil }
+
     func body(content: Content) -> some View {
         content
-            .scrollContentBackground(top == nil ? .automatic : .hidden)
+            .scrollContentBackground(washTop == nil ? .automatic : .hidden)
             .background {
-                if let top, let bottom {
+                if let top = washTop, let bottom {
                     ZStack {
                         #if os(iOS)
                         (base == .grouped ? Color(.systemGroupedBackground) : Color(.systemBackground))
@@ -90,11 +96,11 @@ extension View {
     /// Adopt the theme wash on a pane root. Passthrough on macOS — there the
     /// themed WINDOW background + Liquid Glass do the work for every pane.
     @ViewBuilder
-    func themedPane(_ base: ThemedPaneBackground.Base = .grouped) -> some View {
+    func themedPane(_ base: ThemedPaneBackground.Base = .grouped, active: Bool = true) -> some View {
         #if os(macOS)
         self
         #else
-        modifier(ThemedPaneBackground(base: base))
+        modifier(ThemedPaneBackground(base: base, active: active))
         #endif
     }
 }

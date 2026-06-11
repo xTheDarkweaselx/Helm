@@ -200,6 +200,7 @@ struct ScheduleExceptionEditorView: View {
                 }
             }
         }
+        .themedPane() // v7.1 wash
         .navigationTitle("Exception")
         .onDisappear { try? context.save() }
     }
@@ -215,6 +216,7 @@ struct SchedulePreviewView: View {
 
     var body: some View {
         content
+            .themedPane(.plain) // v7.1 wash (matches ImportView's preview root)
             .navigationTitle("Preview")
             .task {
                 coordinator.preparePlan(for: schedule, in: context)

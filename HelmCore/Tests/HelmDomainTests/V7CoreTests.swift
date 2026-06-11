@@ -130,10 +130,6 @@ private func isHex6(_ s: String) -> Bool {
         #expect(vibes.isSuperset(of: [.classic, .professional, .vibrant, .dark, .seasonal]))
     }
 
-    @Test func groupedIsVibeOrdered() {
-        let order = ThemeCatalog.grouped.map(\.vibe.sortOrder)
-        #expect(order == order.sorted())
-    }
 }
 
 // MARK: - Shift tags

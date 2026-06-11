@@ -263,6 +263,7 @@ struct ImportView: View {
                 .opacity(previewStyle == .calendar ? 1 : 0)
                 .allowsHitTesting(previewStyle == .calendar)
                 listPreview(result, diff: diff, isReimport: isReimport)
+                    .themedPane(.grouped) // grouped canvas over the root's plain wash
                     .opacity(previewStyle == .list ? 1 : 0)
                     .allowsHitTesting(previewStyle == .list)
             }
