@@ -31,8 +31,14 @@ struct WeekOverviewView: View {
     private var week: [SnapshotDay] { entry.snapshot.weekDays ?? [] }
     private var tbcCount: Int { entry.snapshot.weekTBCCount ?? 0 }
 
+    /// After a week rollover a stale grid must say "refresh", not present last
+    /// week as "THIS WEEK".
+    private var isStale: Bool {
+        !SnapshotMath.isWeekCurrent(entry.snapshot, at: entry.date, calendar: Calendar.current)
+    }
+
     var body: some View {
-        if week.isEmpty {
+        if week.isEmpty || isStale {
             VStack(spacing: 4) {
                 Image(systemName: "calendar").foregroundStyle(.secondary)
                 Text("Open Helm to refresh").font(.caption).foregroundStyle(.secondary)
@@ -78,7 +84,7 @@ struct WeekOverviewView: View {
                     Text(day.date, format: .dateTime.weekday(.narrow))
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(.secondary)
-                    Text(day.date, format: .dateTime.day())
+                    Text(dayNumber(day))
                         .font(.caption2.weight(isToday(day) ? .bold : .regular))
                         .monospacedDigit()
                         .foregroundStyle(isToday(day) ? Color.white : .primary)
@@ -110,8 +116,10 @@ struct WeekOverviewView: View {
     // MARK: Large — a row per day
 
     private var largeRows: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(week) { day in
+                // Flexible rows: 7 of them share the full widget height
+                // instead of clumping at the top.
                 HStack(spacing: 8) {
                     Text(day.date, format: .dateTime.weekday(.abbreviated).day())
                         .font(.caption.weight(isToday(day) ? .bold : .regular))
@@ -143,12 +151,21 @@ struct WeekOverviewView: View {
                         Spacer(minLength: 4)
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             }
         }
     }
 
+    /// Prefer the zone-free civil-day KEY: the baked instant reads as the
+    /// wrong day after a device timezone change.
     private func isToday(_ day: SnapshotDay) -> Bool {
-        Calendar.current.isDate(entry.date, inSameDayAs: day.date)
+        let today = DayKey(containing: entry.date, in: Calendar.current)
+        return (day.key ?? DayKey(containing: day.date, in: Calendar.current)) == today
+    }
+
+    private func dayNumber(_ day: SnapshotDay) -> String {
+        if let key = day.key { return "\(key.day)" }
+        return day.date.formatted(.dateTime.day())
     }
 
     private func hoursText(_ hours: Double) -> String {

@@ -42,8 +42,11 @@ public struct SnapshotShift: Codable, Sendable, Equatable, Identifiable {
     /// v7.5 (optional → v1-blob compatible): an IMPORTED tentative (TBC) row —
     /// distinct from a deliberate user-made all-day shift. nil reads as false.
     public let isTentative: Bool?
+    /// Paid hours when the source computed them (lets renderers compute the
+    /// hours gauge AT RENDER TIME instead of trusting a build-time scalar).
+    public let paidHours: Double?
 
-    public init(id: String, title: String, location: String?, colorHex: String?, start: Date?, end: Date?, isAllDay: Bool, isTentative: Bool? = nil) {
+    public init(id: String, title: String, location: String?, colorHex: String?, start: Date?, end: Date?, isAllDay: Bool, isTentative: Bool? = nil, paidHours: Double? = nil) {
         self.id = id
         self.title = title
         self.location = location
@@ -52,6 +55,7 @@ public struct SnapshotShift: Codable, Sendable, Equatable, Identifiable {
         self.end = end
         self.isAllDay = isAllDay
         self.isTentative = isTentative
+        self.paidHours = paidHours
     }
 }
 
@@ -61,12 +65,17 @@ public struct SnapshotDay: Codable, Sendable, Equatable, Identifiable {
     /// Start-of-day in the calendar the snapshot was built with.
     public let date: Date
     public let shifts: [SnapshotShift]
+    /// The civil day as zone-free components (optional → blob-compatible).
+    /// Renderers should prefer this over `date`: an instant baked in the
+    /// build zone reads as the wrong day after a device timezone change.
+    public let key: DayKey?
 
     public var id: Date { date }
 
-    public init(date: Date, shifts: [SnapshotShift]) {
+    public init(date: Date, shifts: [SnapshotShift], key: DayKey? = nil) {
         self.date = date
         self.shifts = shifts
+        self.key = key
     }
 }
 
@@ -132,8 +141,12 @@ public struct SnapshotInputShift: Sendable, Equatable {
     public let paidHours: Double?
     /// v7.5: imported tentative (TBC) row, vs a deliberate all-day shift.
     public let isTentative: Bool
+    /// The shift's OWN IANA zone — civil-day bucketing must happen here, not
+    /// in the device zone (the app's canonical DayBucketer rule). nil → the
+    /// build calendar's zone.
+    public let timeZoneIdentifier: String?
 
-    public init(id: String, title: String, location: String?, colorHex: String?, start: Date?, end: Date?, localDate: Date?, isAllDay: Bool, paidHours: Double?, isTentative: Bool = false) {
+    public init(id: String, title: String, location: String?, colorHex: String?, start: Date?, end: Date?, localDate: Date?, isAllDay: Bool, paidHours: Double?, isTentative: Bool = false, timeZoneIdentifier: String? = nil) {
         self.id = id
         self.title = title
         self.location = location
@@ -144,6 +157,7 @@ public struct SnapshotInputShift: Sendable, Equatable {
         self.isAllDay = isAllDay
         self.paidHours = paidHours
         self.isTentative = isTentative
+        self.timeZoneIdentifier = timeZoneIdentifier
     }
 }
 
@@ -194,17 +208,33 @@ public enum HelmSnapshotBuilder {
     public static func build(shifts: [SnapshotInputShift], now: Date, calendar: Calendar) -> HelmSnapshot {
         let today = DayKey(containing: now, in: calendar)
 
+        // Civil-day bucketing happens in each shift's OWN zone (the app's
+        // canonical DayBucketer rule) — the device zone put builder shifts
+        // (midnight-anchored localDate) one day early west of the roster zone.
+        var zoneCals: [String: Calendar] = [:]
+        func civilDay(of s: SnapshotInputShift) -> DayKey? {
+            guard let local = s.localDate else { return nil }
+            guard let zoneID = s.timeZoneIdentifier, zoneID != calendar.timeZone.identifier else {
+                return DayKey(containing: local, in: calendar)
+            }
+            let cal = zoneCals[zoneID] ?? {
+                var c = Calendar(identifier: .gregorian)
+                c.timeZone = TimeZone(identifier: zoneID) ?? calendar.timeZone
+                zoneCals[zoneID] = c
+                return c
+            }()
+            return DayKey(containing: local, in: cal)
+        }
+
         // Next shift (one rule, everywhere).
         let candidates = shifts.map { NextShiftRule.Candidate(id: $0.id, isAllDay: $0.isAllDay, start: $0.start, localDate: $0.localDate) }
         let nextID = NextShiftRule.nextID(in: candidates, now: now, calendar: calendar)
         let next = nextID.flatMap { id in shifts.first { $0.id == id } }.map(snapshotShift(from:))
 
-        // Today's shifts (civil-day membership), timed first then all-day, by start.
+        // Today's shifts (civil-day membership), by start.
         let todays = shifts
-            .filter { ($0.localDate).map { DayKey(containing: $0, in: calendar) == today } ?? false }
-            .sorted { lhs, rhs in
-                (lhs.start ?? .distantFuture) < (rhs.start ?? .distantFuture)
-            }
+            .filter { civilDay(of: $0) == today }
+            .sorted { ($0.start ?? .distantFuture) < ($1.start ?? .distantFuture) }
             .map(snapshotShift(from:))
 
         // Currently on shift.
@@ -215,9 +245,9 @@ public enum HelmSnapshotBuilder {
 
         // This week's hours (reuse the one insights engine).
         let insightShifts: [InsightShift] = shifts.compactMap { s in
-            guard let local = s.localDate else { return nil }
+            guard let day = civilDay(of: s) else { return nil }
             return InsightShift(
-                day: DayKey(containing: local, in: calendar),
+                day: day,
                 start: s.start, end: s.end, paidHours: s.paidHours,
                 typeKey: nil, typeLabel: nil, colorHex: s.colorHex, isAllDay: s.isAllDay
             )
@@ -230,31 +260,34 @@ public enum HelmSnapshotBuilder {
         // week-overview widget and the watch app render these directly).
         var dayBuckets: [DayKey: [SnapshotInputShift]] = [:]
         for s in shifts {
-            guard let local = s.localDate else { continue }
-            dayBuckets[DayKey(containing: local, in: calendar), default: []].append(s)
+            guard let day = civilDay(of: s) else { continue }
+            dayBuckets[day, default: []].append(s)
         }
         let weekDays: [SnapshotDay] = (0..<7).map { offset in
             let day = weekStart.advanced(by: offset, in: calendar)
             let dayShifts = (dayBuckets[day] ?? [])
                 .sorted { ($0.start ?? .distantFuture) < ($1.start ?? .distantFuture) }
                 .map(snapshotShift(from:))
-            return SnapshotDay(date: day.startOfDay(in: calendar), shifts: dayShifts)
+            // The civil-day KEY is what renderers should trust — the instant
+            // is only a display convenience for same-zone renders.
+            return SnapshotDay(date: day.startOfDay(in: calendar), shifts: dayShifts, key: day)
         }
 
-        // Gauge numerator: this week's TIMED hours already worked (end ≤ now).
+        // Build-time gauge numerator (renderers recompute live via
+        // SnapshotMath.completedHours; this scalar keeps OLD widgets sane):
+        // ended shifts in full, in-progress shifts at their elapsed fraction.
         var completed = 0.0
         var tbcCount = 0
         for s in shifts {
-            guard let local = s.localDate else { continue }
-            let day = DayKey(containing: local, in: calendar)
-            guard weekRange.contains(day) else { continue }
+            guard let day = civilDay(of: s), weekRange.contains(day) else { continue }
             if s.isAllDay {
                 if s.isTentative { tbcCount += 1 }
-            } else if let end = s.end, end <= now {
-                if let paid = s.paidHours {
-                    completed += paid
-                } else if let start = s.start, end > start {
-                    completed += end.timeIntervalSince(start) / 3600
+            } else if let start = s.start, let end = s.end, end > start, start <= now {
+                let credit = s.paidHours ?? end.timeIntervalSince(start) / 3600
+                if end <= now {
+                    completed += credit
+                } else {
+                    completed += credit * (now.timeIntervalSince(start) / end.timeIntervalSince(start))
                 }
             }
         }
@@ -275,6 +308,79 @@ public enum HelmSnapshotBuilder {
     private static func snapshotShift(from s: SnapshotInputShift) -> SnapshotShift {
         SnapshotShift(id: s.id, title: s.title, location: s.location, colorHex: s.colorHex,
                       start: s.start, end: s.end, isAllDay: s.isAllDay,
-                      isTentative: s.isTentative ? true : nil)
+                      isTentative: s.isTentative ? true : nil,
+                      paidHours: s.paidHours)
+    }
+}
+
+/// RENDER-TIME math over a (possibly hours-old) snapshot — the ONE set of
+/// rules every surface uses (iOS widgets, watch app, complications), so a
+/// stale blob degrades identically everywhere. All pure and tested.
+public enum SnapshotMath {
+    /// The shift happening at `now`: the stored `current` while it's still
+    /// running, else `next` PROMOTED once its window started (the blob may
+    /// predate the shift's start).
+    public static func onNow(in snapshot: HelmSnapshot, at now: Date) -> SnapshotShift? {
+        if let c = snapshot.current, let end = c.end, end > now { return c }
+        if let n = snapshot.next, !n.isAllDay, let s = n.start, let e = n.end, s <= now, now < e { return n }
+        return nil
+    }
+
+    /// The genuinely upcoming shift at `now` (a started timed `next` belongs
+    /// to `onNow`, a finished one to neither). All-day entries pass through —
+    /// their civil-day freshness can't be judged from instants alone.
+    public static func upcoming(in snapshot: HelmSnapshot, at now: Date) -> SnapshotShift? {
+        guard let n = snapshot.next else { return nil }
+        if n.isAllDay { return n }
+        guard let start = n.start, start > now else { return nil }
+        return n
+    }
+
+    /// Live gauge numerator from the week grid: ended shifts in full,
+    /// in-progress at their elapsed fraction. Falls back to the build-time
+    /// scalar for v1 blobs (no weekDays).
+    public static func completedHours(in snapshot: HelmSnapshot, at now: Date) -> Double? {
+        guard let week = snapshot.weekDays else { return snapshot.weekHoursCompleted }
+        var total = 0.0
+        for day in week {
+            for shift in day.shifts where !shift.isAllDay {
+                guard let start = shift.start, let end = shift.end, end > start, start <= now else { continue }
+                let credit = shift.paidHours ?? end.timeIntervalSince(start) / 3600
+                if end <= now {
+                    total += credit
+                } else {
+                    total += credit * (now.timeIntervalSince(start) / end.timeIntervalSince(start))
+                }
+            }
+        }
+        return total
+    }
+
+    /// Whether the blob's week still contains `now` (after a week rollover a
+    /// stale grid must show a refresh hint, not last week labelled "this").
+    /// v1 blobs (no weekDays) can't be judged → treated as current.
+    public static func isWeekCurrent(_ snapshot: HelmSnapshot, at now: Date, calendar: Calendar) -> Bool {
+        guard let week = snapshot.weekDays, !week.isEmpty else { return true }
+        let today = DayKey(containing: now, in: calendar)
+        return week.contains { day in
+            (day.key ?? DayKey(containing: day.date, in: calendar)) == today
+        }
+    }
+
+    /// Today's shifts AT RENDER TIME: recomputed from the week grid (the
+    /// stored `today` array names the build day, which midnight outruns).
+    /// Week present but today missing → honest empty; v1 blob → stored array.
+    public static func todayShifts(in snapshot: HelmSnapshot, at now: Date, calendar: Calendar) -> [SnapshotShift] {
+        guard let week = snapshot.weekDays else { return snapshot.today }
+        let today = DayKey(containing: now, in: calendar)
+        return week.first { day in
+            (day.key ?? DayKey(containing: day.date, in: calendar)) == today
+        }?.shifts ?? []
+    }
+
+    /// The week-grid day containing a shift (e.g. to show WHICH day an
+    /// all-day "next" falls on).
+    public static func day(of shift: SnapshotShift, in snapshot: HelmSnapshot) -> SnapshotDay? {
+        snapshot.weekDays?.first { $0.shifts.contains { $0.id == shift.id } }
     }
 }

@@ -34,7 +34,14 @@ struct HoursGaugeView: View {
     let entry: HelmEntry
 
     private var total: Double { entry.snapshot.weekHours }
-    private var completed: Double { min(entry.snapshot.weekHoursCompleted ?? 0, total) }
+    /// Live at render time (SnapshotMath walks the week grid; a v1 blob falls
+    /// back to the build-time scalar). Zero after a week rollover — honest.
+    private var completed: Double {
+        guard SnapshotMath.isWeekCurrent(entry.snapshot, at: entry.date, calendar: Calendar.current) else { return 0 }
+        return min(SnapshotMath.completedHours(in: entry.snapshot, at: entry.date) ?? 0, total)
+    }
+    private var shiftCount: Int { entry.snapshot.weekShiftCount }
+    private var tbcCount: Int { entry.snapshot.weekTBCCount ?? 0 }
 
     var body: some View {
         switch family {
@@ -77,9 +84,18 @@ struct HoursGaugeView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Text("\(entry.snapshot.weekShiftCount) shift\(entry.snapshot.weekShiftCount == 1 ? "" : "s") this week")
+                Text("\(shiftCount) shift\(shiftCount == 1 ? "" : "s") this week")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+            } else if shiftCount > 0 {
+                // A week of TBC/all-day shifts has no timed hours — that is
+                // NOT "no shifts".
+                Spacer(minLength: 0)
+                Text(tbcCount > 0
+                     ? "\(shiftCount) shift\(shiftCount == 1 ? "" : "s") — times TBC"
+                     : "\(shiftCount) all-day shift\(shiftCount == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundStyle(tbcCount > 0 ? .orange : .secondary)
             } else {
                 Spacer(minLength: 0)
                 Text("No shifts this week")

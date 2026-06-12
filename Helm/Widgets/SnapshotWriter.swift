@@ -36,7 +36,8 @@ enum SnapshotWriter {
                 paidHours: inst.computedPaidHours,
                 // TBC = an IMPORTED tentative row; user-made all-day shifts
                 // (.added/.modified) are deliberate.
-                isTentative: (inst.isAllDay ?? false) && inst.overrideKind == .none
+                isTentative: (inst.isAllDay ?? false) && inst.overrideKind == .none,
+                timeZoneIdentifier: inst.timeZoneIdentifier
             )
         }
         let snapshot = HelmSnapshotBuilder.build(shifts: inputs, now: .now, calendar: CalendarViewModel.displayCalendar)

@@ -34,7 +34,11 @@ struct HelmProvider: TimelineProvider {
         let candidates = ([snapshot.next?.start, snapshot.next?.end, snapshot.current?.end].compactMap { $0 } + [nextMidnight])
             .filter { $0 > .now }
         let refreshDate = candidates.min() ?? Date.now.addingTimeInterval(3600)
-        completion(Timeline(entries: [entry], policy: .after(refreshDate)))
+        // TWO entries: the boundary entry is PRE-RENDERED, so the view flips
+        // (on-now promotion, today ring, gauge step) exactly at the boundary
+        // even if WidgetKit defers the actual reload (.after is best-effort).
+        let boundary = HelmEntry(date: refreshDate, snapshot: snapshot)
+        completion(Timeline(entries: [entry, boundary], policy: .after(refreshDate)))
     }
 }
 
@@ -75,14 +79,10 @@ struct NextShiftWidgetView: View {
         }
     }
 
-    /// Drop a "next" whose start has already passed (the snapshot may be a few
-    /// minutes stale between timeline reloads). All-day shifts have no start.
-    private var next: SnapshotShift? {
-        guard let n = entry.snapshot.next else { return nil }
-        if let start = n.start, start <= entry.date { return nil }
-        return n
-    }
-    private var current: SnapshotShift? { entry.snapshot.current }
+    // The ONE set of stale-blob rules (shared with the watch): a started
+    // "next" is promoted to ON NOW; a finished "current" disappears.
+    private var next: SnapshotShift? { SnapshotMath.upcoming(in: entry.snapshot, at: entry.date) }
+    private var current: SnapshotShift? { SnapshotMath.onNow(in: entry.snapshot, at: entry.date) }
 
     private var inlineText: String {
         if let current { return "On now: \(current.title)" }
@@ -130,10 +130,13 @@ struct NextShiftWidgetView: View {
             Divider()
             VStack(alignment: .leading, spacing: 4) {
                 Text("TODAY").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
-                if entry.snapshot.today.isEmpty {
+                // Recomputed at render time — the stored array names the BUILD
+                // day, which midnight outruns.
+                let todays = SnapshotMath.todayShifts(in: entry.snapshot, at: entry.date, calendar: Calendar.current)
+                if todays.isEmpty {
                     Text("No shifts today").font(.caption).foregroundStyle(.secondary)
                 } else {
-                    ForEach(entry.snapshot.today.prefix(3)) { shift in
+                    ForEach(todays.prefix(3)) { shift in
                         HStack(spacing: 5) {
                             Circle().fill(Color(helmHex: shift.colorHex) ?? .accentColor).frame(width: 7, height: 7)
                             Text(shift.title).font(.caption).lineLimit(1)
@@ -153,11 +156,18 @@ struct NextShiftWidgetView: View {
 
     private var rectangular: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(next?.title ?? "No upcoming shift").font(.headline).lineLimit(1)
-            if let next, !next.isAllDay, let start = next.start {
-                Text(start, format: .dateTime.weekday().hour().minute()).font(.caption)
-            } else if next?.isAllDay == true {
-                Text("Times TBC").font(.caption)
+            if let current {
+                Text(current.title).font(.headline).lineLimit(1)
+                if let end = current.end {
+                    Text("On now · ends \(end.formatted(date: .omitted, time: .shortened))").font(.caption)
+                }
+            } else {
+                Text(next?.title ?? "No upcoming shift").font(.headline).lineLimit(1)
+                if let next, !next.isAllDay, let start = next.start {
+                    Text(start, format: .dateTime.weekday().hour().minute()).font(.caption)
+                } else if next?.isAllDay == true {
+                    Text("Times TBC").font(.caption)
+                }
             }
             Text("\(hours) h this week").font(.caption2).foregroundStyle(.secondary)
         }

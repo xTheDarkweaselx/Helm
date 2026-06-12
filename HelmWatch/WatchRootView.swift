@@ -42,7 +42,9 @@ struct NextShiftTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let current = snapshot.current, let end = current.end {
+            // Shared stale-blob rules (SnapshotMath): a finished "current"
+            // vanishes; a started "next" is promoted to ON NOW.
+            if let current = SnapshotMath.onNow(in: snapshot, at: .now), let end = current.end {
                 Text("ON NOW")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.green)
@@ -60,7 +62,7 @@ struct NextShiftTab: View {
                         .font(.body.weight(.semibold).monospacedDigit())
                         .foregroundStyle(tint(of: current))
                 }
-            } else if let next = freshNext {
+            } else if let next = SnapshotMath.upcoming(in: snapshot, at: .now) {
                 Text("NEXT SHIFT")
                     .font(.caption2.weight(.bold))
                     .foregroundStyle(.secondary)
@@ -68,6 +70,12 @@ struct NextShiftTab: View {
                     .font(.headline)
                     .lineLimit(2)
                 if next.isAllDay {
+                    // WHICH day matters for an undated entry.
+                    if let day = SnapshotMath.day(of: next, in: snapshot) {
+                        Text(day.date, format: .dateTime.weekday(.wide).day().month())
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                     Text(next.isTentative == true ? "Times TBC" : "All-day")
                         .font(.caption)
                         .foregroundStyle(next.isTentative == true ? .orange : .secondary)
@@ -92,14 +100,6 @@ struct NextShiftTab: View {
         .padding(.horizontal, 4)
     }
 
-    /// Drop a "next" whose start already passed (the snapshot can be stale
-    /// between pushes — same guard the iOS widget applies).
-    private var freshNext: SnapshotShift? {
-        guard let n = snapshot.next else { return nil }
-        if let start = n.start, start <= .now { return nil }
-        return n
-    }
-
     private func tint(of shift: SnapshotShift) -> Color {
         Color(helmHex: shift.colorHex) ?? .accentColor
     }
@@ -111,13 +111,16 @@ struct TodayTab: View {
     let snapshot: HelmSnapshot
 
     var body: some View {
+        // Recomputed at render time — the stored array names the PUSH day,
+        // which midnight outruns.
+        let todays = SnapshotMath.todayShifts(in: snapshot, at: .now, calendar: Calendar.current)
         List {
             Section("Today") {
-                if snapshot.today.isEmpty {
+                if todays.isEmpty {
                     Text("No shifts today")
                         .foregroundStyle(.secondary)
                 } else {
-                    ForEach(snapshot.today) { shift in
+                    ForEach(todays) { shift in
                         HStack(spacing: 6) {
                             Circle()
                                 .fill(shift.isTentative == true ? Color.orange : (Color(helmHex: shift.colorHex) ?? .accentColor))
@@ -148,7 +151,11 @@ struct WeekTab: View {
     let snapshot: HelmSnapshot
 
     private var total: Double { snapshot.weekHours }
-    private var completed: Double { min(snapshot.weekHoursCompleted ?? 0, total) }
+    /// Live (shared SnapshotMath); zero once the blob's week has rolled over.
+    private var completed: Double {
+        guard SnapshotMath.isWeekCurrent(snapshot, at: .now, calendar: Calendar.current) else { return 0 }
+        return min(SnapshotMath.completedHours(in: snapshot, at: .now) ?? 0, total)
+    }
 
     var body: some View {
         VStack(spacing: 6) {

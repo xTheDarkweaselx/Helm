@@ -44,7 +44,11 @@ struct WatchSnapshotProvider: TimelineProvider {
         let nextMidnight = cal.startOfDay(for: cal.date(byAdding: .day, value: 1, to: .now) ?? .now.addingTimeInterval(86400))
         let candidates = ([snapshot.next?.start, snapshot.next?.end, snapshot.current?.end].compactMap { $0 } + [nextMidnight])
             .filter { $0 > .now }
-        completion(Timeline(entries: [entry], policy: .after(candidates.min() ?? Date.now.addingTimeInterval(3600))))
+        let refreshDate = candidates.min() ?? Date.now.addingTimeInterval(3600)
+        // Pre-rendered boundary entry: the face flips exactly on time even if
+        // watchOS defers the reload (.after is best-effort).
+        let boundary = WatchSnapshotEntry(date: refreshDate, snapshot: snapshot)
+        completion(Timeline(entries: [entry, boundary], policy: .after(refreshDate)))
     }
 
     /// PhoneLink stores the blob under the SAME key in both the shared suite
@@ -75,17 +79,17 @@ struct WatchNextShiftView: View {
     @Environment(\.widgetFamily) private var family
     let entry: WatchSnapshotEntry
 
+    // Shared stale-blob rules: finished "current" vanishes, started "next"
+    // promotes to on-now.
+    private var current: SnapshotShift? { SnapshotMath.onNow(in: entry.snapshot, at: entry.date) }
     private var next: SnapshotShift? {
-        if entry.snapshot.current != nil { return nil } // inline/rect show "on now" instead
-        guard let n = entry.snapshot.next else { return nil }
-        if let start = n.start, start <= entry.date { return nil }
-        return n
+        current == nil ? SnapshotMath.upcoming(in: entry.snapshot, at: entry.date) : nil
     }
 
     var body: some View {
         switch family {
         case .accessoryInline:
-            if let current = entry.snapshot.current {
+            if let current {
                 Text("On now: \(current.title)")
             } else if let next {
                 if let start = next.start {
@@ -103,7 +107,7 @@ struct WatchNextShiftView: View {
 
     private var rectangular: some View {
         VStack(alignment: .leading, spacing: 1) {
-            if let current = entry.snapshot.current, let end = current.end {
+            if let current, let end = current.end {
                 Text("ON NOW").font(.caption2.weight(.bold)).foregroundStyle(.green)
                 Text(current.title).font(.headline).lineLimit(1)
                 Text("ends \(end.formatted(date: .omitted, time: .shortened))")
@@ -111,9 +115,15 @@ struct WatchNextShiftView: View {
             } else if let next {
                 Text(next.title).font(.headline).lineLimit(1)
                 if next.isAllDay {
-                    Text(next.isTentative == true ? "Times TBC" : "All-day")
-                        .font(.caption2)
-                        .foregroundStyle(next.isTentative == true ? .orange : .secondary)
+                    if let day = SnapshotMath.day(of: next, in: entry.snapshot) {
+                        Text("\(day.date, format: .dateTime.weekday(.abbreviated).day()) · \(next.isTentative == true ? "Times TBC" : "All-day")")
+                            .font(.caption2)
+                            .foregroundStyle(next.isTentative == true ? .orange : .secondary)
+                    } else {
+                        Text(next.isTentative == true ? "Times TBC" : "All-day")
+                            .font(.caption2)
+                            .foregroundStyle(next.isTentative == true ? .orange : .secondary)
+                    }
                 } else if let start = next.start {
                     Text(start, format: .dateTime.weekday(.abbreviated).hour().minute())
                         .font(.caption)
@@ -147,7 +157,10 @@ struct WatchHoursGaugeView: View {
     let entry: WatchSnapshotEntry
 
     private var total: Double { entry.snapshot.weekHours }
-    private var completed: Double { min(entry.snapshot.weekHoursCompleted ?? 0, total) }
+    private var completed: Double {
+        guard SnapshotMath.isWeekCurrent(entry.snapshot, at: entry.date, calendar: Calendar.current) else { return 0 }
+        return min(SnapshotMath.completedHours(in: entry.snapshot, at: entry.date) ?? 0, total)
+    }
 
     var body: some View {
         Gauge(value: total > 0 ? completed / total : 0) {

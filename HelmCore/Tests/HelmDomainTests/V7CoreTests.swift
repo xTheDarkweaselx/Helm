@@ -434,12 +434,106 @@ private func isHex6(_ s: String) -> Bool {
         #expect(snap.weekDays?[3].shifts.first?.isTentative == nil) // nil reads as false
     }
 
+    @Test func bucketsInTheShiftsOwnZoneNotTheDeviceZone() {
+        // Device (display) calendar = New York; the roster lives in London.
+        var nyCal = Calendar(identifier: .gregorian)
+        nyCal.locale = Locale(identifier: "en_GB")
+        nyCal.firstWeekday = 2
+        nyCal.timeZone = TimeZone(identifier: "America/New_York")!
+        let london = ukCal()
+        let now = nyCal.date(from: DateComponents(year: 2026, month: 6, day: 10, hour: 9))! // Wed NY
+        // A builder shift anchored at LONDON MIDNIGHT Monday (= Sunday 19:00 NY).
+        let monMidnightLondon = london.date(from: DateComponents(year: 2026, month: 6, day: 8))!
+        let shift = SnapshotInputShift(id: "m", title: "M", location: nil, colorHex: nil,
+                                       start: london.date(from: DateComponents(year: 2026, month: 6, day: 8, hour: 6, minute: 30)),
+                                       end: london.date(from: DateComponents(year: 2026, month: 6, day: 8, hour: 13, minute: 30)),
+                                       localDate: monMidnightLondon, isAllDay: false, paidHours: 7,
+                                       timeZoneIdentifier: "Europe/London")
+        let snap = HelmSnapshotBuilder.build(shifts: [shift], now: now, calendar: nyCal)
+        // Without per-zone bucketing this lands on SUNDAY (previous week) and
+        // drops out of every week stat.
+        #expect(snap.weekDays?.first?.key == DayKey(year: 2026, month: 6, day: 8))
+        #expect(snap.weekDays?.first?.shifts.map(\.id) == ["m"])
+        #expect(abs(snap.weekHours - 7) < 0.001)
+    }
+
+    @Test func builderScalarGivesPartialCreditToInProgressShifts() {
+        let now = date(2026, 6, 8, 10, 0, cal: cal) // mid-shift: 3.5h into 7h
+        let onNow = SnapshotInputShift(id: "n", title: "M", location: nil, colorHex: nil,
+                                       start: date(2026, 6, 8, 6, 30, cal: cal), end: date(2026, 6, 8, 13, 30, cal: cal),
+                                       localDate: date(2026, 6, 8, 12, 0, cal: cal), isAllDay: false, paidHours: 7)
+        let snap = HelmSnapshotBuilder.build(shifts: [onNow], now: now, calendar: cal)
+        #expect(abs((snap.weekHoursCompleted ?? -1) - 3.5) < 0.001)
+    }
+
     @Test func v1BlobWithoutWeekFieldsDecodesNil() throws {
         // A pre-v7.5 snapshot (no weekDays/weekHoursCompleted/weekTBCCount keys).
         let v1 = Data(#"{"version":1,"generatedAt":0,"today":[],"weekHours":12.5,"weekShiftCount":2}"#.utf8)
         let decoded = try JSONDecoder().decode(HelmSnapshot.self, from: v1)
         #expect(decoded.weekDays == nil && decoded.weekHoursCompleted == nil && decoded.weekTBCCount == nil)
         #expect(abs(decoded.weekHours - 12.5) < 0.001)
+    }
+
+    // MARK: render-time SnapshotMath (the rules every surface shares)
+
+    private func mathFixture() -> (HelmSnapshot, Date) {
+        let now = date(2026, 6, 10, 9, 0, cal: cal) // Wed 09:00
+        let mon = SnapshotInputShift(id: "mon", title: "M", location: nil, colorHex: nil,
+                                     start: date(2026, 6, 8, 6, 30, cal: cal), end: date(2026, 6, 8, 13, 30, cal: cal),
+                                     localDate: date(2026, 6, 8, 12, 0, cal: cal), isAllDay: false, paidHours: 7)
+        let wed = SnapshotInputShift(id: "wed", title: "D", location: nil, colorHex: nil,
+                                     start: date(2026, 6, 10, 8, 0, cal: cal), end: date(2026, 6, 10, 16, 0, cal: cal),
+                                     localDate: date(2026, 6, 10, 12, 0, cal: cal), isAllDay: false, paidHours: 8)
+        return (HelmSnapshotBuilder.build(shifts: [mon, wed], now: date(2026, 6, 9, 12, 0, cal: cal), calendar: cal), now)
+        // NOTE: the snapshot is deliberately built on TUESDAY and rendered on
+        // WEDNESDAY — the stale-blob situation the math exists for.
+    }
+
+    @Test func mathPromotesAStaleNextToOnNow() {
+        let (snap, now) = mathFixture()
+        // Built Tuesday: "next" = Wednesday 08:00. Rendered Wednesday 09:00 →
+        // that shift is ON NOW, not upcoming, not "nothing scheduled".
+        #expect(snap.current == nil)
+        #expect(SnapshotMath.onNow(in: snap, at: now)?.id == "wed")
+        #expect(SnapshotMath.upcoming(in: snap, at: now) == nil)
+    }
+
+    @Test func mathComputesLiveCompletedHours() {
+        let (snap, now) = mathFixture()
+        // Mon fully worked (7h) + Wed 1h into 8h = 8h total at Wed 09:00.
+        #expect(abs((SnapshotMath.completedHours(in: snap, at: now) ?? -1) - 8) < 0.001)
+        // v1 blob (no weekDays) falls back to the build-time scalar.
+        let v1 = HelmSnapshot(generatedAt: .distantPast, next: nil, today: [], weekHours: 10, weekShiftCount: 1, current: nil, weekHoursCompleted: 4)
+        #expect(SnapshotMath.completedHours(in: v1, at: now) == 4)
+    }
+
+    @Test func mathRecomputesTodayFromTheWeekGrid() {
+        let (snap, now) = mathFixture()
+        // The stored `today` names Tuesday (build day, empty); render-time
+        // today is Wednesday and must find the Wednesday shift.
+        #expect(snap.today.isEmpty)
+        #expect(SnapshotMath.todayShifts(in: snap, at: now, calendar: cal).map(\.id) == ["wed"])
+    }
+
+    @Test func mathDetectsWeekRollover() {
+        let (snap, _) = mathFixture()
+        #expect(SnapshotMath.isWeekCurrent(snap, at: date(2026, 6, 12, 9, 0, cal: cal), calendar: cal))
+        // The Monday AFTER the built week → stale.
+        #expect(!SnapshotMath.isWeekCurrent(snap, at: date(2026, 6, 15, 9, 0, cal: cal), calendar: cal))
+        // A v1 blob can't be judged → treated as current (no false alarms).
+        let v1 = HelmSnapshot(generatedAt: .distantPast, next: nil, today: [], weekHours: 0, weekShiftCount: 0, current: nil)
+        #expect(SnapshotMath.isWeekCurrent(v1, at: date(2026, 6, 15, 9, 0, cal: cal), calendar: cal))
+    }
+
+    @Test func mathFindsTheDayOfAnAllDayShift() {
+        let now = date(2026, 6, 10, 9, 0, cal: cal)
+        let tbc = SnapshotInputShift(id: "t", title: "Ops", location: nil, colorHex: nil,
+                                     start: nil, end: nil,
+                                     localDate: date(2026, 6, 12, 12, 0, cal: cal), isAllDay: true, paidHours: nil,
+                                     isTentative: true)
+        let snap = HelmSnapshotBuilder.build(shifts: [tbc], now: now, calendar: cal)
+        let day = snap.next.flatMap { SnapshotMath.day(of: $0, in: snap) }
+        #expect(day?.key == DayKey(year: 2026, month: 6, day: 12))
     }
 
     @Test func snapshotCodableRoundTrips() throws {

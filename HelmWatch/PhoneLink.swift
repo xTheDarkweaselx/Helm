@@ -31,16 +31,19 @@ final class PhoneLink: NSObject, WCSessionDelegate {
         if session.activationState == .notActivated { session.activate() }
     }
 
-    /// Persist + decode a freshly received blob, and wake the complications.
+    /// Validate, persist and publish a freshly received blob, then wake the
+    /// complications. Decode FIRST — an undecodable payload must never
+    /// clobber the last good snapshot — and ignore out-of-order deliveries
+    /// (the two delegate entry points aren't ordered).
     func ingest(_ data: Data) {
+        guard let snap = try? JSONDecoder().decode(HelmSnapshot.self, from: data) else { return }
+        guard snap.generatedAt > snapshot.generatedAt || snapshot == .empty else { return }
         // App Group suite when the capability is configured; standard defaults
         // as the ever-present fallback (the watch APP can always read its own).
         UserDefaults(suiteName: HelmAppGroup.defaultsSuite)?.set(data, forKey: HelmAppGroup.snapshotDefaultsKey)
         UserDefaults.standard.set(data, forKey: HelmAppGroup.snapshotDefaultsKey)
-        if let snap = try? JSONDecoder().decode(HelmSnapshot.self, from: data) {
-            snapshot = snap
-            lastReceivedAt = .now
-        }
+        snapshot = snap
+        lastReceivedAt = .now
         #if canImport(WidgetKit)
         WidgetCenter.shared.reloadAllTimelines()
         #endif

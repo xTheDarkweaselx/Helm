@@ -23,6 +23,10 @@ import WatchConnectivity
 final class WatchBridge: NSObject, WCSessionDelegate {
     static let shared = WatchBridge()
 
+    /// The newest blob, kept so the launch-time push (which races activation)
+    /// is re-sent the moment the session reports activated.
+    private var pendingData: Data?
+
     /// Idempotent: assigns the delegate and activates once per launch.
     func activate() {
         guard WCSession.isSupported() else { return }
@@ -35,6 +39,7 @@ final class WatchBridge: NSObject, WCSessionDelegate {
     /// the app installed — same graceful degradation as the App Group writer.
     func push(snapshotData: Data) {
         guard WCSession.isSupported() else { return }
+        pendingData = snapshotData
         let session = WCSession.default
         guard session.activationState == .activated,
               session.isPaired,
@@ -44,7 +49,15 @@ final class WatchBridge: NSObject, WCSessionDelegate {
 
     // MARK: WCSessionDelegate (background queue → nonisolated, stateless)
 
-    nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {}
+    nonisolated func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+        guard activationState == .activated else { return }
+        // Deliver the blob that raced activation (launch-time refresh).
+        Task { @MainActor in
+            if let data = WatchBridge.shared.pendingData {
+                WatchBridge.shared.push(snapshotData: data)
+            }
+        }
+    }
 
     nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
 
