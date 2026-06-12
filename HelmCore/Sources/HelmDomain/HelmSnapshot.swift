@@ -23,6 +23,11 @@ public enum HelmAppGroup {
     public static let defaultsSuite = identifier
     /// Key under which the JSON-encoded snapshot is mirrored in the suite.
     public static let snapshotDefaultsKey = "helm.snapshot.v1"
+    /// WatchConnectivity applicationContext key the iPhone pushes the snapshot
+    /// under (v7.5 — the watch is a separate device; the App Group does not
+    /// cross to it). The watch stores the received blob under
+    /// `snapshotDefaultsKey` in ITS OWN suite, so SnapshotStore reads verbatim.
+    public static let watchSnapshotContextKey = "helm.snapshot.v1.watch"
 }
 
 /// A shift as the widget needs to show it (Codable for the cross-process hop).
@@ -34,8 +39,11 @@ public struct SnapshotShift: Codable, Sendable, Equatable, Identifiable {
     public let start: Date?
     public let end: Date?
     public let isAllDay: Bool
+    /// v7.5 (optional → v1-blob compatible): an IMPORTED tentative (TBC) row —
+    /// distinct from a deliberate user-made all-day shift. nil reads as false.
+    public let isTentative: Bool?
 
-    public init(id: String, title: String, location: String?, colorHex: String?, start: Date?, end: Date?, isAllDay: Bool) {
+    public init(id: String, title: String, location: String?, colorHex: String?, start: Date?, end: Date?, isAllDay: Bool, isTentative: Bool? = nil) {
         self.id = id
         self.title = title
         self.location = location
@@ -43,6 +51,22 @@ public struct SnapshotShift: Codable, Sendable, Equatable, Identifiable {
         self.start = start
         self.end = end
         self.isAllDay = isAllDay
+        self.isTentative = isTentative
+    }
+}
+
+/// One civil day of the current week (v7.5 — feeds the week-overview widget
+/// and the watch app).
+public struct SnapshotDay: Codable, Sendable, Equatable, Identifiable {
+    /// Start-of-day in the calendar the snapshot was built with.
+    public let date: Date
+    public let shifts: [SnapshotShift]
+
+    public var id: Date { date }
+
+    public init(date: Date, shifts: [SnapshotShift]) {
+        self.date = date
+        self.shifts = shifts
     }
 }
 
@@ -58,8 +82,28 @@ public struct HelmSnapshot: Codable, Sendable, Equatable {
     public let weekShiftCount: Int
     /// The shift happening right now, if any (drives the Live Activity / "on now").
     public let current: SnapshotShift?
+    // v7.5 additions — ALL optional so a v1 blob (older app, newer widget) and
+    // a v1.5 blob (newer app, older widget) both decode cleanly.
+    /// The current locale week, 7 entries from its first day.
+    public let weekDays: [SnapshotDay]?
+    /// Hours of this week's shifts that have already ENDED (gauge numerator;
+    /// `weekHours` is the denominator).
+    public let weekHoursCompleted: Double?
+    /// Imported tentative (TBC) shifts in the week — surfaced as a badge.
+    public let weekTBCCount: Int?
 
-    public init(version: Int = HelmSnapshot.schemaVersion, generatedAt: Date, next: SnapshotShift?, today: [SnapshotShift], weekHours: Double, weekShiftCount: Int, current: SnapshotShift?) {
+    public init(
+        version: Int = HelmSnapshot.schemaVersion,
+        generatedAt: Date,
+        next: SnapshotShift?,
+        today: [SnapshotShift],
+        weekHours: Double,
+        weekShiftCount: Int,
+        current: SnapshotShift?,
+        weekDays: [SnapshotDay]? = nil,
+        weekHoursCompleted: Double? = nil,
+        weekTBCCount: Int? = nil
+    ) {
         self.version = version
         self.generatedAt = generatedAt
         self.next = next
@@ -67,6 +111,9 @@ public struct HelmSnapshot: Codable, Sendable, Equatable {
         self.weekHours = weekHours
         self.weekShiftCount = weekShiftCount
         self.current = current
+        self.weekDays = weekDays
+        self.weekHoursCompleted = weekHoursCompleted
+        self.weekTBCCount = weekTBCCount
     }
 
     public static let empty = HelmSnapshot(generatedAt: .distantPast, next: nil, today: [], weekHours: 0, weekShiftCount: 0, current: nil)
@@ -83,8 +130,10 @@ public struct SnapshotInputShift: Sendable, Equatable {
     public let localDate: Date?
     public let isAllDay: Bool
     public let paidHours: Double?
+    /// v7.5: imported tentative (TBC) row, vs a deliberate all-day shift.
+    public let isTentative: Bool
 
-    public init(id: String, title: String, location: String?, colorHex: String?, start: Date?, end: Date?, localDate: Date?, isAllDay: Bool, paidHours: Double?) {
+    public init(id: String, title: String, location: String?, colorHex: String?, start: Date?, end: Date?, localDate: Date?, isAllDay: Bool, paidHours: Double?, isTentative: Bool = false) {
         self.id = id
         self.title = title
         self.location = location
@@ -94,6 +143,7 @@ public struct SnapshotInputShift: Sendable, Equatable {
         self.localDate = localDate
         self.isAllDay = isAllDay
         self.paidHours = paidHours
+        self.isTentative = isTentative
     }
 }
 
@@ -176,17 +226,55 @@ public enum HelmSnapshotBuilder {
         let weekRange = weekStart...weekStart.advanced(by: 6, in: calendar)
         let week = InsightsMath.periodSummary(shifts: insightShifts, in: weekRange)
 
+        // v7.5: the week itself — 7 civil days with their shifts (the
+        // week-overview widget and the watch app render these directly).
+        var dayBuckets: [DayKey: [SnapshotInputShift]] = [:]
+        for s in shifts {
+            guard let local = s.localDate else { continue }
+            dayBuckets[DayKey(containing: local, in: calendar), default: []].append(s)
+        }
+        let weekDays: [SnapshotDay] = (0..<7).map { offset in
+            let day = weekStart.advanced(by: offset, in: calendar)
+            let dayShifts = (dayBuckets[day] ?? [])
+                .sorted { ($0.start ?? .distantFuture) < ($1.start ?? .distantFuture) }
+                .map(snapshotShift(from:))
+            return SnapshotDay(date: day.startOfDay(in: calendar), shifts: dayShifts)
+        }
+
+        // Gauge numerator: this week's TIMED hours already worked (end ≤ now).
+        var completed = 0.0
+        var tbcCount = 0
+        for s in shifts {
+            guard let local = s.localDate else { continue }
+            let day = DayKey(containing: local, in: calendar)
+            guard weekRange.contains(day) else { continue }
+            if s.isAllDay {
+                if s.isTentative { tbcCount += 1 }
+            } else if let end = s.end, end <= now {
+                if let paid = s.paidHours {
+                    completed += paid
+                } else if let start = s.start, end > start {
+                    completed += end.timeIntervalSince(start) / 3600
+                }
+            }
+        }
+
         return HelmSnapshot(
             generatedAt: now,
             next: next,
             today: todays,
             weekHours: week.hours,
             weekShiftCount: week.shiftCount,
-            current: current
+            current: current,
+            weekDays: weekDays,
+            weekHoursCompleted: completed,
+            weekTBCCount: tbcCount
         )
     }
 
     private static func snapshotShift(from s: SnapshotInputShift) -> SnapshotShift {
-        SnapshotShift(id: s.id, title: s.title, location: s.location, colorHex: s.colorHex, start: s.start, end: s.end, isAllDay: s.isAllDay)
+        SnapshotShift(id: s.id, title: s.title, location: s.location, colorHex: s.colorHex,
+                      start: s.start, end: s.end, isAllDay: s.isAllDay,
+                      isTentative: s.isTentative ? true : nil)
     }
 }

@@ -388,6 +388,60 @@ private func isHex6(_ s: String) -> Bool {
         #expect(abs(snap.weekHours - 15) < 0.001)  // 7 + 8
     }
 
+    @Test func weekDaysCoverTheLocaleWeekWithBucketedShifts() {
+        let now = date(2026, 6, 10, 9, 0, cal: cal) // Wednesday
+        let monday = SnapshotInputShift(id: "mon", title: "M", location: nil, colorHex: nil,
+                                        start: date(2026, 6, 8, 6, 30, cal: cal), end: date(2026, 6, 8, 13, 30, cal: cal),
+                                        localDate: date(2026, 6, 8, 12, 0, cal: cal), isAllDay: false, paidHours: 7)
+        let friday = SnapshotInputShift(id: "fri", title: "L", location: nil, colorHex: nil,
+                                        start: date(2026, 6, 12, 13, 30, cal: cal), end: date(2026, 6, 12, 22, 0, cal: cal),
+                                        localDate: date(2026, 6, 12, 12, 0, cal: cal), isAllDay: false, paidHours: 8)
+        let snap = HelmSnapshotBuilder.build(shifts: [friday, monday], now: now, calendar: cal)
+        let week = snap.weekDays ?? []
+        #expect(week.count == 7)
+        #expect(week.first?.date == date(2026, 6, 8, 0, 0, cal: cal)) // en_GB week starts Monday
+        #expect(week[0].shifts.map(\.id) == ["mon"])
+        #expect(week[4].shifts.map(\.id) == ["fri"])
+        #expect(week[1].shifts.isEmpty)
+    }
+
+    @Test func completedHoursCountOnlyEndedShifts() {
+        let now = date(2026, 6, 10, 9, 0, cal: cal)
+        let ended = SnapshotInputShift(id: "a", title: "M", location: nil, colorHex: nil,
+                                       start: date(2026, 6, 8, 6, 30, cal: cal), end: date(2026, 6, 8, 13, 30, cal: cal),
+                                       localDate: date(2026, 6, 8, 12, 0, cal: cal), isAllDay: false, paidHours: 7)
+        let future = SnapshotInputShift(id: "b", title: "L", location: nil, colorHex: nil,
+                                        start: date(2026, 6, 12, 13, 30, cal: cal), end: date(2026, 6, 12, 22, 0, cal: cal),
+                                        localDate: date(2026, 6, 12, 12, 0, cal: cal), isAllDay: false, paidHours: 8)
+        let snap = HelmSnapshotBuilder.build(shifts: [ended, future], now: now, calendar: cal)
+        #expect(abs((snap.weekHoursCompleted ?? -1) - 7) < 0.001)
+        #expect(abs(snap.weekHours - 15) < 0.001)
+    }
+
+    @Test func tbcCountIsTentativeOnly() {
+        let now = date(2026, 6, 10, 9, 0, cal: cal)
+        let tentative = SnapshotInputShift(id: "t", title: "Ops", location: nil, colorHex: nil,
+                                           start: nil, end: nil,
+                                           localDate: date(2026, 6, 9, 12, 0, cal: cal), isAllDay: true, paidHours: nil,
+                                           isTentative: true)
+        let deliberate = SnapshotInputShift(id: "d", title: "Course", location: nil, colorHex: nil,
+                                            start: nil, end: nil,
+                                            localDate: date(2026, 6, 11, 12, 0, cal: cal), isAllDay: true, paidHours: nil,
+                                            isTentative: false)
+        let snap = HelmSnapshotBuilder.build(shifts: [tentative, deliberate], now: now, calendar: cal)
+        #expect(snap.weekTBCCount == 1)
+        #expect(snap.weekDays?[1].shifts.first?.isTentative == true)
+        #expect(snap.weekDays?[3].shifts.first?.isTentative == nil) // nil reads as false
+    }
+
+    @Test func v1BlobWithoutWeekFieldsDecodesNil() throws {
+        // A pre-v7.5 snapshot (no weekDays/weekHoursCompleted/weekTBCCount keys).
+        let v1 = Data(#"{"version":1,"generatedAt":0,"today":[],"weekHours":12.5,"weekShiftCount":2}"#.utf8)
+        let decoded = try JSONDecoder().decode(HelmSnapshot.self, from: v1)
+        #expect(decoded.weekDays == nil && decoded.weekHoursCompleted == nil && decoded.weekTBCCount == nil)
+        #expect(abs(decoded.weekHours - 12.5) < 0.001)
+    }
+
     @Test func snapshotCodableRoundTrips() throws {
         let snap = HelmSnapshot(generatedAt: date(2026, 6, 8, 9, 0, cal: cal),
                                 next: SnapshotShift(id: "x", title: "T", location: nil, colorHex: "FF0000", start: date(2026, 6, 9, 8, 0, cal: cal), end: nil, isAllDay: false),

@@ -13,6 +13,8 @@ import SwiftUI
 struct HelmWidgetBundle: WidgetBundle {
     var body: some Widget {
         NextShiftWidget()
+        WeekOverviewWidget()
+        HoursGaugeWidget()
         #if os(iOS)
         ShiftLiveActivity()
         #endif
