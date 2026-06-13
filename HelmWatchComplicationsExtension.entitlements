@@ -2,10 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Shared between the watch APP and the watch WIDGET extension so the
-	     complications read the snapshot PhoneLink stores. Add via Signing &
-	     Capabilities (+ App Groups) on BOTH watch targets so the developer
-	     portal registers it. Same id as the iPhone side is fine. -->
 	<key>com.apple.security.application-groups</key>
 	<array>
 		<string>group.Fusion-Studios.Helm</string>
