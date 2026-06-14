@@ -13,7 +13,7 @@ import Foundation
 
 public enum RosterDateParser {
 
-    public enum Order: Sendable {
+    public enum Order: Sendable, Hashable, CaseIterable {
         case dayFirst    // dd/MM/yyyy (UK, the first real sample)
         case monthFirst  // MM/dd/yyyy (US)
         case iso         // yyyy-MM-dd

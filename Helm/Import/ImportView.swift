@@ -10,6 +10,7 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 import HelmDomain
+import HelmParsing
 
 @MainActor
 @Observable
@@ -18,6 +19,9 @@ final class ImportCoordinator {
         case idle
         case reading
         case loaded
+        /// Auto-detection couldn't find the columns — offer manual mapping over
+        /// the retained grid instead of dead-ending (DEVELOPMENT_PLAN.md §4).
+        case needsMapping
         case writing
         case finished(SyncSummary)
         case failed(String)
@@ -26,11 +30,17 @@ final class ImportCoordinator {
     var phase: Phase = .idle
     var result: RosterImportResult?
     var plan: RosterSyncEngine.Plan?
+    /// The raw decoded grid, retained so the user can manually map columns
+    /// (when auto-detect fails, or via "Columns wrong?").
+    var grid: SpreadsheetGrid?
+    /// The file's stem — the re-import fingerprint + legend key for re-resolution.
+    private(set) var sourceName: String = ""
 
     func load(from url: URL, modelContext: ModelContext) async {
-        // A fresh file invalidates any previous plan — a failed commit followed
-        // by "Try another file" must never apply the stale one.
+        // A fresh file invalidates any previous plan/grid — a failed commit
+        // followed by "Try another file" must never apply the stale one.
         plan = nil
+        grid = nil
         do {
             let data: Data
             do {
@@ -39,33 +49,56 @@ final class ImportCoordinator {
                 data = try Data(contentsOf: url) // small read, kept inside the scope
             }
             let name = url.deletingPathExtension().lastPathComponent
+            sourceName = name
             phase = .reading
             // Snapshot the merged legend ON MainActor before the detached parse
             // (SwiftData never crosses isolation; the legend is a value).
             let legend = LegendBuilder.legend(forSourceName: name, in: modelContext)
-            // Parse off the main actor (ADR-9): heavy decode must not block the UI.
-            result = try await Task.detached(priority: .userInitiated) {
-                // Sniff the bytes, not the extension: PK = ZIP/OOXML (.xlsx);
-                // D0CF11E0 = OLE2 (legacy .xls); otherwise treat as text/CSV.
-                if data.starts(with: [0x50, 0x4B]) {
-                    return try RosterImporter.importXLSX(data: data, sourceName: name, legend: legend)
-                } else if data.starts(with: [0xD0, 0xCF, 0x11, 0xE0]) {
-                    throw RosterImportError.legacyXLS
-                } else {
-                    // UTF-8 first, then cp1252/Latin-1 so legacy rosters don't become
-                    // mojibake; strip a leading Excel UTF-8 BOM.
-                    let text = (String(data: data, encoding: .utf8)
-                                ?? String(data: data, encoding: .windowsCP1252)
-                                ?? String(data: data, encoding: .isoLatin1)
-                                ?? String(decoding: data, as: UTF8.self))
-                        .replacingOccurrences(of: "\u{FEFF}", with: "")
-                    return try RosterImporter.importCSV(text: text, sourceName: name, legend: legend)
-                }
+            // Off the main actor (ADR-9): decode the grid AND attempt auto-detection.
+            // The grid is retained either way so a detection miss falls back to
+            // manual mapping rather than a hard failure.
+            let (loadedGrid, auto): (SpreadsheetGrid, RosterImportResult?) = try await Task.detached(priority: .userInitiated) {
+                let g = try RosterImporter.grid(data: data, sourceName: name)
+                let r = try? RosterImporter.resolve(grid: g, sourceName: name, legend: legend,
+                                                    timeZoneIdentifier: TimeZone.current.identifier, dateOrder: .dayFirst)
+                return (g, r)
             }.value
-            phase = .loaded
+            grid = loadedGrid
+            if let auto {
+                result = auto
+                phase = .loaded
+            } else {
+                phase = .needsMapping
+            }
         } catch {
             phase = .failed(message(for: error))
         }
+    }
+
+    /// Open the manual column mapper over the already-loaded grid.
+    func enterManualMapping() {
+        guard let grid, !grid.sheets.isEmpty else { return }
+        phase = .needsMapping
+    }
+
+    /// Leave the mapper without applying: back to the preview if we already had a
+    /// resolved result, otherwise to the detection-failure path.
+    func cancelManualMapping() {
+        phase = result != nil
+            ? .loaded
+            : .failed(RosterImportError.noColumnsDetected.errorDescription ?? "Couldn’t detect the columns.")
+    }
+
+    /// Resolve with the user's chosen sheet/columns/date-order and show the preview.
+    func applyManualMapping(sheetIndex: Int, mapping: ListColumnMapping,
+                            dateOrder: RosterDateParser.Order, modelContext: ModelContext) {
+        guard let grid else { return }
+        let legend = LegendBuilder.legend(forSourceName: sourceName, in: modelContext)
+        result = RosterImporter.resolveManual(grid: grid, sheetIndex: sheetIndex, mapping: mapping,
+                                              sourceName: sourceName, legend: legend, dateOrder: dateOrder)
+        plan = nil
+        preparePlan(modelContext: modelContext)
+        phase = .loaded
     }
 
     /// Compute the add/update/remove diff against any existing roster for this
@@ -185,6 +218,17 @@ struct ImportView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .loaded:
             if let result = coordinator.result { previewView(result) }
+        case .needsMapping:
+            if let grid = coordinator.grid {
+                ColumnMappingView(grid: grid, sourceDisplayName: coordinator.sourceName) { sheetIndex, mapping, order in
+                    coordinator.applyManualMapping(sheetIndex: sheetIndex, mapping: mapping, dateOrder: order, modelContext: modelContext)
+                    if let plan = coordinator.plan {
+                        overlay = PlanOverlayBuilder.build(from: plan, in: modelContext)
+                    }
+                } onCancel: {
+                    coordinator.cancelManualMapping()
+                }
+            }
         case .writing:
             ProgressView("Adding shifts to your calendar…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -228,9 +272,17 @@ struct ImportView: View {
 
             // v6 Import Intelligence: the always-visible health contract and,
             // when codes are unknown, the inline teach-Helm panel.
-            ImportHealthBanner(health: importHealth(for: result)) { previewStyle = .list }
-                .padding(.horizontal)
-                .padding(.bottom, 6)
+            HStack {
+                ImportHealthBanner(health: importHealth(for: result)) { previewStyle = .list }
+                Button("Columns wrong?", systemImage: "tablecells.badge.ellipsis") {
+                    coordinator.enterManualMapping()
+                }
+                .font(.caption)
+                .buttonStyle(.borderless)
+                .help("Pick the sheet, header row and which columns hold the date and shift code.")
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 6)
             if !result.unmappedCodes.isEmpty {
                 // Bounded: expanded editors scroll inside the panel instead of
                 // starving the calendar preview below.
@@ -394,15 +446,28 @@ struct ImportView: View {
         } description: {
             Text(message)
         } actions: {
-            Button("Try another file") {
-                coordinator.result = nil
-                coordinator.plan = nil
-                overlay = nil
-                coordinator.phase = .idle
-                isFileImporterPresented = true
+            // Never dead-end: if the grid decoded but columns weren't detected,
+            // let the user map them by hand (prominent); else just retry.
+            if coordinator.grid != nil {
+                Button("Map columns manually", systemImage: "tablecells") {
+                    coordinator.enterManualMapping()
+                }
+                .buttonStyle(.borderedProminent)
+                Button("Try another file", action: retryAnotherFile)
+                    .buttonStyle(.bordered)
+            } else {
+                Button("Try another file", action: retryAnotherFile)
+                    .buttonStyle(.borderedProminent)
             }
-            .buttonStyle(.borderedProminent)
         }
+    }
+
+    private func retryAnotherFile() {
+        coordinator.result = nil
+        coordinator.plan = nil
+        overlay = nil
+        coordinator.phase = .idle
+        isFileImporterPresented = true
     }
 }
 

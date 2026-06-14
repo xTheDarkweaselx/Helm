@@ -120,9 +120,63 @@ enum RosterImporter {
                            timeZoneIdentifier: timeZoneIdentifier, dateOrder: dateOrder)
     }
 
+    /// Decode a file's bytes into the normalized grid — sniffing the magic bytes,
+    /// not the extension (PK = .xlsx; D0CF11E0 = legacy .xls → friendly error;
+    /// else UTF-8/CP1252/Latin-1 text → CSV). Retained so a detection failure can
+    /// fall back to manual column mapping instead of dead-ending.
+    nonisolated static func grid(
+        data: Data,
+        sourceName: String,
+        timeZoneIdentifier: String = TimeZone.current.identifier
+    ) throws -> SpreadsheetGrid {
+        let decoded: SpreadsheetGrid
+        if data.starts(with: [0x50, 0x4B]) {
+            do { decoded = try XLSXGridLoader.load(data: data, timeZoneIdentifier: timeZoneIdentifier) }
+            catch { throw RosterImportError.couldNotReadFile }
+        } else if data.starts(with: [0xD0, 0xCF, 0x11, 0xE0]) {
+            throw RosterImportError.legacyXLS
+        } else {
+            let text = (String(data: data, encoding: .utf8)
+                        ?? String(data: data, encoding: .windowsCP1252)
+                        ?? String(data: data, encoding: .isoLatin1)
+                        ?? String(decoding: data, as: UTF8.self))
+                .replacingOccurrences(of: "\u{FEFF}", with: "")
+            decoded = CSVParser.parse(text, sheetName: sourceName)
+        }
+        // A workbook whose only sheet failed to decode yields zero sheets — that's
+        // a read failure, NOT a mapping fallback (the mapper must never receive an
+        // empty grid, or it would index sheets[-1]).
+        guard !decoded.sheets.isEmpty else { throw RosterImportError.couldNotReadFile }
+        return decoded
+    }
+
+    /// Resolve a single sheet with a USER-SUPPLIED column mapping (the manual
+    /// "never dead-end" fallback). `.auto` order infers from the date column.
+    nonisolated static func resolveManual(
+        grid: SpreadsheetGrid,
+        sheetIndex: Int,
+        mapping: ListColumnMapping,
+        sourceName: String,
+        legend: MergedLegend,
+        timeZoneIdentifier: String = TimeZone.current.identifier,
+        dateOrder: RosterDateParser.Order
+    ) -> RosterImportResult {
+        guard grid.sheets.indices.contains(sheetIndex) else {
+            return RosterImportResult(drafts: [], sourceName: sourceName, unmappedCodes: [], parsed: [])
+        }
+        let sheet = grid.sheets[sheetIndex]
+        let order: RosterDateParser.Order = dateOrder == .auto
+            ? RosterDateParser.inferOrder(from: dateSamples(sheet: sheet, mapping: mapping))
+            : dateOrder
+        let parsed = ListLayoutInterpreter.interpret(
+            sheet: sheet, mapping: mapping, timeZoneIdentifier: timeZoneIdentifier, dateOrder: order
+        )
+        return makeResult(parsed: parsed, sourceName: sourceName, legend: legend)
+    }
+
     /// Shared: pick the first sheet with a detectable roster layout, interpret it,
     /// and resolve drafts (so multi-sheet workbooks just work).
-    nonisolated private static func resolve(
+    nonisolated static func resolve(
         grid: SpreadsheetGrid,
         sourceName: String,
         legend: MergedLegend,
