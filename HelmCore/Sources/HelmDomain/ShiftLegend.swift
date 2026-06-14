@@ -238,6 +238,108 @@ public enum CompositeShiftCode {
     }
 }
 
+/// A prefill guess for an UNKNOWN code, surfaced in the review panel so the user
+/// confirms one tap instead of typing a blind 09:00–17:00. Never auto-written.
+public struct CodeSuggestion: Sendable, Equatable {
+    public enum Confidence: String, Sendable, Equatable { case high, medium, low }
+    public let startMinute: Int
+    /// Effective end (may exceed 1440 for an overnight suggestion).
+    public let endMinute: Int
+    public let label: String?
+    public let confidence: Confidence
+    /// Short human reason ("Spans M + A", "Common ‘Night’ shift").
+    public let reason: String
+
+    public init(startMinute: Int, endMinute: Int, label: String?, confidence: Confidence, reason: String) {
+        self.startMinute = startMinute
+        self.endMinute = endMinute
+        self.label = label
+        self.confidence = confidence
+        self.reason = reason
+    }
+}
+
+/// Guesses sensible times for an unknown code (composite span → common-UK
+/// starter library → semantic hint → 9–5 fallback). PURE: the panel turns the
+/// result into an editable prefill; nothing here is ever written without consent.
+public enum UnknownCodeSuggester {
+    private static func e(_ code: String, _ label: String, _ s: Int, _ end: Int) -> ShiftLegendEntry {
+        ShiftLegendEntry(code: code, label: label, startMinute: s, endMinute: end)
+    }
+    private static let h = 60
+
+    /// Common UK shift codes → typical hours. PREFILL ONLY — generic guesses
+    /// must never silently override an employer's real legend.
+    public static let starterLibrary: [String: ShiftLegendEntry] = [
+        "E":     e("E", "Early",     6*h,        14*h),
+        "ED":    e("ED", "Early day", 7*h,       15*h),
+        "EARLY": e("EARLY", "Early", 6*h,        14*h),
+        "L":     e("L", "Late",      14*h,       22*h),
+        "LATE":  e("LATE", "Late",   14*h,       22*h),
+        "LD":    e("LD", "Long day", 7*h,        19*h + 30),
+        "D":     e("D", "Day",       9*h,        17*h),
+        "DAY":   e("DAY", "Day",     9*h,        17*h),
+        "N":     e("N", "Night",     22*h,       6*h + 1440), // overnight
+        "NIGHT": e("NIGHT", "Night", 22*h,       6*h + 1440),
+        "TWILIGHT": e("TWILIGHT", "Twilight", 17*h, 22*h),
+        "TWI":   e("TWI", "Twilight", 17*h,      22*h),
+    ]
+
+    public static func suggest(for normalizedCode: String, legend: MergedLegend) -> CodeSuggestion {
+        let code = normalizedCode
+
+        // 1) Composite (M/A, E/L) where every part is known → the spanning range.
+        // Only when the result is a PLAUSIBLE single block: no overnight part and
+        // ≤16h, so an early+night ("E/N") doesn't yield a confident 24h shift.
+        let parts = CompositeShiftCode.split(code)
+        if parts.count >= 2 {
+            let resolved: [ShiftLegendEntry] = parts.compactMap { part in
+                if case let .timed(entry)? = legend.resolution(for: part) { return entry }
+                return starterLibrary[part]
+            }
+            if resolved.count == parts.count,
+               !resolved.contains(where: { $0.endMinute > 1440 }),
+               let span = CompositeShiftCode.spanningSuggestion(parts: resolved),
+               span.endMinute - span.startMinute <= 16 * h {
+                return CodeSuggestion(startMinute: span.startMinute, endMinute: span.endMinute,
+                                      label: parts.joined(separator: " + "),
+                                      confidence: .high, reason: "Spans \(parts.joined(separator: " + "))")
+            }
+        }
+
+        // 2) Common UK starter code (exact, then annotation-stripped).
+        if let s = starterLibrary[code] ?? starterLibrary[ShiftCodeNormalizer.stripAnnotation(code)] {
+            return CodeSuggestion(startMinute: s.startMinute, endMinute: s.endMinute, label: s.label,
+                                  confidence: .medium, reason: "Common ‘\(s.label ?? code)’ shift")
+        }
+
+        // 3) Semantic hint from the code text.
+        if let hint = semanticHint(code) { return hint }
+
+        // 4) Fallback — a flagged guess the user is expected to correct.
+        return CodeSuggestion(startMinute: 9*h, endMinute: 17*h, label: nil,
+                              confidence: .low, reason: "Default 9–5 — please confirm")
+    }
+
+    /// Word-aware hints only — NOT single-letter prefixes, which mis-fired badly
+    /// ("AM" → afternoon, "EXTRA" → early, "ANNUAL" → afternoon). A code with no
+    /// recognisable word falls through to the flagged 9–5 default instead.
+    private static func semanticHint(_ code: String) -> CodeSuggestion? {
+        func has(_ needles: [String]) -> Bool { needles.contains { code.contains($0) } }
+        func hint(_ s: Int, _ end: Int, _ label: String, _ why: String) -> CodeSuggestion {
+            CodeSuggestion(startMinute: s, endMinute: end, label: label, confidence: .low, reason: why)
+        }
+        if has(["NIGHT", "NOCT"])                       { return hint(22*h, 6*h + 1440, "Night", "Looks like a night shift") }
+        if has(["TWILIGHT", "EVENING"])                 { return hint(17*h, 22*h, "Twilight", "Looks like an evening shift") }
+        if has(["LONG DAY", "LONGDAY"])                 { return hint(7*h, 19*h + 30, "Long day", "Looks like a long day") }
+        if code == "AM" || has(["MORNING", "MORN"])     { return hint(6*h + 30, 13*h + 30, "Morning", "Looks like a morning shift") }
+        if code == "PM" || has(["AFTERNOON", "AFTNOON"]) { return hint(13*h + 30, 22*h, "Afternoon", "Looks like an afternoon shift") }
+        if has(["EARLY", "EARLIES"])                    { return hint(6*h, 14*h, "Early", "Looks like an early shift") }
+        if has(["LATE", "LATES"])                       { return hint(14*h, 22*h, "Late", "Looks like a late shift") }
+        return nil
+    }
+}
+
 /// The always-visible import contract: per-outcome counts, never a silent drop.
 public struct ImportHealth: Sendable, Equatable {
     public let written: Int

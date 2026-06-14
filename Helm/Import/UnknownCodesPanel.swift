@@ -59,7 +59,7 @@ struct UnknownCodesPanel: View {
                     code: code,
                     occurrences: result.drafts.filter { $0.code == code }.count,
                     sampleTitle: result.drafts.first { $0.code == code && $0.title != nil }?.title,
-                    spanningSuggestion: spanningSuggestion(for: code),
+                    suggestion: suggestion(for: code),
                     existingTypes: allTypes.filter { $0.code?.isEmpty == false },
                     onLearn: { onLearn(code, $0) }
                 )
@@ -72,18 +72,12 @@ struct UnknownCodesPanel: View {
         .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
     }
 
-    /// "M/A"-style composites: a confirm-first prefill spanning both parts.
-    private func spanningSuggestion(for code: String) -> (start: Int, end: Int)? {
-        let parts = CompositeShiftCode.split(code)
-        guard !parts.isEmpty else { return nil }
+    /// A smart, reasoned time prefill for an unknown code — composite span,
+    /// common-UK starter library, semantic hint, or a flagged 9–5 default. Always
+    /// returns something so every code opens with a one-tap suggestion to confirm.
+    private func suggestion(for code: String) -> CodeSuggestion {
         let legend = LegendBuilder.legend(forSourceName: result.sourceName, in: modelContext)
-        var entries: [ShiftLegendEntry] = []
-        for part in parts {
-            guard case let .timed(entry)? = legend.resolution(for: part) else { return nil }
-            entries.append(entry)
-        }
-        guard let span = CompositeShiftCode.spanningSuggestion(parts: entries) else { return nil }
-        return (span.startMinute, span.endMinute)
+        return UnknownCodeSuggester.suggest(for: code, legend: legend)
     }
 }
 
@@ -91,7 +85,7 @@ private struct UnknownCodeRow: View {
     let code: String
     let occurrences: Int
     let sampleTitle: String?
-    let spanningSuggestion: (start: Int, end: Int)?
+    let suggestion: CodeSuggestion
     let existingTypes: [ShiftType]
     let onLearn: (LegendBuilder.LearnAction) -> Void
 
@@ -128,12 +122,16 @@ private struct UnknownCodeRow: View {
                         }
                     }
                 case .newTimed:
-                    if let suggestion = spanningSuggestion {
-                        Button("Use \(hhmm(suggestion.start))–\(hhmm(suggestion.end)) (spans \(CompositeShiftCode.split(code).joined(separator: " + ")))") {
-                            applyPrefill(suggestion)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Button("Use \(hhmm(suggestion.startMinute))–\(hhmm(suggestion.endMinute))\(suggestion.label.map { " · \($0)" } ?? "")") {
+                            applyPrefill((suggestion.startMinute, suggestion.endMinute))
+                            if label.isEmpty, let l = suggestion.label { label = l }
                         }
                         .font(.caption)
                         .buttonStyle(.bordered)
+                        Label(suggestion.reason, systemImage: confidenceIcon)
+                            .font(.caption2)
+                            .foregroundStyle(confidenceColor)
                     }
                     TextField("Label (e.g. Late)", text: $label)
                     HStack {
@@ -168,10 +166,24 @@ private struct UnknownCodeRow: View {
             }
         }
         .onAppear {
-            if existingTypes.isEmpty == false && spanningSuggestion == nil { mode = .newTimed }
-            if let suggestion = spanningSuggestion {
-                applyPrefill(suggestion)
-            }
+            mode = .newTimed
+            applyPrefill((suggestion.startMinute, suggestion.endMinute))
+            if label.isEmpty, let l = suggestion.label { label = l }
+        }
+    }
+
+    private var confidenceIcon: String {
+        switch suggestion.confidence {
+        case .high: "checkmark.circle.fill"
+        case .medium: "sparkles"
+        case .low: "questionmark.circle"
+        }
+    }
+    private var confidenceColor: Color {
+        switch suggestion.confidence {
+        case .high: .green
+        case .medium: .secondary
+        case .low: .orange
         }
     }
 

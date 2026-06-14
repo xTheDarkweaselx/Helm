@@ -52,6 +52,33 @@ public enum RosterDateParser {
         return date
     }
 
+    /// Infer the most likely order for a whole COLUMN of date strings by tallying
+    /// unambiguous evidence across rows (a part 13…31 forces the day position; a
+    /// 4-digit first part forces ISO year-first). Deliberately HARD to move off
+    /// the UK day-first default so one typo or stray cell can't flip a whole
+    /// column (May↔June corruption): a non-default order needs a QUORUM (≥2
+    /// decisive votes), a clear plurality, and — for month-first — zero
+    /// contradicting day-first evidence. Only real 4-digit-year dates vote, so
+    /// stray times/totals in the column are ignored.
+    public static func inferOrder(from samples: [String]) -> Order {
+        var dayFirst = 0, monthFirst = 0, iso = 0
+        for raw in samples {
+            let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                .split(whereSeparator: { "/-. ".contains($0) }).map(String.init)
+            guard parts.count == 3, let n0 = Int(parts[0]), let n1 = Int(parts[1]), let n2 = Int(parts[2]) else { continue }
+            // ISO: 4-digit year first (e.g. 2026-06-14).
+            if parts[0].count == 4, (1900...2100).contains(n0) { iso += 1; continue }
+            // Day/month-first: require a real 4-digit year last, so a time like
+            // "06.30.00" or a "1/2" note can't masquerade as a date vote.
+            guard parts[2].count == 4, (1900...2100).contains(n2) else { continue }
+            if n0 > 12, n0 <= 31 { dayFirst += 1 }
+            else if n1 > 12, n1 <= 31 { monthFirst += 1 }
+        }
+        if iso >= 2, iso > dayFirst, iso > monthFirst { return .iso }
+        if monthFirst >= 2, dayFirst == 0, monthFirst > iso { return .monthFirst }
+        return .dayFirst
+    }
+
     private static func resolvedOrder(_ order: Order, n0: Int, n1: Int, n2: Int) -> Order {
         guard order == .auto else { return order }
         if n0 > 31 { return .iso }       // 2026-06-14

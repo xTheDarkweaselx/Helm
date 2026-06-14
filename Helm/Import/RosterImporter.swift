@@ -135,15 +135,30 @@ enum RosterImporter {
         for sheet in grid.sheets {
             guard let mapping = ListLayoutDetector.detect(sheet: sheet) else { continue }
             sawMapping = true
+            // Smart date order: when the caller left the default (.dayFirst), infer
+            // the column's true order so a US mm/dd or ISO file stops silently
+            // landing on the wrong day. An explicit non-default order is respected.
+            let effectiveOrder = dateOrder == .dayFirst
+                ? RosterDateParser.inferOrder(from: dateSamples(sheet: sheet, mapping: mapping))
+                : dateOrder
             let parsed = ListLayoutInterpreter.interpret(
                 sheet: sheet, mapping: mapping,
-                timeZoneIdentifier: timeZoneIdentifier, dateOrder: dateOrder
+                timeZoneIdentifier: timeZoneIdentifier, dateOrder: effectiveOrder
             )
             if !parsed.isEmpty {
                 return makeResult(parsed: parsed, sourceName: sourceName, legend: legend)
             }
         }
         throw sawMapping ? RosterImportError.noRows : RosterImportError.noColumnsDetected
+    }
+
+    /// The date-column cell strings (rows below the header), for order inference.
+    nonisolated private static func dateSamples(sheet: Sheet, mapping: ListColumnMapping) -> [String] {
+        let lastRow = sheet.rowCount - 1
+        guard lastRow >= mapping.headerRowCount else { return [] }
+        return (mapping.headerRowCount...lastRow).compactMap {
+            sheet.cell(CellReference(column: mapping.dateColumn, row: $0))?.text
+        }
     }
 
     /// Pure re-resolution over a result's retained rows — the review panel
@@ -175,25 +190,25 @@ enum RosterImporter {
                 continue
             }
 
-            // 2) Sentinels: OFF / tentative produce no event.
-            if ShiftCodeNormalizer.isOff(shift.normalizedCode) {
-                drafts.append(draft(for: shift, label: "Off", startMinute: nil, endMinute: nil, resolved: nil, outcome: .skippedOff)); continue
-            }
-            if ShiftCodeNormalizer.isTentative(shift.normalizedCode) {
-                // ALL-DAY event, not a silent skip: midnight-to-midnight in the
-                // shift's zone (internal inclusive-day convention; exporters add
-                // the exclusive +1 themselves).
+            // A trailing note ("M (training)", "OFF*") shouldn't make a known code
+            // unknown — match against the stripped form as a fallback.
+            let code = shift.normalizedCode
+            let stripped = ShiftCodeNormalizer.stripAnnotation(code)
+
+            func allDayDraft(label: String?) {
                 var dayCal = Calendar(identifier: .gregorian)
                 dayCal.timeZone = tz
                 let dayStart = dayCal.startOfDay(for: shift.localDate)
-                drafts.append(draft(for: shift, label: "TBC", startMinute: nil, endMinute: nil,
+                drafts.append(draft(for: shift, label: label, startMinute: nil, endMinute: nil,
                                     resolved: nil, outcome: .willWrite,
                                     allDay: (start: dayStart, end: dayStart)))
-                continue
             }
 
-            // 3) Legend lookup (merged: built-ins < global types < learned).
-            switch legend.resolution(for: shift.normalizedCode) {
+            // 2) An EXPLICIT legend mapping (learned > global > built-in), exact
+            // then annotation-stripped, WINS over the conventional sentinels — so a
+            // user who maps an off-looking code (e.g. "X") to a real shift is
+            // honoured rather than silently dropped as an off day.
+            switch legend.resolution(for: code) ?? legend.resolution(for: stripped) {
             case let .timed(entry):
                 let resolved = ShiftTimeResolver.resolve(
                     localDay: shift.localDate,
@@ -203,17 +218,23 @@ enum RosterImporter {
                 )
                 drafts.append(draft(for: shift, label: entry.label, startMinute: entry.startMinute, endMinute: entry.endMinute, resolved: resolved, outcome: resolved == nil ? .skippedUnmapped : .willWrite, breakMinutes: entry.breakMinutes, shiftTypeID: entry.shiftTypeID))
             case let .allDay(label):
-                var dayCal = Calendar(identifier: .gregorian)
-                dayCal.timeZone = tz
-                let dayStart = dayCal.startOfDay(for: shift.localDate)
-                drafts.append(draft(for: shift, label: label ?? shift.normalizedCode, startMinute: nil, endMinute: nil,
-                                    resolved: nil, outcome: .willWrite,
-                                    allDay: (start: dayStart, end: dayStart)))
+                allDayDraft(label: label ?? code)
             case .ignore:
                 drafts.append(draft(for: shift, label: nil, startMinute: nil, endMinute: nil, resolved: nil, outcome: .skippedByRule))
             case nil:
-                unmapped.insert(shift.normalizedCode)
-                drafts.append(draft(for: shift, label: nil, startMinute: nil, endMinute: nil, resolved: nil, outcome: .skippedUnmapped))
+                // 3) No explicit mapping → conventional fallbacks: OFF (no event),
+                // then tentative (all-day TBC), then a known leave/holiday code
+                // (all-day), else surfaced as unknown — never a silent drop.
+                if ShiftCodeNormalizer.isOff(code) || ShiftCodeNormalizer.isOff(stripped) {
+                    drafts.append(draft(for: shift, label: "Off", startMinute: nil, endMinute: nil, resolved: nil, outcome: .skippedOff))
+                } else if ShiftCodeNormalizer.isTentative(code) || ShiftCodeNormalizer.isTentative(stripped) {
+                    allDayDraft(label: "TBC")
+                } else if let leave = ShiftCodeNormalizer.leaveLabel(code) {
+                    allDayDraft(label: leave)
+                } else {
+                    unmapped.insert(code)
+                    drafts.append(draft(for: shift, label: nil, startMinute: nil, endMinute: nil, resolved: nil, outcome: .skippedUnmapped))
+                }
             }
         }
 
