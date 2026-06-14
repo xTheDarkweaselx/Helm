@@ -39,6 +39,13 @@ struct SettingsForm: View {
     @AppStorage(GoogleConfig.signedInDefaultsKey) private var googleSignedIn: Bool = false
     @AppStorage(GoogleConfig.accountEmailDefaultsKey) private var googleEmail: String = ""
     @AppStorage("hourlyRate") private var hourlyRate: Double = 0
+    // v7.6: App Lock + wake-up alarms (both iOS only).
+    #if os(iOS)
+    @AppStorage(AppLockSetting.enabledKey) private var requireAppLock: Bool = false
+    @AppStorage(ShiftAlarmSetting.enabledKey) private var shiftAlarmsEnabled: Bool = false
+    @AppStorage(ShiftAlarmSetting.leadMinutesKey) private var shiftAlarmLead: Int = ShiftAlarmSetting.defaultLeadMinutes
+    @Environment(\.modelContext) private var modelContext
+    #endif
     @Query private var importProfiles: [ImportProfile]
 
     @State private var isSigningIn = false
@@ -58,6 +65,12 @@ struct SettingsForm: View {
     /// Rosters whose events currently live in Google (sign-out makes them unmanageable).
     private var googleRosterCount: Int {
         importProfiles.filter { $0.targets.contains(.google) }.count
+    }
+    /// Human label for an alarm lead time, e.g. "30 min", "1 hr", "1.5 hr".
+    private func leadLabel(_ minutes: Int) -> String {
+        if minutes < 60 { return "\(minutes) min" }
+        let hours = Double(minutes) / 60
+        return hours == hours.rounded() ? "\(Int(hours)) hr" : String(format: "%.1f hr", hours)
     }
 
     var body: some View {
@@ -120,6 +133,51 @@ struct SettingsForm: View {
             } footer: {
                 Text("Optional. Set a flat hourly rate and Overview shows an estimated-pay card (hours × rate, before tax). 0 hides it.")
             }
+
+            #if os(iOS)
+            Section {
+                Toggle("Require \(AppLockSetting.biometryLabel)", isOn: $requireAppLock)
+                    .disabled(!AppLockSetting.canAuthenticate)
+            } header: {
+                Text("App Lock")
+            } footer: {
+                if AppLockSetting.canAuthenticate {
+                    Text("Lock Helm with \(AppLockSetting.biometryLabel) (or your device passcode) on launch and when you return to it, so only you can open your schedule.")
+                } else {
+                    Text("Set up Face ID, Touch ID, or a device passcode first to lock Helm.")
+                }
+            }
+
+            // Wake-up alarms use AlarmKit (iOS 26+); the Section hides itself on
+            // older systems rather than presenting a toggle that does nothing.
+            if #available(iOS 26.0, *) {
+                Section {
+                    Toggle("Wake me up for shifts", isOn: $shiftAlarmsEnabled)
+                    if shiftAlarmsEnabled {
+                        Picker("Alarm before shift", selection: $shiftAlarmLead) {
+                            ForEach(ShiftAlarmSetting.leadChoices, id: \.self) { mins in
+                                Text(leadLabel(mins)).tag(mins)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Wake-up alarms")
+                } footer: {
+                    Text("Sets a real alarm \(leadLabel(shiftAlarmLead)) before each upcoming timed shift. Like a Clock alarm it rings through Silent mode and Focus — including Sleep. Apple doesn't let apps change your Sleep schedule's wake-up alarm, so this is Helm's own alarm.")
+                }
+                .onChange(of: shiftAlarmsEnabled) { _, on in
+                    if on {
+                        SnapshotWriter.refresh(context: modelContext)
+                    } else {
+                        Task { await ShiftAlarmScheduler.shared.cancelAll() }
+                    }
+                }
+                .onChange(of: shiftAlarmLead) { _, _ in
+                    UserDefaults.standard.removeObject(forKey: ShiftAlarmSetting.signatureKey)
+                    SnapshotWriter.refresh(context: modelContext)
+                }
+            }
+            #endif
 
             ThemePickerSection()
 

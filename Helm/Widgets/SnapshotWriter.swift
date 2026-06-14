@@ -49,6 +49,15 @@ enum SnapshotWriter {
             // activated — activation is async, and the next refresh catches up.
             WatchBridge.shared.activate()
             WatchBridge.shared.push(snapshotData: data)
+            // v7.6: keep "wake me up for my shift" alarms in step with the live
+            // shifts. Diffs internally, so foregrounding doesn't churn alarms.
+            #if canImport(AlarmKit)
+            if ShiftAlarmSetting.isEnabled, #available(iOS 26.0, *) {
+                let lead = ShiftAlarmSetting.leadMinutes
+                let alarmInputs = inputs
+                Task.detached { await ShiftAlarmScheduler.shared.reschedule(from: alarmInputs, leadMinutes: lead) }
+            }
+            #endif
             #endif
         }
         LiveActivityController.sync(current: snapshot.current)

@@ -31,19 +31,20 @@ struct HelmApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-            #if os(macOS)
-                // Liquid Glass window: the same ultra-thin frost as ever, with
-                // the active theme's wash composited over it (Default = no wash
-                // = byte-identical). The Liquid Glass sidebar samples this, so
-                // it tints with the theme for free.
-                // ORDER MATTERS: .helmThemed must stay OUTSIDE/AFTER this —
-                // its environment feeds the containerBackground closure; moved
-                // inside, every theme silently loses its window wash.
-                .containerBackground(for: .window) { ThemedWindowBackground() }
-            #endif
-                .helmThemed(theme)
-                .environment(SyncProgress.shared)
+            // v7.6: optional Face ID / passcode gate — a no-op unless the user
+            // turns on App Lock in Settings.
+            AppLockGate {
+                ContentView()
+                #if os(macOS)
+                    // Liquid Glass window: the active theme's wash over frost.
+                    // ORDER MATTERS: .helmThemed must stay OUTSIDE/AFTER this —
+                    // its environment feeds the containerBackground closure; moved
+                    // inside, every theme silently loses its window wash.
+                    .containerBackground(for: .window) { ThemedWindowBackground() }
+                #endif
+                    .helmThemed(theme)
+                    .environment(SyncProgress.shared)
+            }
         }
         .modelContainer(modelContainer)
         #if os(macOS)
