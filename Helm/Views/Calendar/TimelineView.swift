@@ -305,6 +305,7 @@ private struct TimelineBlockView: View {
         VStack(alignment: .leading, spacing: 1) {
             if placed.continuesBefore {
                 Image(systemName: "arrow.up").font(.system(size: 7)).foregroundStyle(.secondary)
+                    .accessibilityHidden(true) // decorative; the title/times carry the meaning
             }
             Text(block.title)
                 .font(.caption2.weight(block.isEvent ? .regular : .semibold))
@@ -314,6 +315,7 @@ private struct TimelineBlockView: View {
             Spacer(minLength: 0)
             if placed.continuesAfter {
                 Image(systemName: "arrow.down").font(.system(size: 7)).foregroundStyle(.secondary)
+                    .accessibilityHidden(true) // decorative; the title/times carry the meaning
             }
         }
         .padding(3)

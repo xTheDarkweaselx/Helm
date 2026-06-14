@@ -442,11 +442,12 @@ private struct ShiftRow: View {
                     .foregroundStyle(.secondary)
                 if endsOnLaterDay(start, end) {
                     Text("+1")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.caption2.weight(.bold)) // relative → scales with Dynamic Type
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
                         .background(typeColor.opacity(0.18), in: Capsule())
                         .foregroundStyle(typeColor)
+                        .accessibilityLabel("Ends the next day")
                 }
             }
         } else if instance.shiftType?.workKind == .off {

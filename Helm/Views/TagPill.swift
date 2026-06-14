@@ -18,7 +18,8 @@ struct TagPill: View {
     var body: some View {
         let color = Color(hex: colorHex) ?? .secondary
         Text(text)
-            .font(compact ? .system(size: 9, weight: .semibold) : .caption2.weight(.medium))
+            // Relative font (not a fixed 9pt) so tags scale with Dynamic Type.
+            .font(.caption2.weight(compact ? .semibold : .medium))
             .lineLimit(1)
             .padding(.horizontal, compact ? 5 : 7)
             .padding(.vertical, compact ? 1 : 2)
