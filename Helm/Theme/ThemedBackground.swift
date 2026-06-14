@@ -32,20 +32,14 @@ enum ThemeWashStrength {
 /// for free — no sidebar-specific code (and never .scrollContentBackground
 /// (.hidden) there: it would strip the vibrancy material).
 struct ThemedWindowBackground: View {
-    @Environment(\.helmBackgroundTop) private var top
-    @Environment(\.helmBackgroundBottom) private var bottom
-    @Environment(\.colorScheme) private var scheme
-
     var body: some View {
+        // Frost ONLY — the base Liquid Glass. The wash is carried by the panes and
+        // the sidebar (each adopts .themedPane()), so painting it here too would
+        // DOUBLE the wash: the live theme came out heavier than the single-wash
+        // preview, and the inactive-window desaturation hit two material layers
+        // (the "darkened tint when the window loses focus" report). One wash now.
         Rectangle()
             .fill(.ultraThinMaterial)
-            .overlay {
-                if let top, let bottom {
-                    LinearGradient(colors: [top, bottom], startPoint: .topLeading, endPoint: .bottomTrailing)
-                        .opacity(ThemeWashStrength.window(scheme))
-                        .allowsHitTesting(false)
-                }
-            }
             .ignoresSafeArea()
     }
 }
@@ -88,25 +82,41 @@ struct ThemedPaneBackground: ViewModifier {
     #endif
 
     func body(content: Content) -> some View {
+        #if os(macOS)
+        // A grouped Form/List canvas is OPAQUE system grey/white on macOS, so for
+        // grouped panes ALWAYS hide it and supply our own frost — otherwise the
+        // Default (no-wash) theme shows a SOLID pane instead of the glass window
+        // (the Settings-looks-solid bug). Plain panes stay a true Default no-op
+        // (transparent → the window frost shows through), painting only when washed.
+        let needsCanvas = base == .grouped || washTop != nil
+        content
+            .scrollContentBackground(needsCanvas ? .hidden : .automatic)
+            .background {
+                if needsCanvas {
+                    ZStack {
+                        Rectangle().fill(.ultraThinMaterial) // the loved Liquid Glass frost
+                        if let top = washTop, let bottom {
+                            LinearGradient(colors: [top, bottom], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                .opacity(washOpacity)
+                        }
+                    }
+                    .ignoresSafeArea()
+                }
+            }
+        #else
         content
             .scrollContentBackground(washTop == nil ? .automatic : .hidden)
             .background {
                 if let top = washTop, let bottom {
                     ZStack {
-                        #if os(macOS)
-                        // Liquid Glass: the wash sits OVER the frost (kept — the
-                        // theme's look matches the preview; legibility is handled by
-                        // adapting the TEXT colour to the wash, see ThemeManager).
-                        Rectangle().fill(.ultraThinMaterial)
-                        #else
                         (base == .grouped ? Color(.systemGroupedBackground) : Color(.systemBackground))
-                        #endif
                         LinearGradient(colors: [top, bottom], startPoint: .topLeading, endPoint: .bottomTrailing)
                             .opacity(washOpacity)
                     }
                     .ignoresSafeArea()
                 }
             }
+        #endif
     }
 }
 
