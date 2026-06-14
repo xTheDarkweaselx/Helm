@@ -29,7 +29,13 @@ struct ColumnMappingView: View {
     @State private var locationCol: Int?
     @State private var dateOrder: RosterDateParser.Order = .auto
 
-    private var sheet: Sheet { grid.sheets[min(sheetIndex, grid.sheets.count - 1)] }
+    // `body` only builds `mapper` (the sole user of `sheet`) when sheets is
+    // non-empty, and RosterImporter.grid() rejects an empty grid — but never
+    // subscript sheets[-1]: clamp to a valid index and fall back to an empty sheet.
+    private var sheet: Sheet {
+        guard !grid.sheets.isEmpty else { return Sheet(name: "", cells: [:]) }
+        return grid.sheets[min(max(sheetIndex, 0), grid.sheets.count - 1)]
+    }
     private var columnIndices: [Int] { Array(0..<max(sheet.columnCount, 1)) }
 
     private var mapping: ListColumnMapping? {
