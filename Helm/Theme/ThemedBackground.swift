@@ -51,12 +51,19 @@ struct ThemedWindowBackground: View {
 }
 #endif
 
-/// iOS/iPadOS pane theming: hides the system scroll background ONLY when a
+/// Pane theming (both platforms): hides the system scroll background ONLY when a
 /// wash exists (`.automatic` is the framework default, so Default themes are a
-/// true no-op AND view identity stays stable across theme switches — no
-/// ViewBuilder branch around the content), then paints the wash over the
-/// appropriate system base. Cell/row backgrounds stay system — only the canvas
-/// behind them is themed, which is what keeps grouped forms legible.
+/// true no-op AND view identity stays stable across theme switches), then paints
+/// the wash over a glass/system base so the surface reads as the theme hue —
+/// matching the picker preview. Cell/row backgrounds stay system; only the canvas
+/// behind them is themed, which keeps grouped forms legible.
+///
+/// macOS: the canvas is `.ultraThinMaterial` (the loved Liquid Glass frost) with
+/// the wash composited OVER it — so the sidebar and every pane that adopts this
+/// finally carry the theme colour instead of staying system-grey, WITHOUT losing
+/// the glass. v7.1's "let the sidebar sample the window wash" was invisible once
+/// an opaque Form/list canvas covered that wash; painting the wash on the canvas
+/// itself is what the preview always promised.
 struct ThemedPaneBackground: ViewModifier {
     enum Base {
         case grouped // List/Form canvases (systemGroupedBackground)
@@ -74,17 +81,28 @@ struct ThemedPaneBackground: ViewModifier {
 
     private var washTop: Color? { active ? top : nil }
 
+    #if os(macOS)
+    private var washOpacity: Double { ThemeWashStrength.window(scheme) }
+    #else
+    private var washOpacity: Double { ThemeWashStrength.pane(scheme) }
+    #endif
+
     func body(content: Content) -> some View {
         content
             .scrollContentBackground(washTop == nil ? .automatic : .hidden)
             .background {
                 if let top = washTop, let bottom {
                     ZStack {
-                        #if os(iOS)
+                        #if os(macOS)
+                        // Liquid Glass: the wash sits OVER the frost (kept — the
+                        // theme's look matches the preview; legibility is handled by
+                        // adapting the TEXT colour to the wash, see ThemeManager).
+                        Rectangle().fill(.ultraThinMaterial)
+                        #else
                         (base == .grouped ? Color(.systemGroupedBackground) : Color(.systemBackground))
                         #endif
                         LinearGradient(colors: [top, bottom], startPoint: .topLeading, endPoint: .bottomTrailing)
-                            .opacity(ThemeWashStrength.pane(scheme))
+                            .opacity(washOpacity)
                     }
                     .ignoresSafeArea()
                 }
@@ -93,14 +111,10 @@ struct ThemedPaneBackground: ViewModifier {
 }
 
 extension View {
-    /// Adopt the theme wash on a pane root. Passthrough on macOS — there the
-    /// themed WINDOW background + Liquid Glass do the work for every pane.
-    @ViewBuilder
+    /// Adopt the theme wash on a pane/sidebar root — now active on macOS too, so
+    /// the chrome actually takes the theme colour (over Liquid Glass) the way the
+    /// picker preview shows, instead of staying system-grey.
     func themedPane(_ base: ThemedPaneBackground.Base = .grouped, active: Bool = true) -> some View {
-        #if os(macOS)
-        self
-        #else
         modifier(ThemedPaneBackground(base: base, active: active))
-        #endif
     }
 }

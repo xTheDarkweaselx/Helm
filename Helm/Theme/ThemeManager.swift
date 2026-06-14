@@ -45,8 +45,12 @@ final class ThemeManager {
     var backgroundTop: Color? { palette.backgroundTopHex.flatMap { Color(hex: $0) } }
     var backgroundBottom: Color? { palette.backgroundBottomHex.flatMap { Color(hex: $0) } }
 
+    /// The scheme the chrome renders under. Uses the wash-derived legible scheme
+    /// (so a dark-toned theme gets light text, a light one dark text) and only
+    /// falls back to the catalog scheme when there's no wash (Default = system).
+    /// The wash/glass appearance is unchanged — this just keeps text readable.
     var resolvedColorScheme: ColorScheme? {
-        switch palette.scheme {
+        switch palette.legibleScheme ?? palette.scheme {
         case .system: nil
         case .light: .light
         case .dark: .dark

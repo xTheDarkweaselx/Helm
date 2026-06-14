@@ -82,6 +82,36 @@ public struct ThemePalette: Sendable, Identifiable, Equatable, Codable {
     }
 }
 
+extension ThemePalette {
+    /// Perceived luminance (0–1) of the wash (mean of its two stops), or nil when
+    /// the theme has no wash.
+    public var washLuminance: Double? {
+        guard let a = backgroundTopHex.flatMap(Self.luminance(ofHex:)),
+              let b = backgroundBottomHex.flatMap(Self.luminance(ofHex:)) else { return nil }
+        return (a + b) / 2
+    }
+
+    /// The colour scheme this theme's CHROME should render under so its text stays
+    /// legible: a dark-toned wash wants light text (`.dark`), a light-toned wash
+    /// dark text (`.light`). nil when there's no wash → follow the catalog `scheme`
+    /// (e.g. Default = system). This only flips the TEXT/scheme — the wash colours
+    /// and glass are unchanged, so the theme's identity matches its preview card.
+    public var legibleScheme: ThemeScheme? {
+        guard let lum = washLuminance else { return nil }
+        return lum < 0.5 ? .dark : .light
+    }
+
+    private static func luminance(ofHex hex: String) -> Double? {
+        var s = hex
+        if s.hasPrefix("#") { s.removeFirst() }
+        guard s.count == 6, let v = UInt64(s, radix: 16) else { return nil }
+        let r = Double((v >> 16) & 0xFF) / 255
+        let g = Double((v >> 8) & 0xFF) / 255
+        let b = Double(v & 0xFF) / 255
+        return 0.299 * r + 0.587 * g + 0.114 * b
+    }
+}
+
 /// The fixed catalog of themes. Default first; at least five alternates spanning
 /// the four requested vibes (professional, vibrant, dark-first, seasonal).
 public enum ThemeCatalog {
@@ -128,6 +158,12 @@ public enum ThemeCatalog {
                      accentHex: "2E7D5B", secondaryHex: "8FB339", scheme: .system,
                      glassTintHex: "4F8C68",
                      backgroundTopHex: "3E7A5C", backgroundBottomHex: "7FA65A"),
+        // Light-green companion to Forest — a paler wash that stays a LIGHT
+        // appearance (its wash luminance keeps legibleScheme = .light, black text).
+        ThemePalette(id: "meadow", name: "Meadow", vibe: .seasonal,
+                     accentHex: "2E7D5B", secondaryHex: "8FB339", scheme: .light,
+                     glassTintHex: "7FB08C",
+                     backgroundTopHex: "A9D3B0", backgroundBottomHex: "CDE6B8"),
         ThemePalette(id: "aurora", name: "Aurora", vibe: .seasonal,
                      accentHex: "C84CC8", secondaryHex: "4CC8C8", scheme: .dark,
                      glassTintHex: "301C55",

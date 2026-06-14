@@ -82,7 +82,7 @@ private struct ThemePreviewCard: View {
     /// The card previews under the scheme the THEME would resolve to — a dark
     /// theme looks dark in a light app, and a .system theme follows the OS.
     private var isDarkPreview: Bool {
-        switch palette.scheme {
+        switch palette.legibleScheme ?? palette.scheme {
         case .dark: true
         case .light: false
         case .system: osIsDark

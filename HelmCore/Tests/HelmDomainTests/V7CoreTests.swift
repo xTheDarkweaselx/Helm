@@ -108,6 +108,16 @@ private func isHex6(_ s: String) -> Bool {
         }
     }
 
+    /// legibleScheme picks the text scheme from the wash tone (so a dark-toned
+    /// wash gets light text even on a nominally .system theme), nil with no wash.
+    @Test func legibleSchemeFollowsWashTone() {
+        #expect(ThemeCatalog.default.legibleScheme == nil) // no wash → follow catalog scheme
+        #expect(ThemeCatalog.palette(id: "midnight").legibleScheme == .dark)
+        #expect(ThemeCatalog.palette(id: "meadow").legibleScheme == .light)
+        #expect(ThemeCatalog.palette(id: "sunrise").legibleScheme == .light)
+        #expect(ThemeCatalog.palette(id: "forest").legibleScheme == .dark) // mid-dark wash → light text
+    }
+
     @Test func paletteCodableRoundTrips() throws {
         for palette in [ThemeCatalog.default, ThemeCatalog.palette(id: "midnight")] {
             let data = try JSONEncoder().encode(palette)

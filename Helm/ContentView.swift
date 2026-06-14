@@ -52,9 +52,21 @@ struct ContentView: View {
     @State private var scheduleAwaitingForcedDelete: Schedule?
     @Environment(\.scenePhase) private var scenePhase
     @Environment(SyncProgress.self) private var syncProgress
+    @Environment(ThemeManager.self) private var theme
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     #endif
+
+    /// Whether a sidebar row should read as selected (Calendar lights for ANY
+    /// calendar day; rosters/schedules match by id).
+    private func rowSelected(_ value: Selection) -> Bool {
+        switch (selection, value) {
+        case (.calendar, .calendar): return true
+        case let (.roster(a), .roster(b)): return a == b
+        case let (.schedule(a), .schedule(b)): return a == b
+        default: return selection == value
+        }
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -128,35 +140,63 @@ struct ContentView: View {
             #endif
     }
 
+    /// A sidebar nav row whose selection highlight follows the THEME accent on
+    /// macOS (the system otherwise paints a fixed system-blue pill that ignores
+    /// SwiftUI `.tint`). iOS keeps its native highlight (its tint already works).
+    /// Sidebar Label with the ICON pinned to the theme accent (or white when the
+    /// row is selected) — macOS otherwise paints sidebar icons system-blue and
+    /// ignores `.tint`/`.foregroundStyle` on the row. The title stays primary.
+    @ViewBuilder
+    private func sidebarLabel(_ title: String, _ icon: String, selected: Bool) -> some View {
+        Label {
+            Text(title)
+                #if os(macOS)
+                .foregroundStyle(selected ? Color.white : Color.primary)
+                #endif
+        } icon: {
+            Image(systemName: icon)
+                #if os(macOS)
+                .foregroundStyle(selected ? Color.white : theme.accent)
+                #endif
+        }
+    }
+
+    @ViewBuilder
+    private func navRow(_ value: Selection, _ title: String, _ icon: String) -> some View {
+        NavigationLink(value: value) {
+            sidebarLabel(title, icon, selected: rowSelected(value))
+        }
+        #if os(macOS)
+        .listRowBackground(rowSelected(value)
+            ? AnyView(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(theme.accent))
+            : AnyView(Color.clear))
+        #endif
+    }
+
     private var sidebarList: some View {
         List(selection: $selection) {
             Section {
-                NavigationLink(value: Selection.overview) {
-                    Label("Overview", systemImage: "rectangle.grid.2x2")
-                }
-                NavigationLink(value: Selection.calendar(nil)) {
-                    Label("Calendar", systemImage: "calendar")
-                }
-                NavigationLink(value: Selection.search) {
-                    Label("Search", systemImage: "magnifyingglass")
-                }
-                NavigationLink(value: Selection.shiftTypes) {
-                    Label("Shift Types", systemImage: "clock")
-                }
-                NavigationLink(value: Selection.planning) {
-                    Label("Planning", systemImage: "calendar.badge.clock")
-                }
-                NavigationLink(value: Selection.settings) {
-                    Label("Settings", systemImage: "gearshape")
-                }
+                navRow(.overview, "Overview", "rectangle.grid.2x2")
+                navRow(.calendar(nil), "Calendar", "calendar")
+                navRow(.search, "Search", "magnifyingglass")
+                navRow(.shiftTypes, "Shift Types", "clock")
+                navRow(.planning, "Planning", "calendar.badge.clock")
+                navRow(.settings, "Settings", "gearshape")
             }
 
             if !importedRosters.isEmpty {
                 Section("Rosters") {
                     ForEach(importedRosters) { roster in
                         NavigationLink(value: Selection.roster(roster.id)) {
-                            Label(roster.title ?? "Untitled roster", systemImage: "tablecells")
+                            sidebarLabel(roster.title ?? "Untitled roster", "tablecells",
+                                         selected: rowSelected(.roster(roster.id)))
                         }
+                        #if os(macOS)
+                        .listRowBackground(rowSelected(.roster(roster.id))
+                            ? AnyView(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(theme.accent))
+                            : AnyView(Color.clear))
+                        .foregroundStyle(rowSelected(.roster(roster.id)) ? Color.white : Color.primary)
+                        #endif
                     }
                 }
             }
@@ -165,8 +205,9 @@ struct ContentView: View {
                 Section("Schedules") {
                     ForEach(schedules) { schedule in
                         NavigationLink(value: Selection.schedule(schedule.id)) {
-                            Label(schedule.title?.isEmpty == false ? schedule.title! : "Untitled schedule",
-                                  systemImage: "slider.horizontal.below.square.filled.and.square")
+                            sidebarLabel(schedule.title?.isEmpty == false ? schedule.title! : "Untitled schedule",
+                                         "slider.horizontal.below.square.filled.and.square",
+                                         selected: rowSelected(.schedule(schedule.id)))
                         }
                         .swipeActions {
                             Button("Delete", systemImage: "trash", role: .destructive) {
@@ -179,11 +220,17 @@ struct ContentView: View {
                                 deleteSchedule(schedule)
                             }
                         }
+                        #if os(macOS)
+                        .listRowBackground(rowSelected(.schedule(schedule.id))
+                            ? AnyView(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(theme.accent))
+                            : AnyView(Color.clear))
+                        .foregroundStyle(rowSelected(.schedule(schedule.id)) ? Color.white : Color.primary)
+                        #endif
                     }
                 }
             }
         }
-        .themedPane() // v7.1 wash (iOS; passthrough on macOS — glass sidebar samples the window)
+        .themedPane()
         #if os(macOS)
         .listStyle(.sidebar)
         #endif
