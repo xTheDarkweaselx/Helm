@@ -9,6 +9,7 @@
 
 import SwiftUI
 import SwiftData
+import UniformTypeIdentifiers
 import HelmDomain
 import HelmCalendar // CalendarTarget.removeAll (MemberImportVisibility: the using file must import the defining module)
 
@@ -49,8 +50,12 @@ struct SettingsForm: View {
     @AppStorage(AppLockSetting.enabledKey) private var requireAppLock: Bool = false
     @AppStorage(ShiftAlarmSetting.enabledKey) private var shiftAlarmsEnabled: Bool = false
     @AppStorage(ShiftAlarmSetting.leadMinutesKey) private var shiftAlarmLead: Int = ShiftAlarmSetting.defaultLeadMinutes
-    @Environment(\.modelContext) private var modelContext
     #endif
+    // All-platform (data export needs it on macOS too). Named `dataContext`, not
+    // `modelContext`: a `modelContext` property on a View collides with the
+    // `View.modelContext(_:)` modifier and the bare name resolves to the
+    // (curried) modifier instead of this property.
+    @Environment(\.modelContext) private var dataContext
     @Query private var importProfiles: [ImportProfile]
 
     @State private var isSigningIn = false
@@ -60,6 +65,9 @@ struct SettingsForm: View {
     @State private var removeAllCandidate: CalendarTargetKind?
     @State private var isCleaningUp = false
     @State private var cleanupMessage: String?
+    /// Built once when "Export my data" is tapped (not on every render).
+    @State private var isExportingData = false
+    @State private var exportText = ""
 
     private var googleUsable: Bool { GoogleConfig.isConfigured && googleSignedIn }
     private var reminderOffsets: Set<Int> { Set(ReminderOffsets.parse(reminderOffsetsCSV)) }
@@ -189,14 +197,14 @@ struct SettingsForm: View {
                 }
                 .onChange(of: shiftAlarmsEnabled) { _, on in
                     if on {
-                        SnapshotWriter.refresh(context: modelContext)
+                        SnapshotWriter.refresh(context: dataContext)
                     } else {
                         Task { await ShiftAlarmScheduler.shared.cancelAll() }
                     }
                 }
                 .onChange(of: shiftAlarmLead) { _, _ in
                     UserDefaults.standard.removeObject(forKey: ShiftAlarmSetting.signatureKey)
-                    SnapshotWriter.refresh(context: modelContext)
+                    SnapshotWriter.refresh(context: dataContext)
                 }
             }
             #endif
@@ -205,16 +213,40 @@ struct SettingsForm: View {
 
             googleSection
 
+            dataSection
+
             cleanupSection
         }
         .formStyle(.grouped)
         .themedPane() // v7.1 wash (iOS; passthrough on macOS)
+        .fileExporter(isPresented: $isExportingData,
+                      document: JSONDataFile(text: exportText),
+                      contentType: .json,
+                      defaultFilename: "Helm data export") { _ in }
         // Run the legacy single-value migrations so the new keys exist before
         // the @AppStorage defaults mask them.
         .onAppear {
             _ = ReminderSetting.offsets
             _ = CalendarDestinationSetting.chosenKinds
         }
+    }
+
+    // MARK: - Data export (v8.2: GDPR data portability)
+
+    @ViewBuilder
+    private var dataSection: some View {
+        Section {
+            Button("Export my data…", systemImage: "square.and.arrow.up", action: exportData)
+        } header: {
+            Text("Your data")
+        } footer: {
+            Text("Saves everything in Helm — shift types, rosters and their shifts, schedules, time-off, availability and your preferences — as one JSON file you can keep or move elsewhere. Helm never sends your roster data anywhere; it stays on your device and in your private iCloud.")
+        }
+    }
+
+    private func exportData() {
+        exportText = (try? HelmDataExporter.export(from: dataContext).jsonString()) ?? ""
+        isExportingData = true
     }
 
     // MARK: - Cleanup (v4: delete everything Helm created in a calendar)
@@ -388,5 +420,18 @@ struct SettingsForm: View {
                 authMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             }
         }
+    }
+}
+
+/// Minimal JSON document for the data export's `.fileExporter`.
+struct JSONDataFile: FileDocument {
+    static var readableContentTypes: [UTType] { [.json] }
+    var text: String
+    init(text: String) { self.text = text }
+    init(configuration: ReadConfiguration) throws {
+        text = String(decoding: configuration.file.regularFileContents ?? Data(), as: UTF8.self)
+    }
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data(text.utf8))
     }
 }
