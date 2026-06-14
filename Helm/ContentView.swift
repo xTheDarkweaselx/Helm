@@ -43,6 +43,8 @@ struct ContentView: View {
         case schedule(String)
         /// v7 planning hub (time off + availability).
         case planning
+        /// v8 pay & timesheets.
+        case timesheet
         /// v7 one-off shift. Carries an ISO "yyyy-MM-dd" seed ("" = today).
         case quickAddShift(String)
     }
@@ -181,6 +183,7 @@ struct ContentView: View {
                 navRow(.search, "Search", "magnifyingglass")
                 navRow(.shiftTypes, "Shift Types", "clock")
                 navRow(.planning, "Planning", "calendar.badge.clock")
+                navRow(.timesheet, "Timesheet", "banknote")
                 navRow(.settings, "Settings", "gearshape")
             }
 
@@ -259,6 +262,8 @@ struct ContentView: View {
             ImportView(onDone: { selection = .overview })
         case .planning:
             PlanningView(quickAdd: { selection = .quickAddShift("") })
+        case .timesheet:
+            TimesheetView(openSettings: { selection = .settings })
         case let .quickAddShift(iso):
             QuickAddShiftView(dateISO: iso, onDone: { selection = .calendar($0) })
         case let .roster(id):

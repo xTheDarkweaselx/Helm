@@ -39,6 +39,11 @@ struct SettingsForm: View {
     @AppStorage(GoogleConfig.signedInDefaultsKey) private var googleSignedIn: Bool = false
     @AppStorage(GoogleConfig.accountEmailDefaultsKey) private var googleEmail: String = ""
     @AppStorage("hourlyRate") private var hourlyRate: Double = 0
+    // v8 Pay
+    @AppStorage(PaySettings.overtimeEnabledKey) private var payOvertimeEnabled: Bool = false
+    @AppStorage(PaySettings.overtimeThresholdKey) private var payOvertimeThreshold: Double = PaySettings.defaultThreshold
+    @AppStorage(PaySettings.overtimeMultiplierKey) private var payOvertimeMultiplier: Double = PaySettings.defaultMultiplier
+    @AppStorage(PaySettings.taxYearPresetKey) private var payTaxYearPreset: String = "uk"
     // v7.6: App Lock + wake-up alarms (both iOS only).
     #if os(iOS)
     @AppStorage(AppLockSetting.enabledKey) private var requireAppLock: Bool = false
@@ -109,29 +114,46 @@ struct SettingsForm: View {
             }
 
             Section {
-                HStack {
-                    Text("Hourly rate")
-                    Spacer()
-                    TextField("0", value: $hourlyRate, format: .number.precision(.fractionLength(0...2)))
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 100)
-                        .focused($rateFieldFocused)
-                        #if os(iOS)
-                        // The decimal pad has no Return key — without this
-                        // toolbar there is no way to dismiss it.
-                        .keyboardType(.decimalPad)
-                        .toolbar {
-                            ToolbarItemGroup(placement: .keyboard) {
-                                Spacer()
-                                Button("Done") { rateFieldFocused = false }
+                LabeledContent("Hourly rate") {
+                    HStack(spacing: 2) {
+                        Text(Locale.current.currencySymbol ?? "£").foregroundStyle(.secondary)
+                        TextField("Hourly rate", value: $hourlyRate, format: .number.precision(.fractionLength(0...2)))
+                            .labelsHidden() // otherwise the title renders next to the value ("0  0")
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 60)
+                            .focused($rateFieldFocused)
+                            #if os(iOS)
+                            // The decimal pad has no Return key — this toolbar
+                            // is the only way to dismiss it.
+                            .keyboardType(.decimalPad)
+                            .toolbar {
+                                ToolbarItemGroup(placement: .keyboard) {
+                                    Spacer()
+                                    Button("Done") { rateFieldFocused = false }
+                                }
                             }
-                        }
-                        #endif
+                            #endif
+                    }
+                }
+                Toggle("Overtime", isOn: $payOvertimeEnabled)
+                if payOvertimeEnabled {
+                    Stepper(value: $payOvertimeThreshold, in: 1...100, step: 1) {
+                        LabeledContent("Over", value: "\(Int(payOvertimeThreshold)) h / week")
+                    }
+                    Picker("Overtime rate", selection: $payOvertimeMultiplier) {
+                        Text("1.25×").tag(1.25)
+                        Text("1.5×").tag(1.5)
+                        Text("2×").tag(2.0)
+                    }
+                }
+                Picker("Tax year starts", selection: $payTaxYearPreset) {
+                    Text("6 April (UK)").tag("uk")
+                    Text("1 January").tag("calendar")
                 }
             } header: {
                 Text("Pay")
             } footer: {
-                Text("Optional. Set a flat hourly rate and Overview shows an estimated-pay card (hours × rate, before tax). 0 hides it.")
+                Text("Set your hourly rate to unlock the Timesheet — gross pay, weekly/monthly/tax-year totals, and CSV export — plus the Overview pay card. Figures are before tax.")
             }
 
             #if os(iOS)
