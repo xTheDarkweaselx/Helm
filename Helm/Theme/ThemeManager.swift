@@ -37,8 +37,34 @@ final class ThemeManager {
     var palette: ThemePalette { ThemeCatalog.palette(id: selectedID) }
     var all: [ThemePalette] { ThemeCatalog.all }
 
-    /// The accent for controls AND custom drawing. Default theme → system accent.
+    /// The accent for custom drawing + the accent-filled selected sidebar row
+    /// (which pairs it with WHITE text, so it must stay mid-toned). Default → system.
     var accent: Color { palette.accentHex.flatMap { Color(hex: $0) } ?? .accentColor }
+
+    /// The accent used to TINT controls + accent-coloured text/buttons. Several
+    /// themes put the accent very close to their own wash (e.g. Forest's 2E7D5B
+    /// over a 3E7A5C wash), so accent text vanished. This nudges the accent toward
+    /// contrast with the wash — lighter on dark (white-text) themes, darker on
+    /// light ones — so links/buttons stay legible. `accent` (unchanged) is kept
+    /// for shape fills + the selected row.
+    var legibleAccent: Color {
+        guard let hex = palette.accentHex else { return accent } // Default → system accent
+        switch resolvedColorScheme {
+        case .dark: return Self.adjust(hex, by: 0.5)    // lighten toward white
+        case .light: return Self.adjust(hex, by: -0.18) // darken toward black
+        default: return accent
+        }
+    }
+
+    /// Lighten (amount > 0, toward white) or darken (amount < 0, toward black) a hex.
+    private static func adjust(_ hex: String, by amount: Double) -> Color {
+        var s = hex; if s.hasPrefix("#") { s.removeFirst() }
+        guard s.count == 6, let v = UInt64(s, radix: 16) else { return .accentColor }
+        var r = Double((v >> 16) & 0xFF) / 255, g = Double((v >> 8) & 0xFF) / 255, b = Double(v & 0xFF) / 255
+        if amount >= 0 { r += (1 - r) * amount; g += (1 - g) * amount; b += (1 - b) * amount }
+        else { let k = 1 + amount; r *= k; g *= k; b *= k }
+        return Color(.sRGB, red: r, green: g, blue: b)
+    }
     var secondary: Color? { palette.secondaryHex.flatMap { Color(hex: $0) } }
     var glassTint: Color? { palette.glassTintHex.flatMap { Color(hex: $0) } }
     /// v7.1 chrome wash gradient stops (nil for Default → unthemed chrome).
@@ -113,7 +139,7 @@ extension View {
             .environment(\.helmGlassTint, theme.glassTint)
             .environment(\.helmBackgroundTop, theme.backgroundTop)
             .environment(\.helmBackgroundBottom, theme.backgroundBottom)
-            .tint(theme.accent)
+            .tint(theme.legibleAccent)
             .preferredColorScheme(theme.resolvedColorScheme)
     }
 }

@@ -27,6 +27,7 @@ struct SearchView: View {
     @Query(sort: \Schedule.createdAt, order: .reverse) private var schedules: [Schedule]
     @Query(sort: \ShiftType.sortIndex) private var allTypes: [ShiftType]
     @Environment(\.helmAccent) private var accent
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var query = ""
     @State private var scope: Scope = .all
@@ -149,8 +150,15 @@ struct SearchView: View {
         .font(.title3)
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(.ultraThinMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(accent.opacity(fieldFocused ? 0.55 : 0.18), lineWidth: 1))
+        // A frosted field PLUS a scheme-aware scrim, so the placeholder/text keeps
+        // contrast against the (deep, themed) pane behind it instead of blending in.
+        .background {
+            ZStack {
+                Capsule().fill(.ultraThinMaterial)
+                Capsule().fill(colorScheme == .dark ? Color.black.opacity(0.28) : Color.white.opacity(0.5))
+            }
+        }
+        .overlay(Capsule().strokeBorder(accent.opacity(fieldFocused ? 0.7 : 0.3), lineWidth: 1))
     }
 
     private var scopeBar: some View {
@@ -172,6 +180,8 @@ struct SearchView: View {
                 // Empty categories aren't tappable — except the one already selected
                 // (so a scope that empties mid-typing isn't a disabled dead-end).
                 .disabled(count == 0 && option != .all && option != scope)
+                .accessibilityLabel("\(option.label), \(count) result\(count == 1 ? "" : "s")")
+                .accessibilityAddTraits(scope == option ? [.isButton, .isSelected] : .isButton)
             }
             Spacer(minLength: 0)
         }
@@ -183,8 +193,9 @@ struct SearchView: View {
         if !recents.isEmpty {
             Section("Recent") {
                 chipFlow(recents, icon: "clock.arrow.circlepath") { query = $0; fieldFocused = true }
-                Button("Clear recent searches", role: .destructive) { recentsRaw = "" }
+                Button("Clear recent searches") { recentsRaw = "" }
                     .font(.caption)
+                    .foregroundStyle(.secondary) // readable on the wash (accent-green blended in)
             }
         }
         if !allTags.isEmpty {
@@ -192,11 +203,13 @@ struct SearchView: View {
                 chipFlow(allTags, icon: "tag") { query = $0; rememberQuery() }
             }
         }
+        // Plain guidance — NOT a second search field (the old magnifying-glass row
+        // read like a duplicate search bar).
         Section {
-            Label("Search across everything in Helm", systemImage: "magnifyingglass")
+            Text("Searches shift titles, notes, locations, types and tags, plus roster and schedule names. Tap a result to open it — a shift jumps to its day on the calendar.")
+                .font(.footnote)
                 .foregroundStyle(.secondary)
-        } footer: {
-            Text("Matches shift titles, notes, locations, types and tags, plus roster and schedule names. Tap a shift to jump to its day on the calendar.")
+                .listRowSeparator(.hidden)
         }
     }
 
@@ -238,6 +251,7 @@ struct SearchView: View {
                     ForEach(group.hits) { hit in
                         Button { open(); onOpenDay(hit.day) } label: { shiftRow(hit) }
                             .buttonStyle(.plain)
+                            .accessibilityHint("Opens this day on the calendar")
                     }
                 }
             }
@@ -285,7 +299,7 @@ struct SearchView: View {
                 }
             }
             Spacer(minLength: 4)
-            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary).accessibilityHidden(true)
         }
         .contentShape(Rectangle())
     }
@@ -299,7 +313,7 @@ struct SearchView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 4)
-            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary).accessibilityHidden(true)
         }
         .contentShape(Rectangle())
     }
@@ -316,7 +330,7 @@ struct SearchView: View {
                 }
             }
             Spacer(minLength: 4)
-            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary)
+            Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary).accessibilityHidden(true)
         }
         .contentShape(Rectangle())
     }

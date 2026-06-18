@@ -17,12 +17,18 @@
 
 import SwiftUI
 
-/// Scheme-keyed wash opacities — the single tuning point.
+/// Scheme-keyed wash opacities — the single tuning point. Deep enough that the
+/// themed surface stays solidly coloured (so text keeps its contrast even as the
+/// translucent material desaturates when the window loses focus), now that the
+/// wash is a SINGLE layer (the window no longer also paints it).
 enum ThemeWashStrength {
-    /// macOS window wash (over .ultraThinMaterial).
-    static func window(_ scheme: ColorScheme) -> Double { scheme == .dark ? 0.55 : 0.30 }
+    /// macOS pane/window wash (over .ultraThinMaterial frost). Deep on BOTH
+    /// schemes so the themed hue dominates the (possibly dark) desktop showing
+    /// through the frost — a light theme then reads as genuinely LIGHT (so its
+    /// dark text/accent has contrast) rather than diluting to a muddy mid-tone.
+    static func window(_ scheme: ColorScheme) -> Double { scheme == .dark ? 0.74 : 0.64 }
     /// iOS pane wash (over the opaque system background — no frost between).
-    static func pane(_ scheme: ColorScheme) -> Double { scheme == .dark ? 0.45 : 0.25 }
+    static func pane(_ scheme: ColorScheme) -> Double { scheme == .dark ? 0.60 : 0.48 }
 }
 
 #if os(macOS)
@@ -32,15 +38,23 @@ enum ThemeWashStrength {
 /// for free — no sidebar-specific code (and never .scrollContentBackground
 /// (.hidden) there: it would strip the vibrancy material).
 struct ThemedWindowBackground: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     var body: some View {
         // Frost ONLY — the base Liquid Glass. The wash is carried by the panes and
         // the sidebar (each adopts .themedPane()), so painting it here too would
         // DOUBLE the wash: the live theme came out heavier than the single-wash
         // preview, and the inactive-window desaturation hit two material layers
         // (the "darkened tint when the window loses focus" report). One wash now.
-        Rectangle()
-            .fill(.ultraThinMaterial)
-            .ignoresSafeArea()
+        // Reduce Transparency → an opaque base instead of the frost.
+        Group {
+            if reduceTransparency {
+                Color(.windowBackgroundColor)
+            } else {
+                Rectangle().fill(.ultraThinMaterial)
+            }
+        }
+        .ignoresSafeArea()
     }
 }
 #endif
@@ -72,6 +86,7 @@ struct ThemedPaneBackground: ViewModifier {
     @Environment(\.helmBackgroundTop) private var top
     @Environment(\.helmBackgroundBottom) private var bottom
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     private var washTop: Color? { active ? top : nil }
 
@@ -94,10 +109,16 @@ struct ThemedPaneBackground: ViewModifier {
             .background {
                 if needsCanvas {
                     ZStack {
-                        Rectangle().fill(.ultraThinMaterial) // the loved Liquid Glass frost
+                        // Reduce Transparency → an opaque base + a fully-opaque wash,
+                        // so text keeps full contrast regardless of focus/vibrancy.
+                        if reduceTransparency {
+                            Color(.windowBackgroundColor)
+                        } else {
+                            Rectangle().fill(.ultraThinMaterial) // the loved Liquid Glass frost
+                        }
                         if let top = washTop, let bottom {
                             LinearGradient(colors: [top, bottom], startPoint: .topLeading, endPoint: .bottomTrailing)
-                                .opacity(washOpacity)
+                                .opacity(reduceTransparency ? 1 : washOpacity)
                         }
                     }
                     .ignoresSafeArea()
