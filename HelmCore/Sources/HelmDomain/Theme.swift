@@ -123,20 +123,24 @@ public enum ThemeCatalog {
                      accentHex: nil, scheme: .system, glassTintHex: nil),
 
         // Professional
+        // Deep slate — a mid-tone wash can't carry legible text or icons, so the
+        // professional blue-grey is darkened to a proper dark surface (white text).
         ThemePalette(id: "slate", name: "Slate", vibe: .professional,
                      accentHex: "3A4A5E", secondaryHex: "6E8CA8", scheme: .system,
                      glassTintHex: "6E8CA8",
-                     backgroundTopHex: "5E7287", backgroundBottomHex: "8FA3B8"),
+                     backgroundTopHex: "2B3744", backgroundBottomHex: "3E4E60"),
         ThemePalette(id: "graphite", name: "Graphite", vibe: .professional,
                      accentHex: "5B6770", secondaryHex: "8A99A6", scheme: .light,
                      glassTintHex: "8A99A6",
                      backgroundTopHex: "AEBAC6", backgroundBottomHex: "D8DEE4"),
 
         // Vibrant
+        // Deep electric — the vibrant purple→cyan wash was mid-tone (illegible);
+        // deepened to indigo→deep-blue, with the vivid accent carrying the energy.
         ThemePalette(id: "electric", name: "Electric", vibe: .vibrant,
                      accentHex: "7B2FF7", secondaryHex: "00C2FF", scheme: .system,
                      glassTintHex: "4C72D8",
-                     backgroundTopHex: "6E3BD8", backgroundBottomHex: "2BA9D8"),
+                     backgroundTopHex: "3D1C7A", backgroundBottomHex: "123A6E"),
         ThemePalette(id: "sunrise", name: "Sunrise", vibe: .vibrant,
                      accentHex: "FF7A1A", secondaryHex: "FF3D77", scheme: .light,
                      glassTintHex: "FF8A4D",
@@ -154,10 +158,12 @@ public enum ThemeCatalog {
                      backgroundTopHex: "141719", backgroundBottomHex: "1A2C26"),
 
         // Seasonal
+        // Deep forest — the old mid-green wash left text/icons low-contrast; a
+        // darker forest green carries white text and a vivid mint accent.
         ThemePalette(id: "forest", name: "Forest", vibe: .seasonal,
                      accentHex: "2E7D5B", secondaryHex: "8FB339", scheme: .system,
                      glassTintHex: "4F8C68",
-                     backgroundTopHex: "3E7A5C", backgroundBottomHex: "7FA65A"),
+                     backgroundTopHex: "17402E", backgroundBottomHex: "235236"),
         // Light-green companion to Forest — a paler wash that stays a LIGHT
         // appearance (its wash luminance keeps legibleScheme = .light, black text).
         ThemePalette(id: "meadow", name: "Meadow", vibe: .seasonal,

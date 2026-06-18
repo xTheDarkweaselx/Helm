@@ -153,12 +153,15 @@ struct ContentView: View {
         Label {
             Text(title)
                 #if os(macOS)
-                .foregroundStyle(selected ? Color.white : Color.primary)
+                .foregroundStyle(selected ? theme.onAccent : theme.primaryText)
                 #endif
         } icon: {
             Image(systemName: icon)
                 #if os(macOS)
-                .foregroundStyle(selected ? Color.white : theme.accent)
+                // The vivid, contrast-shifted accent (raw `theme.accent` sits on the
+                // wash and reads grey); on the selected row it sits on the accent
+                // capsule, so use the contrasting on-accent colour (black or white).
+                .foregroundStyle(selected ? theme.onAccent : theme.legibleAccent)
                 #endif
         }
     }
@@ -198,7 +201,7 @@ struct ContentView: View {
                         .listRowBackground(rowSelected(.roster(roster.id))
                             ? AnyView(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(theme.accent))
                             : AnyView(Color.clear))
-                        .foregroundStyle(rowSelected(.roster(roster.id)) ? Color.white : Color.primary)
+                        .foregroundStyle(rowSelected(.roster(roster.id)) ? theme.onAccent : theme.primaryText)
                         #endif
                     }
                 }
@@ -227,7 +230,7 @@ struct ContentView: View {
                         .listRowBackground(rowSelected(.schedule(schedule.id))
                             ? AnyView(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(theme.accent))
                             : AnyView(Color.clear))
-                        .foregroundStyle(rowSelected(.schedule(schedule.id)) ? Color.white : Color.primary)
+                        .foregroundStyle(rowSelected(.schedule(schedule.id)) ? theme.onAccent : theme.primaryText)
                         #endif
                     }
                 }

@@ -56,6 +56,7 @@ struct SettingsForm: View {
     // `View.modelContext(_:)` modifier and the bare name resolves to the
     // (curried) modifier instead of this property.
     @Environment(\.modelContext) private var dataContext
+    @Environment(ThemeManager.self) private var theme
     @Query private var importProfiles: [ImportProfile]
 
     @State private var isSigningIn = false
@@ -258,13 +259,13 @@ struct SettingsForm: View {
                 removeAllCandidate = .eventkit
             }
             .disabled(isCleaningUp)
-            .tint(.red) // destructive → red (the inherited accent tint would otherwise hide it)
+            .tint(theme.destructive) // vivid, scheme-aware red (the inherited accent tint hides plain .red)
             if googleUsable {
                 Button("Remove all Helm events from Google Calendar", role: .destructive) {
                     removeAllCandidate = .google
                 }
                 .disabled(isCleaningUp)
-                .tint(.red)
+                .tint(theme.destructive)
             }
             if isCleaningUp {
                 HStack(spacing: 8) {
@@ -363,7 +364,7 @@ struct SettingsForm: View {
                         signOut()
                     }
                 }
-                .tint(.red) // destructive → red
+                .tint(theme.destructive)
                 .confirmationDialog(
                     "\(googleRosterCount) roster\(googleRosterCount == 1 ? " has" : "s have") shifts in this Google account. After signing out, Helm can't update or remove them until you sign in again.",
                     isPresented: $isConfirmingSignOut,

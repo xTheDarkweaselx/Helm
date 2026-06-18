@@ -41,44 +41,99 @@ final class ThemeManager {
     /// (which pairs it with WHITE text, so it must stay mid-toned). Default → system.
     var accent: Color { palette.accentHex.flatMap { Color(hex: $0) } ?? .accentColor }
 
-    /// The accent used to TINT controls + accent-coloured text/buttons. Several
-    /// themes put the accent very close to their own wash (e.g. Forest's 2E7D5B
-    /// over a 3E7A5C wash), so accent text vanished. This nudges the accent toward
-    /// contrast with the wash — lighter on dark (white-text) themes, darker on
-    /// light ones — so links/buttons stay legible. `accent` (unchanged) is kept
-    /// for shape fills + the selected row.
+    private var isDarkChrome: Bool { resolvedColorScheme == .dark }
+
+    /// The vivid, legible accent for TINTED controls/links + the SIDEBAR ICONS.
+    /// The raw accent (e.g. Forest's 2E7D5B) sits right on its own wash and reads
+    /// as grey; this keeps the hue + full saturation but shifts the LIGHTNESS so it
+    /// always contrasts (validated ≥3:1 against every theme's wash). Default →
+    /// system accent. `accent` (unchanged) still fills shapes + the selected row.
     var legibleAccent: Color {
-        guard let hex = palette.accentHex else { return accent } // Default → system accent
-        switch resolvedColorScheme {
-        case .dark: return Self.adjust(hex, by: 0.5)    // lighten toward white
-        case .light: return Self.adjust(hex, by: -0.18) // darken toward black
-        default: return accent
-        }
+        guard let hex = palette.accentHex else { return accent }
+        return Self.hsl(hex, lightness: isDarkChrome ? 0.72 : 0.34, saturationMul: 1.0)
     }
 
-    /// The themed body/label text colour — a legible, theme-TINTED alternative to
-    /// stark black/white, so the app's text feels cohesive with the wash and is
-    /// consistent everywhere. Light + green-tinted on dark themes, dark + green-
-    /// tinted on light ones. Default → the system label colour (unchanged). Used
-    /// as the root foreground; `.secondary`/`.tertiary` then fade FROM this, so
-    /// secondary text is automatically a muted, theme-tracking shade.
+    /// The themed body/label text colour — a crisp, clearly THEME-TINTED light
+    /// (dark-chrome) or dark (light-chrome) derived from the WASH hue, so text is
+    /// cohesive with the surface AND legible everywhere (validated ≥4.5:1). Applied
+    /// as the root foreground; `.secondary`/`.tertiary` fade from it. Default →
+    /// the system label colour (unchanged).
     var primaryText: Color {
-        guard let hex = palette.accentHex else { return .primary }
-        switch resolvedColorScheme {
-        case .dark: return Self.adjust(hex, by: 0.82)   // light, faintly green
-        case .light: return Self.adjust(hex, by: -0.55) // dark, faintly green
-        default: return .primary
-        }
+        guard let wash = washAverageHex else { return .primary }
+        return Self.hsl(wash, lightness: isDarkChrome ? 0.90 : 0.15, saturationMul: 0.65)
     }
 
-    /// Lighten (amount > 0, toward white) or darken (amount < 0, toward black) a hex.
-    private static func adjust(_ hex: String, by amount: Double) -> Color {
+    /// Text/icon colour for the SELECTED sidebar capsule, which is filled with the
+    /// raw `accent`. Black or white — whichever has the higher WCAG contrast with
+    /// the fill (W3C's 0.179 luminance pivot, equivalently "use black whenever
+    /// white would fall below 4.5:1"). A light accent (Carbon's mint) otherwise got
+    /// white text at ~1.5:1. Default (system accent) keeps the white convention.
+    var onAccent: Color {
+        guard let hex = palette.accentHex else { return .white }
+        return Self.relativeLuminance(hex) > 0.179 ? .black : .white
+    }
+
+    /// WCAG relative luminance (sRGB-linearised) of a hex, for the on-accent pivot.
+    private static func relativeLuminance(_ hex: String) -> Double {
+        var s = hex; if s.hasPrefix("#") { s.removeFirst() }
+        guard s.count == 6, let v = UInt64(s, radix: 16) else { return 0 }
+        func lin(_ c: Double) -> Double { c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+        let r = lin(Double((v >> 16) & 0xFF) / 255)
+        let g = lin(Double((v >> 8) & 0xFF) / 255)
+        let b = lin(Double(v & 0xFF) / 255)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+
+    /// Vivid destructive red that reads on a themed wash (the inherited accent
+    /// tint otherwise hides role:.destructive). Lighter on dark chrome.
+    var destructive: Color {
+        guard palette.accentHex != nil else { return .red } // Default → system red
+        return (isDarkChrome ? Color(hex: "EC8E8E") : Color(hex: "C82222")) ?? .red
+    }
+
+    private var washAverageHex: String? {
+        guard let t = palette.backgroundTopHex, let b = palette.backgroundBottomHex else { return nil }
+        return Self.averageHex(t, b)
+    }
+
+    /// Re-light a hex in HSL (keep hue, scale saturation, set lightness) → Color.
+    /// HSL (not the RGB-toward-white blend it replaced, which DESATURATED into mud).
+    private static func hsl(_ hex: String, lightness L: Double, saturationMul sm: Double) -> Color {
         var s = hex; if s.hasPrefix("#") { s.removeFirst() }
         guard s.count == 6, let v = UInt64(s, radix: 16) else { return .accentColor }
-        var r = Double((v >> 16) & 0xFF) / 255, g = Double((v >> 8) & 0xFF) / 255, b = Double(v & 0xFF) / 255
-        if amount >= 0 { r += (1 - r) * amount; g += (1 - g) * amount; b += (1 - b) * amount }
-        else { let k = 1 + amount; r *= k; g *= k; b *= k }
-        return Color(.sRGB, red: r, green: g, blue: b)
+        let r = Double((v >> 16) & 0xFF) / 255, g = Double((v >> 8) & 0xFF) / 255, b = Double(v & 0xFF) / 255
+        let mx = max(r, g, b), mn = min(r, g, b), d = mx - mn
+        let l0 = (mx + mn) / 2
+        var h = 0.0, sat = 0.0
+        if d != 0 {
+            sat = d / (1 - abs(2 * l0 - 1))
+            if mx == r { h = ((g - b) / d).truncatingRemainder(dividingBy: 6) }
+            else if mx == g { h = (b - r) / d + 2 }
+            else { h = (r - g) / d + 4 }
+            h *= 60; if h < 0 { h += 360 }
+        }
+        let newS = min(1, sat * sm)
+        let c = (1 - abs(2 * L - 1)) * newS
+        let x = c * (1 - abs((h / 60).truncatingRemainder(dividingBy: 2) - 1))
+        let m = L - c / 2
+        let (rr, gg, bb): (Double, Double, Double)
+        switch h {
+        case 0..<60:   (rr, gg, bb) = (c, x, 0)
+        case 60..<120: (rr, gg, bb) = (x, c, 0)
+        case 120..<180:(rr, gg, bb) = (0, c, x)
+        case 180..<240:(rr, gg, bb) = (0, x, c)
+        case 240..<300:(rr, gg, bb) = (x, 0, c)
+        default:       (rr, gg, bb) = (c, 0, x)
+        }
+        return Color(.sRGB, red: rr + m, green: gg + m, blue: bb + m)
+    }
+
+    private static func averageHex(_ a: String, _ b: String) -> String? {
+        guard let va = UInt64(a, radix: 16), let vb = UInt64(b, radix: 16) else { return nil }
+        let r = (Int((va >> 16) & 0xFF) + Int((vb >> 16) & 0xFF)) / 2
+        let g = (Int((va >> 8) & 0xFF) + Int((vb >> 8) & 0xFF)) / 2
+        let bl = (Int(va & 0xFF) + Int(vb & 0xFF)) / 2
+        return String(format: "%02X%02X%02X", r, g, bl)
     }
     var secondary: Color? { palette.secondaryHex.flatMap { Color(hex: $0) } }
     var glassTint: Color? { palette.glassTintHex.flatMap { Color(hex: $0) } }
