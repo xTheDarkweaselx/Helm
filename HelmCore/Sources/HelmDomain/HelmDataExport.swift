@@ -50,12 +50,24 @@ public struct HelmDataExport: Codable, Sendable, Equatable {
     public func jsonData() throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        // One formatter per encode instead of allocating a fresh one for every
+        // date (that per-date allocation dominated encode time on a large store).
+        // The .custom closure is @Sendable but runs synchronously within this one
+        // encode call on a single thread, so reusing the local is safe.
+        nonisolated(unsafe) let formatter = Self.iso8601Formatter()
         // ISO-8601 WITH fractional seconds: the plain .iso8601 strategy truncates
         // to whole seconds, so real (sub-second) timestamps wouldn't round-trip.
         encoder.dateEncodingStrategy = .custom { date, encoder in
             var container = encoder.singleValueContainer()
-            try container.encode(Self.iso8601String(date))
+            try container.encode(formatter.string(from: date))
         }
+        // Defence in depth: a stray non-finite Double (a corrupt paid-hours or
+        // pay rate) would otherwise make encode throw — and under the old `try?`
+        // that silently saved an EMPTY file. Encode it as a readable string so a
+        // real export is always produced (finite values are unaffected, so the
+        // byte-stable format is unchanged).
+        encoder.nonConformingFloatEncodingStrategy = .convertToString(
+            positiveInfinity: "Infinity", negativeInfinity: "-Infinity", nan: "NaN")
         return try encoder.encode(self)
     }
 
@@ -66,28 +78,31 @@ public struct HelmDataExport: Codable, Sendable, Equatable {
     /// Decode a previously-exported document (matches `jsonData()`'s date format).
     public static func decode(from data: Data) throws -> HelmDataExport {
         let decoder = JSONDecoder()
+        // One local formatter for the whole decode; the .custom closure is
+        // @Sendable but runs synchronously here on one thread (see jsonData()).
+        nonisolated(unsafe) let formatter = iso8601Formatter()
         decoder.dateDecodingStrategy = .custom { decoder in
             let string = try decoder.singleValueContainer().decode(String.self)
-            guard let date = iso8601Date(string) else {
+            guard let date = formatter.date(from: string) else {
                 throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
                                                         debugDescription: "Not an ISO-8601 date: \(string)"))
             }
             return date
         }
+        // Mirror the encoder's non-finite handling so a hardened export still
+        // round-trips through decode without throwing.
+        decoder.nonConformingFloatDecodingStrategy = .convertFromString(
+            positiveInfinity: "Infinity", negativeInfinity: "-Infinity", nan: "NaN")
         return try decoder.decode(HelmDataExport.self, from: data)
     }
 
-    // Fresh formatters (ISO8601DateFormatter isn't Sendable) — fine for a one-shot
-    // export; the per-date allocation is negligible.
-    private static func iso8601String(_ date: Date) -> String {
+    /// A fresh ISO-8601 formatter with fractional seconds. ISO8601DateFormatter
+    /// isn't Sendable, so callers keep the returned instance LOCAL to one
+    /// encode/decode pass rather than sharing a static.
+    private static func iso8601Formatter() -> ISO8601DateFormatter {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
-    }
-    private static func iso8601Date(_ string: String) -> Date? {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: string)
+        return formatter
     }
 
     /// A one-line summary of how much data the export holds (for the UI).

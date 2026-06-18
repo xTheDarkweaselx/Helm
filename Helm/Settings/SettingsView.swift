@@ -66,9 +66,16 @@ struct SettingsForm: View {
     @State private var removeAllCandidate: CalendarTargetKind?
     @State private var isCleaningUp = false
     @State private var cleanupMessage: String?
-    /// Built once when "Export my data" is tapped (not on every render).
+    // Data-export flow. The export is built off the tap (async + staged):
+    // `isPreparingExport` drives the modal progress popup; once a non-empty
+    // payload is encoded, `isExportingData` presents the save panel.
     @State private var isExportingData = false
     @State private var exportText = ""
+    @State private var isPreparingExport = false
+    @State private var exportProgress: Double = 0
+    @State private var exportSummary: String?       // captured to confirm the save
+    @State private var exportErrorMessage: String?  // surfaced via .alert
+    @State private var exportSavedSummary: String?  // shown after a successful save
 
     private var googleUsable: Bool { GoogleConfig.isConfigured && googleSignedIn }
     private var reminderOffsets: Set<Int> { Set(ReminderOffsets.parse(reminderOffsetsCSV)) }
@@ -220,10 +227,41 @@ struct SettingsForm: View {
         }
         .formStyle(.grouped)
         .themedPane() // v7.1 wash (iOS; passthrough on macOS)
+        // While the export popup is up, hide the Form from VoiceOver so focus stays
+        // trapped on the popup (the scrim only blocks pointer/touch, not assistive
+        // tech) — otherwise a VoiceOver user could reach controls behind it.
+        .accessibilityHidden(isPreparingExport)
+        // The modal export progress popup, rendered INSIDE the Form so it shows in
+        // every Settings home (iOS sheet, sidebar pane, AND the macOS ⌘, window —
+        // the shared SyncProgressHUD isn't mounted in the Settings scene).
+        .overlay {
+            if isPreparingExport {
+                ExportProgressPopup(progress: exportProgress)
+            }
+        }
+        .animation(.snappy(duration: 0.25), value: isPreparingExport)
         .fileExporter(isPresented: $isExportingData,
                       document: JSONDataFile(text: exportText),
                       contentType: .json,
-                      defaultFilename: "Helm data export") { _ in }
+                      defaultFilename: "Helm data export") { result in
+            switch result {
+            case .success:
+                exportSavedSummary = exportSummary ?? "Your data was saved."
+            case .failure(let error):
+                // Cancelling the save panel isn't an error — only surface real ones.
+                if (error as? CocoaError)?.code != .userCancelled {
+                    exportErrorMessage = error.localizedDescription
+                }
+            }
+        }
+        .alert("Couldn’t export your data", isPresented: Binding(
+            get: { exportErrorMessage != nil },
+            set: { if !$0 { exportErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            if let exportErrorMessage { Text(exportErrorMessage) }
+        }
         // Run the legacy single-value migrations so the new keys exist before
         // the @AppStorage defaults mask them.
         .onAppear {
@@ -238,6 +276,13 @@ struct SettingsForm: View {
     private var dataSection: some View {
         Section {
             Button("Export my data…", systemImage: "square.and.arrow.up", action: exportData)
+                .disabled(isPreparingExport)
+            if let exportSavedSummary {
+                Label("Saved · \(exportSavedSummary)", systemImage: "checkmark.circle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.green)
+                    .accessibilityLabel("Export saved. \(exportSavedSummary)")
+            }
         } header: {
             Text("Your data")
         } footer: {
@@ -245,9 +290,44 @@ struct SettingsForm: View {
         }
     }
 
+    /// Build + encode the export off the tap so the UI stays responsive and a
+    /// determinate progress popup can animate. The SwiftData fetch stays on the
+    /// MainActor (ModelContext isn't Sendable); only the finished, Sendable value
+    /// is encoded on a detached task. The save panel is presented ONLY after a
+    /// non-empty payload exists — never an empty 0-byte file, and any failure is
+    /// surfaced instead of swallowed.
     private func exportData() {
-        exportText = (try? HelmDataExporter.export(from: dataContext).jsonString()) ?? ""
-        isExportingData = true
+        guard !isPreparingExport else { return } // ignore re-taps mid-export
+        isPreparingExport = true
+        exportProgress = 0
+        exportErrorMessage = nil
+        exportSavedSummary = nil
+        Task {
+            defer { isPreparingExport = false }
+            // MainActor build; the bar climbs across ~0…0.85 as sections complete.
+            let export = await HelmDataExporter.export(from: dataContext) { built in
+                exportProgress = built * 0.85
+            }
+            // Encode the Sendable value off the main actor — the long pole — then
+            // fill the bar. A throw or empty result becomes a surfaced error, not
+            // a silently-saved empty file.
+            let encoded = await Task.detached(priority: .userInitiated) { () -> ExportEncodeResult in
+                do { return .success(try export.jsonString()) }
+                catch { return .failure(error.localizedDescription) }
+            }.value
+            exportProgress = 1
+            try? await Task.sleep(for: .milliseconds(160)) // let the bar reach 100%
+            switch encoded {
+            case .failure(let message):
+                exportErrorMessage = message
+            case .success(let json) where json.isEmpty:
+                exportErrorMessage = "Helm couldn’t prepare your export. Please try again."
+            case .success(let json):
+                exportText = json               // assign BEFORE presenting (no race)
+                exportSummary = export.itemSummary
+                isExportingData = true
+            }
+        }
     }
 
     // MARK: - Cleanup (v4: delete everything Helm created in a calendar)
@@ -437,5 +517,48 @@ struct JSONDataFile: FileDocument {
     }
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         FileWrapper(regularFileWithContents: Data(text.utf8))
+    }
+}
+
+/// Result of encoding the export on a detached task — a Sendable carrier so the
+/// error message (not a non-Sendable `Error`) can cross back to the MainActor.
+private enum ExportEncodeResult: Sendable {
+    case success(String)
+    case failure(String)
+}
+
+/// The modal "exporting…" popup: a dimmed scrim over the Settings surface with a
+/// centred glass card carrying a determinate progress bar. Lives inside the Form
+/// so it appears in every Settings home; the scrim swallows taps so the export
+/// can't be re-triggered underneath it.
+private struct ExportProgressPopup: View {
+    let progress: Double
+
+    private var percent: Int { Int((progress * 100).rounded()) }
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(.black.opacity(0.28))
+                .ignoresSafeArea()
+            VStack(spacing: 14) {
+                Text("Exporting your data…")
+                    .font(.headline)
+                ProgressView(value: progress, total: 1)
+                    .progressViewStyle(.linear)
+                    .animation(.linear(duration: 0.2), value: progress)
+                Text("\(percent)%")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            .padding(22)
+            .frame(width: 260)
+            .glassCard(cornerRadius: 16)
+            .shadow(color: .black.opacity(0.18), radius: 18, y: 6)
+        }
+        .transition(.opacity)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits([.isModal, .updatesFrequently])
+        .accessibilityLabel("Exporting your data, \(percent) percent complete")
     }
 }

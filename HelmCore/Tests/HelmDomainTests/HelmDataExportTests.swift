@@ -52,4 +52,28 @@ struct HelmDataExportTests {
         let empty = HelmDataExport(exportedAt: Date(timeIntervalSince1970: 0), app: "Helm")
         #expect(empty.itemSummary == "No data yet")
     }
+
+    // A legitimately-empty store must still produce a REAL, valid file — not the
+    // empty string the old `try?`-swallowing path silently saved.
+    @Test func emptyStoreEncodesToRealFile() throws {
+        let empty = HelmDataExport(exportedAt: Date(timeIntervalSince1970: 0), app: "Helm")
+        let json = try empty.jsonString()
+        #expect(!json.isEmpty)
+        #expect(json.contains("\"schemaVersion\""))
+        let back = try HelmDataExport.decode(from: Data(json.utf8))
+        #expect(back == empty) // round-trips, so an empty store is distinguishable from a failure
+    }
+
+    // A stray non-finite Double (a corrupt paid-hours/rate) must NOT make encode
+    // throw — that throw was what the old `try?` turned into a 0-byte file.
+    @Test func nonFiniteDoublesDoNotBreakEncode() throws {
+        let export = HelmDataExport(
+            exportedAt: Date(timeIntervalSince1970: 0), app: "Helm",
+            settings: ExportedSettings(hourlyRate: .nan, overtimeMultiplier: .infinity))
+        let data = try export.jsonData() // does not throw
+        #expect(!data.isEmpty)
+        let back = try HelmDataExport.decode(from: data) // round-trips without throwing
+        #expect(back.settings.hourlyRate?.isNaN == true)
+        #expect(back.settings.overtimeMultiplier == .infinity)
+    }
 }

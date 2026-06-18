@@ -15,28 +15,58 @@ import HelmDomain
 // Named `HelmDataExporter` (not `DataExporter`) to avoid a clash with a macOS
 // SDK symbol of that name — the bare name resolved on iOS but not macOS.
 enum HelmDataExporter {
-    static func export(from context: ModelContext, now: Date = .now) -> HelmDataExport {
-        HelmDataExport(
-            exportedAt: now,
-            app: appVersionString,
-            shiftTypes: fetch(context, ShiftType.self)
-                .sorted { ($0.code ?? "") < ($1.code ?? "") }
-                .map(exportedType),
-            rosters: fetch(context, Roster.self)
-                .sorted { $0.createdAt < $1.createdAt }
-                .map(exportedRoster),
-            schedules: fetch(context, Schedule.self)
-                .sorted { $0.createdAt < $1.createdAt }
-                .map(exportedSchedule),
-            timeOff: fetch(context, TimeOff.self)
-                .sorted { ($0.startDate ?? .distantPast) < ($1.startDate ?? .distantPast) }
-                .map(exportedTimeOff),
-            availabilityRules: fetch(context, AvailabilityRule.self).map(exportedRule),
-            availabilityWindows: fetch(context, AvailabilityWindow.self)
-                .sorted { ($0.localDate ?? .distantPast) < ($1.localDate ?? .distantPast) }
-                .map(exportedWindow),
-            settings: exportedSettings()
-        )
+    /// Build the full export, reporting build progress (0...1) and yielding to the
+    /// MainActor run loop between sections so a progress bar can actually repaint.
+    /// The SwiftData fetch + relationship traversal MUST stay on the MainActor —
+    /// `ModelContext` and the `@Model`s are main-actor bound and NOT Sendable, so
+    /// only the finished, Sendable `HelmDataExport` may be handed off (e.g. to a
+    /// detached task) for encoding. This method is already MainActor-isolated (the
+    /// app target's default), so the `progress` callback runs on the MainActor too.
+    static func export(from context: ModelContext, now: Date = .now,
+                       progress: (Double) -> Void = { _ in }) async -> HelmDataExport {
+        progress(0)
+
+        let shiftTypes = fetch(context, ShiftType.self)
+            .sorted { ($0.code ?? "") < ($1.code ?? "") }
+            .map(exportedType)
+        progress(0.12); await Task.yield()
+
+        // Rosters are the long pole (every shift of every roster), so advance the
+        // bar per roster instead of in one jump, weighting this stage the most.
+        let rosterModels = fetch(context, Roster.self).sorted { $0.createdAt < $1.createdAt }
+        var rosters: [ExportedRoster] = []
+        rosters.reserveCapacity(rosterModels.count)
+        for (i, roster) in rosterModels.enumerated() {
+            rosters.append(exportedRoster(roster))
+            progress(0.12 + 0.48 * Double(i + 1) / Double(max(rosterModels.count, 1)))
+            if i % 4 == 3 { await Task.yield() } // breathe every few rosters
+        }
+        await Task.yield()
+
+        let schedules = fetch(context, Schedule.self)
+            .sorted { $0.createdAt < $1.createdAt }
+            .map(exportedSchedule)
+        progress(0.74); await Task.yield()
+
+        let timeOff = fetch(context, TimeOff.self)
+            .sorted { ($0.startDate ?? .distantPast) < ($1.startDate ?? .distantPast) }
+            .map(exportedTimeOff)
+        progress(0.84); await Task.yield()
+
+        let availabilityRules = fetch(context, AvailabilityRule.self).map(exportedRule)
+        let availabilityWindows = fetch(context, AvailabilityWindow.self)
+            .sorted { ($0.localDate ?? .distantPast) < ($1.localDate ?? .distantPast) }
+            .map(exportedWindow)
+        progress(0.94); await Task.yield()
+
+        let settings = exportedSettings()
+        progress(1.0)
+
+        return HelmDataExport(
+            exportedAt: now, app: appVersionString,
+            shiftTypes: shiftTypes, rosters: rosters, schedules: schedules,
+            timeOff: timeOff, availabilityRules: availabilityRules,
+            availabilityWindows: availabilityWindows, settings: settings)
     }
 
     private static func fetch<T: PersistentModel>(_ context: ModelContext, _ type: T.Type) -> [T] {
