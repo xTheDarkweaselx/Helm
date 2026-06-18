@@ -258,11 +258,13 @@ struct SettingsForm: View {
                 removeAllCandidate = .eventkit
             }
             .disabled(isCleaningUp)
+            .tint(.red) // destructive → red (the inherited accent tint would otherwise hide it)
             if googleUsable {
                 Button("Remove all Helm events from Google Calendar", role: .destructive) {
                     removeAllCandidate = .google
                 }
                 .disabled(isCleaningUp)
+                .tint(.red)
             }
             if isCleaningUp {
                 HStack(spacing: 8) {
@@ -361,6 +363,7 @@ struct SettingsForm: View {
                         signOut()
                     }
                 }
+                .tint(.red) // destructive → red
                 .confirmationDialog(
                     "\(googleRosterCount) roster\(googleRosterCount == 1 ? " has" : "s have") shifts in this Google account. After signing out, Helm can't update or remove them until you sign in again.",
                     isPresented: $isConfirmingSignOut,

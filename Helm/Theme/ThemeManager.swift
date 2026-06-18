@@ -56,6 +56,21 @@ final class ThemeManager {
         }
     }
 
+    /// The themed body/label text colour — a legible, theme-TINTED alternative to
+    /// stark black/white, so the app's text feels cohesive with the wash and is
+    /// consistent everywhere. Light + green-tinted on dark themes, dark + green-
+    /// tinted on light ones. Default → the system label colour (unchanged). Used
+    /// as the root foreground; `.secondary`/`.tertiary` then fade FROM this, so
+    /// secondary text is automatically a muted, theme-tracking shade.
+    var primaryText: Color {
+        guard let hex = palette.accentHex else { return .primary }
+        switch resolvedColorScheme {
+        case .dark: return Self.adjust(hex, by: 0.82)   // light, faintly green
+        case .light: return Self.adjust(hex, by: -0.55) // dark, faintly green
+        default: return .primary
+        }
+    }
+
     /// Lighten (amount > 0, toward white) or darken (amount < 0, toward black) a hex.
     private static func adjust(_ hex: String, by amount: Double) -> Color {
         var s = hex; if s.hasPrefix("#") { s.removeFirst() }
@@ -140,6 +155,7 @@ extension View {
             .environment(\.helmBackgroundTop, theme.backgroundTop)
             .environment(\.helmBackgroundBottom, theme.backgroundBottom)
             .tint(theme.legibleAccent)
+            .foregroundStyle(theme.primaryText) // cohesive, theme-tinted text (secondary fades from it)
             .preferredColorScheme(theme.resolvedColorScheme)
     }
 }
