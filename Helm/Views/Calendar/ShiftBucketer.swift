@@ -25,12 +25,14 @@ enum ShiftBucketer {
     static func byDay<Value>(
         _ instances: [ShiftInstance],
         suppressing suppressed: Set<String> = [],
+        focus: ShiftFocus = .all,
         _ transform: (ShiftInstance, Bool) -> Value
     ) -> [DayKey: [Value]] {
         var calendarByZone: [String: Calendar] = [:]
         var byDay: [DayKey: [Value]] = [:]
         for instance in instances {
             if let key = instance.dedupKey, suppressed.contains(key) { continue }
+            guard focus.matches(instance) else { continue } // v9 Shift Focus
             guard let localDate = instance.localDate else { continue }
             let zoneID = instance.timeZoneIdentifier
             let cal = calendarByZone[zoneID] ?? {
@@ -50,9 +52,10 @@ enum ShiftBucketer {
     /// Shifts → display ShiftItems, bucketed by day — the month grids' feed.
     static func itemsByDay(
         _ instances: [ShiftInstance],
-        suppressing suppressed: Set<String> = []
+        suppressing suppressed: Set<String> = [],
+        focus: ShiftFocus = .all
     ) -> [DayKey: [ShiftItem]] {
-        byDay(instances, suppressing: suppressed) { item(from: $0, endsOnLaterDay: $1) }
+        byDay(instances, suppressing: suppressed, focus: focus) { item(from: $0, endsOnLaterDay: $1) }
     }
 
     /// The SINGLE ShiftInstance → ShiftItem field mapping (previously copied in

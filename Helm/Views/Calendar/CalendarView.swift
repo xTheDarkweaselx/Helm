@@ -27,6 +27,30 @@ struct CalendarView: View {
     @State private var removalError: String?
     @AppStorage("calendarDisplayMode") private var displayModeRaw: String = CalendarDisplayMode.month.rawValue
     @AppStorage("timelineHourHeight") private var hourHeight: Double = 48
+    @AppStorage("calendarShiftFocus") private var shiftFocusRaw: String = "" // v9 Shift Focus
+
+    private var shiftFocus: ShiftFocus { ShiftFocus(rawValue: shiftFocusRaw) }
+
+    private struct FocusType: Identifiable { let id: String; let label: String }
+    /// Distinct shift types present in the calendar, for the focus menu.
+    private var focusTypes: [FocusType] {
+        var seen = Set<String>()
+        var out: [FocusType] = []
+        for inst in instances {
+            guard let t = inst.shiftType else { continue }
+            if seen.insert(t.id).inserted { out.append(FocusType(id: t.id, label: t.label ?? t.code ?? "Shift")) }
+        }
+        return out.sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
+    }
+    /// Distinct shift-type tags present, for the focus menu.
+    private var focusTags: [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for inst in instances {
+            for tag in inst.shiftType?.tags ?? [] where seen.insert(tag.lowercased()).inserted { out.append(tag) }
+        }
+        return out.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
 
     private var displayMode: CalendarDisplayMode {
         CalendarDisplayMode(rawValue: displayModeRaw) ?? .month
@@ -245,6 +269,7 @@ struct CalendarView: View {
                 .menuIndicator(.hidden)
             }
             calendarFilterMenu
+            shiftFocusMenu
             Button {
                 stepBackward()
             } label: {
@@ -675,7 +700,43 @@ struct CalendarView: View {
     /// Called exactly once per body pass. The bucketing + ShiftItem mapping is
     /// shared with the roster-detail Calendar mode via `ShiftBucketer`.
     private func computeShiftsByDay() -> [DayKey: [ShiftItem]] {
-        ShiftBucketer.itemsByDay(instances, suppressing: mode.overlay?.suppressedShiftKeys ?? [])
+        // Focus only narrows the LIVE calendar — never the import-preview diff.
+        ShiftBucketer.itemsByDay(instances, suppressing: mode.overlay?.suppressedShiftKeys ?? [],
+                                 focus: isLive ? shiftFocus : .all)
+    }
+
+    /// v9 Shift Focus: narrow the live calendar to one shift type or tag.
+    @ViewBuilder
+    private var shiftFocusMenu: some View {
+        if isLive, focusTypes.count + focusTags.count > 1 {
+            Menu {
+                Button { shiftFocusRaw = "" } label: {
+                    Label("All shifts", systemImage: shiftFocus == .all ? "checkmark" : "circle")
+                }
+                if !focusTypes.isEmpty {
+                    Section("Shift type") {
+                        ForEach(focusTypes) { t in
+                            Button { shiftFocusRaw = "type:\(t.id)" } label: {
+                                Label(t.label, systemImage: shiftFocus == .type(id: t.id) ? "checkmark" : "circle")
+                            }
+                        }
+                    }
+                }
+                if !focusTags.isEmpty {
+                    Section("Tag") {
+                        ForEach(focusTags, id: \.self) { tag in
+                            Button { shiftFocusRaw = "tag:\(tag)" } label: {
+                                Label(tag, systemImage: shiftFocus == .tag(tag) ? "checkmark" : "circle")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Label("Focus", systemImage: shiftFocus.isActive ? "eye.fill" : "eye")
+                    .labelStyle(.iconOnly)
+            }
+            .menuIndicator(.hidden)
+        }
     }
 
     private func items(for day: DayKey, shiftBuckets: [DayKey: [ShiftItem]]) -> [CalendarDayItem] {
