@@ -60,6 +60,7 @@ struct ShiftListView: View {
     @State private var applyingReminders = false
     @State private var icsURL: URL?
     @State private var isEditingReminders = false
+    @State private var isEditingPay = false
     @State private var instanceToRemove: ShiftInstance?
     @State private var editingShift: ShiftInstance?
     @State private var isAddingShift = false
@@ -383,6 +384,9 @@ struct ShiftListView: View {
                     Button("Reminders & wake-up alarm…", systemImage: "bell.badge") {
                         isEditingReminders = true
                     }
+                    Button("Pay & employer…", systemImage: "sterlingsign.circle") {
+                        isEditingPay = true
+                    }
                     // Full rewrite of every event — also the restore path after
                     // "Remove Helm events" in Settings (re-import alone sees
                     // unchanged shifts and writes nothing).
@@ -434,6 +438,9 @@ struct ShiftListView: View {
         // or the reminder setting changes (never during body evaluation).
         .task(id: rosterSignature) { await refreshICS() }
         // In-window pushes (no sheets): reminders, shift editor, add-shift.
+        .navigationDestination(isPresented: $isEditingPay) {
+            RosterPayView(roster: roster)
+        }
         .navigationDestination(isPresented: $isEditingReminders) {
             RosterRemindersView(roster: roster) {
                 applyReminders() // push the new offsets onto existing events

@@ -40,7 +40,11 @@ struct TimesheetView: View {
     private var today: DayKey { DayKey(containing: .now, in: calendar) }
     private var rules: PayRules { PaySettings.rules }
     private var currency: String { PaySettings.currencyCode }
-    private var allShifts: [InsightShift] { InsightsSnapshot.shifts(from: instances) }
+    /// v9 Multiple Jobs — combined total + per-employer subtotals, each job under
+    /// its own resolved rules.
+    private var pay: (combined: PaySummary, employers: [EmployerPay]) {
+        JobPay.breakdown(instances: instances, in: range, global: rules, calendar: calendar)
+    }
 
     private var range: ClosedRange<DayKey> {
         switch period {
@@ -53,12 +57,16 @@ struct TimesheetView: View {
             return PayEngine.taxYearRange(containing: today, rules: rules, calendar: calendar)
         }
     }
-    private var summary: PaySummary { PayEngine.summary(shifts: allShifts, in: range, rules: rules, calendar: calendar) }
-    private var items: [PayLineItem] { PayEngine.lineItems(shifts: allShifts, in: range, rules: rules, calendar: calendar) }
+    private var rows: [TimesheetRow] { JobPay.rows(instances: instances, in: range, global: rules, calendar: calendar) }
+    /// Pay is usable when a global rate is set OR any roster carries its own rate
+    /// override — mirror of OverviewView's gate, so the two screens never disagree.
+    private var payActive: Bool {
+        rules.isActive || instances.contains { $0.roster?.hourlyRateOverride != nil }
+    }
 
     var body: some View {
         Group {
-            if !rules.isActive {
+            if !payActive {
                 noRate
             } else {
                 content
@@ -67,13 +75,13 @@ struct TimesheetView: View {
         .themedPane()
         .navigationTitle("Timesheet")
         .toolbar {
-            if rules.isActive {
+            if payActive {
                 ToolbarItem {
                     Button("Export CSV", systemImage: "square.and.arrow.up") {
                         exportText = csv()
                         isExporting = true
                     }
-                    .disabled(items.isEmpty)
+                    .disabled(pay.combined.totalHours <= 0)
                 }
             }
         }
@@ -104,7 +112,12 @@ struct TimesheetView: View {
     }
 
     private var content: some View {
-        List {
+        // Compute the breakdown and rows ONCE per render (each is an O(shifts ×
+        // premium-minutes) pass over the whole store), then derive everything below.
+        let p = pay
+        let r = rows
+        let multi = p.employers.count > 1
+        return List {
             Section {
                 Picker("Period", selection: $period) {
                     ForEach(Period.allCases) { Text($0.label).tag($0) }
@@ -112,19 +125,39 @@ struct TimesheetView: View {
                 .pickerStyle(.segmented)
             }
 
-            Section { summaryCard }
+            Section { summaryCard(p.combined) }
 
-            if items.isEmpty {
+            if multi {
+                Section("By employer") {
+                    ForEach(p.employers) { employerRow($0) }
+                }
+            }
+
+            if r.isEmpty {
                 Section { Text("No paid shifts in this period.").foregroundStyle(.secondary) }
             } else {
-                Section("Shifts (\(items.count))") {
-                    ForEach(items) { lineRow($0) }
+                Section("Shifts (\(r.count))") {
+                    ForEach(r) { lineRow($0.item, employer: multi ? $0.employer : nil) }
                 }
             }
         }
     }
 
-    private var summaryCard: some View {
+    /// One employer's subtotal in the multi-job breakdown.
+    private func employerRow(_ e: EmployerPay) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(e.employer).font(.subheadline.weight(.medium))
+                Text("\(hoursText(e.summary.totalHours)) h · \(e.rate.formatted(.currency(code: currency)))/h")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(e.summary.grossPay, format: .currency(code: currency))
+                .font(.subheadline.monospacedDigit())
+        }
+    }
+
+    private func summaryCard(_ summary: PaySummary) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(rangeLabel).font(.caption).foregroundStyle(.secondary)
             Text(summary.grossPay, format: .currency(code: currency))
@@ -144,7 +177,7 @@ struct TimesheetView: View {
                 Text("\(summary.tentativeCount) shift\(summary.tentativeCount == 1 ? "" : "s") awaiting times — not yet paid.")
                     .font(.caption2).foregroundStyle(.orange)
             }
-            Text(grossFooter)
+            Text(grossFooter(summary))
                 .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
@@ -157,12 +190,15 @@ struct TimesheetView: View {
         }
     }
 
-    private func lineRow(_ item: PayLineItem) -> some View {
+    private func lineRow(_ item: PayLineItem, employer: String?) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.day.startOfDay(in: calendar), format: .dateTime.weekday(.abbreviated).day().month())
                     .font(.subheadline)
                 HStack(spacing: 6) {
+                    if let employer {
+                        Text(employer).font(.caption2.weight(.medium)).foregroundStyle(accent)
+                    }
                     if let label = item.typeLabel {
                         Text(label).font(.caption2).foregroundStyle(.secondary)
                     }
@@ -185,7 +221,7 @@ struct TimesheetView: View {
     }
 
     /// Explains what's inside the gross figure (overtime and/or premium rules).
-    private var grossFooter: String {
+    private func grossFooter(_ summary: PaySummary) -> String {
         var parts: [String] = []
         if summary.overtimeHours > 0 {
             parts.append("the overtime premium above \(hoursText(rules.overtimeThresholdHours)) h/week at \(rules.overtimeMultiplier.formatted(.number))×")
@@ -237,25 +273,53 @@ struct TimesheetView: View {
         // parses identically in every locale and Hours × rate reconciles with Pay.
         func num(_ v: Double) -> String { String(format: "%.2f", v) }
 
-        var rows = [csvRow(["Date", "Shift", "Start", "End", "Hours", "Pay (\(currency))"])]
-        for item in items {
-            rows.append(csvRow([
+        let p = pay
+        let r = rows
+        let summary = p.combined
+        let multi = p.employers.count > 1
+        // Place hours/pay in the right columns whether or not an Employer column exists.
+        let width = multi ? 7 : 6
+        func summaryRow(_ label: String, hours: Double? = nil, pay: Double? = nil) -> String {
+            var cells = Array(repeating: "", count: width)
+            cells[0] = label
+            if let hours { cells[multi ? 5 : 4] = num(hours) }
+            if let pay { cells[multi ? 6 : 5] = num(pay) }
+            return csvRow(cells)
+        }
+
+        var header = ["Date", "Shift", "Start", "End", "Hours", "Pay (\(currency))"]
+        if multi { header.insert("Employer", at: 1) }
+        var lines = [csvRow(header)]
+        for row in r {
+            let item = row.item
+            var cells = [
                 df.string(from: item.day.startOfDay(in: calendar)),
                 item.typeLabel ?? "",
                 item.start.map { tf.string(from: $0) } ?? "",
                 item.end.map { tf.string(from: $0) } ?? "",
                 num(item.hours),
                 num(item.pay),
-            ]))
+            ]
+            if multi { cells.insert(row.employer, at: 1) }
+            lines.append(csvRow(cells))
         }
-        rows.append("")
-        rows.append(csvRow(["Total hours", "", "", "", num(summary.totalHours), ""]))
+        lines.append("")
+        if multi {
+            for e in p.employers {
+                lines.append(summaryRow("\(e.employer) — gross", hours: e.summary.totalHours, pay: e.summary.grossPay))
+            }
+            lines.append("")
+        }
+        lines.append(summaryRow("Total hours", hours: summary.totalHours))
         if summary.overtimeHours > 0 {
-            rows.append(csvRow(["Base pay", "", "", "", "", num(summary.basePay)]))
-            rows.append(csvRow(["Overtime pay", "", "", "", "", num(summary.overtimePay)]))
+            lines.append(summaryRow("Base pay", pay: summary.basePay))
+            lines.append(summaryRow("Overtime pay", pay: summary.overtimePay))
         }
-        rows.append(csvRow(["Gross pay", "", "", "", "", num(summary.grossPay)]))
-        return rows.joined(separator: "\r\n") // RFC-4180 line ending
+        if summary.premiumPay > 0 {
+            lines.append(summaryRow("Premium pay", pay: summary.premiumPay))
+        }
+        lines.append(summaryRow("Gross pay", pay: summary.grossPay))
+        return lines.joined(separator: "\r\n") // RFC-4180 line ending
     }
 }
 

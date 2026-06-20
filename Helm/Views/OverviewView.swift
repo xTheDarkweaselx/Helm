@@ -118,7 +118,7 @@ struct OverviewView: View {
                 statRow(weekSummary: weekSummary, months: months, streak: streak)
                 weeklyHoursCard(weekly)
                 if mix.count > 1 { typeMixCard(mix) }
-                if hourlyRate > 0 { payCard(monthHours: months.current) }
+                if anyPayConfigured { payCard() }
                 leaveCard
                 quickActions
             }
@@ -258,17 +258,50 @@ struct OverviewView: View {
 
     // MARK: Pay
 
-    private func payCard(monthHours: Double) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+    /// Show pay when a global rate is set OR any roster carries a rate override.
+    private var anyPayConfigured: Bool {
+        hourlyRate > 0 || rosters.contains { $0.hourlyRateOverride != nil }
+    }
+
+    private var monthRange: ClosedRange<DayKey> {
+        InsightsMath.monthRange(MonthKey(of: today), calendar: calendar)
+    }
+
+    private func payCard() -> some View {
+        let currency = PaySettings.currencyCode
+        let pay = JobPay.breakdown(instances: instances, in: monthRange, global: PaySettings.rules, calendar: calendar)
+        return VStack(alignment: .leading, spacing: 4) {
             Text("Estimated pay this month").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            Text((monthHours * hourlyRate), format: .currency(code: Locale.current.currency?.identifier ?? "GBP"))
+            Text(pay.combined.grossPay, format: .currency(code: currency))
                 .font(.title3.weight(.bold)).monospacedDigit()
-            Text("\(hoursText(monthHours)) × \(hourlyRate, format: .currency(code: Locale.current.currency?.identifier ?? "GBP"))/h — flat rate, before tax")
+            Text(payCaption(pay.combined, employers: pay.employers.count, currency: currency))
                 .font(.caption2).foregroundStyle(.secondary)
+            if pay.employers.count > 1 {
+                VStack(spacing: 2) {
+                    ForEach(pay.employers.prefix(4)) { e in
+                        HStack {
+                            Text(e.employer).lineLimit(1)
+                            Spacer()
+                            Text(e.summary.grossPay, format: .currency(code: currency)).monospacedDigit()
+                        }
+                        .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.top, 2)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .glassCard(cornerRadius: 14)
+    }
+
+    private func payCaption(_ s: PaySummary, employers: Int, currency: String) -> String {
+        let hrs = hoursText(s.totalHours)
+        if s.premiumPay > 0 {
+            return "\(hrs) h · incl. \(s.premiumPay.formatted(.currency(code: currency))) premium, before tax"
+        }
+        if employers > 1 { return "\(hrs) h across \(employers) jobs, before tax" }
+        return "\(hrs) h, before tax"
     }
 
     // MARK: Leave

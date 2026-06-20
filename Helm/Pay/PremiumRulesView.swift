@@ -16,6 +16,18 @@ struct PremiumRulesView: View {
     @State private var editing: PremiumRule?
     @State private var loaded = false
 
+    /// Where rules are read from / written to. Defaults to the GLOBAL store
+    /// (Settings ▸ Pay); per-roster callers (Multiple Jobs) pass roster-backed
+    /// closures so a job can carry its own premiums.
+    private let load: () -> ([PremiumRule], PremiumStacking)
+    private let commit: ([PremiumRule], PremiumStacking) -> Void
+
+    init(load: @escaping () -> ([PremiumRule], PremiumStacking) = { (PaySettings.premiumRules, PaySettings.premiumStacking) },
+         commit: @escaping ([PremiumRule], PremiumStacking) -> Void = { PaySettings.premiumRules = $0; PaySettings.premiumStacking = $1 }) {
+        self.load = load
+        self.commit = commit
+    }
+
     var body: some View {
         Form {
             Section {
@@ -59,10 +71,9 @@ struct PremiumRulesView: View {
         .onAppear {
             guard !loaded else { return }
             loaded = true
-            rules = PaySettings.premiumRules
-            stacking = PaySettings.premiumStacking
+            (rules, stacking) = load()
         }
-        .onChange(of: stacking) { _, new in PaySettings.premiumStacking = new }
+        .onChange(of: stacking) { _, _ in persist() }
         .sheet(item: $editing) { rule in
             NavigationStack {
                 PremiumRuleEditor(rule: rule) { saved in
@@ -95,7 +106,7 @@ struct PremiumRulesView: View {
         .contentShape(Rectangle())
     }
 
-    private func persist() { PaySettings.premiumRules = rules }
+    private func persist() { commit(rules, stacking) }
 }
 
 // MARK: - Editor

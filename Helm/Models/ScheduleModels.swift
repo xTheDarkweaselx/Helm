@@ -195,6 +195,18 @@ final class Roster {
     /// on every platform so it can be chosen from the Mac.
     var alarmLeadMinutesOverride: Int?
 
+    // v9 Multiple Jobs — a roster can stand for one job/employer with its own pay.
+    /// Employer / job name shown in per-employer pay subtotals. nil/empty = use the
+    /// roster title.
+    var employerName: String?
+    /// Per-roster hourly rate. nil = inherit the global rate from Settings.
+    var hourlyRateOverride: Double?
+    /// Per-roster premium rules, JSON-encoded `[PremiumRule]`. nil = inherit the
+    /// global premium rules. Optional for CloudKit.
+    var premiumRulesData: Data?
+    /// Per-roster premium stacking ("highest" | "sum"). nil = inherit global.
+    var premiumStackingRaw: String?
+
     var user: UserProfile?
 
     @Relationship(deleteRule: .cascade, inverse: \ShiftInstance.roster)
