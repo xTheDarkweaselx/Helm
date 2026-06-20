@@ -44,6 +44,9 @@ struct SettingsForm: View {
     @AppStorage(AppModule.pay.key) private var payModule = true
     @AppStorage(AppModule.planning.key) private var planningModule = true
     @AppStorage(AppModule.insights.key) private var insightsModule = true
+    // v9 Accessibility + welcome guide
+    @AppStorage(A11ySettings.reduceTransparencyKey) private var reduceTransparency = false
+    @AppStorage(OnboardingState.completedKey) private var hasCompletedOnboarding = false
     // v8 Pay
     @AppStorage(PaySettings.overtimeEnabledKey) private var payOvertimeEnabled: Bool = false
     @AppStorage(PaySettings.overtimeThresholdKey) private var payOvertimeThreshold: Double = PaySettings.defaultThreshold
@@ -306,6 +309,20 @@ struct SettingsForm: View {
             #endif
 
             ThemePickerSection()
+
+            Section {
+                Toggle("Reduce transparency", isOn: $reduceTransparency)
+            } header: {
+                Text("Accessibility")
+            } footer: {
+                Text("Flattens Helm's translucent glass to solid surfaces for legibility. Helm also follows your device's text size, bold text and reduce-motion settings.")
+            }
+
+            Section {
+                Button("Show welcome guide") { hasCompletedOnboarding = false }
+            } footer: {
+                Text("Replays the first-run tour — what Helm does, plus appearance and accessibility.")
+            }
 
             googleSection
 

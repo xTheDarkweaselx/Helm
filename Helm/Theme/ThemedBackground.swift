@@ -38,7 +38,9 @@ enum ThemeWashStrength {
 /// for free — no sidebar-specific code (and never .scrollContentBackground
 /// (.hidden) there: it would strip the vibrancy material).
 struct ThemedWindowBackground: View {
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
+    @AppStorage(A11ySettings.reduceTransparencyKey) private var appReduceTransparency = false
+    private var reduceTransparency: Bool { appReduceTransparency || systemReduceTransparency }
 
     var body: some View {
         // Frost ONLY — the base Liquid Glass. The wash is carried by the panes and
@@ -86,7 +88,9 @@ struct ThemedPaneBackground: ViewModifier {
     @Environment(\.helmBackgroundTop) private var top
     @Environment(\.helmBackgroundBottom) private var bottom
     @Environment(\.colorScheme) private var scheme
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
+    @AppStorage(A11ySettings.reduceTransparencyKey) private var appReduceTransparency = false
+    private var reduceTransparency: Bool { appReduceTransparency || systemReduceTransparency }
 
     private var washTop: Color? { active ? top : nil }
 

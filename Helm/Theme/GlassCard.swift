@@ -26,14 +26,25 @@ private struct GlassCardBackground: ViewModifier {
     let cornerRadius: CGFloat
     @Environment(\.helmGlassTint) private var glassTint
     @Environment(\.colorScheme) private var scheme
+    // Accessibility: flatten the translucent material to a solid surface when the
+    // user (or the system) asks for reduced transparency, so text keeps contrast.
+    @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
+    @AppStorage(A11ySettings.reduceTransparencyKey) private var appReduceTransparency = false
+
+    private var flat: Bool { appReduceTransparency || systemReduceTransparency }
 
     func body(content: Content) -> some View {
         content.background {
             let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             ZStack {
-                shape.fill(.ultraThinMaterial)
+                if flat {
+                    shape.fill(scheme == .dark ? Color(white: 0.17) : Color.white)
+                } else {
+                    shape.fill(.ultraThinMaterial)
+                }
                 if let glassTint {
-                    shape.fill(glassTint.opacity(scheme == .dark ? 0.16 : 0.12))
+                    shape.fill(glassTint.opacity(flat ? (scheme == .dark ? 0.22 : 0.14)
+                                                      : (scheme == .dark ? 0.16 : 0.12)))
                 }
             }
         }

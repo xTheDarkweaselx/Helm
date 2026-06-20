@@ -53,6 +53,8 @@ struct ContentView: View {
     // v9 Modules — hide switched-off secondary features (default ON).
     @AppStorage("module_pay") private var payModule = true
     @AppStorage("module_planning") private var planningModule = true
+    // v9 first-run welcome guide (replayable from Settings).
+    @AppStorage(OnboardingState.completedKey) private var hasCompletedOnboarding = false
     @State private var deleteErrorMessage: String?
     @State private var scheduleAwaitingForcedDelete: Schedule?
     @Environment(\.scenePhase) private var scenePhase
@@ -117,6 +119,11 @@ struct ContentView: View {
         // If a module is switched off while you're on its screen, step back to Overview.
         .onChange(of: payModule) { _, on in if !on, selection == .timesheet { selection = .overview } }
         .onChange(of: planningModule) { _, on in if !on, selection == .planning { selection = .overview } }
+        // First-run welcome guide (and Settings "Show welcome guide" replays it).
+        .modifier(OnboardingPresenter(isPresented: Binding(
+            get: { !hasCompletedOnboarding },
+            set: { showing in if !showing { hasCompletedOnboarding = true } }
+        ), onFinish: { hasCompletedOnboarding = true }))
         .task {
             if PendingRoute.openCalendar {
                 PendingRoute.openCalendar = false
