@@ -47,6 +47,9 @@ struct SettingsForm: View {
     // v9 Accessibility + welcome guide
     @AppStorage(A11ySettings.reduceTransparencyKey) private var reduceTransparency = false
     @AppStorage(OnboardingState.completedKey) private var hasCompletedOnboarding = false
+    // v9 Paywall foundation
+    @Environment(ProStore.self) private var proStore
+    @State private var showingPaywall = false
     // v8 Pay
     @AppStorage(PaySettings.overtimeEnabledKey) private var payOvertimeEnabled: Bool = false
     @AppStorage(PaySettings.overtimeThresholdKey) private var payOvertimeThreshold: Double = PaySettings.defaultThreshold
@@ -324,6 +327,27 @@ struct SettingsForm: View {
                 Text("Replays the first-run tour — what Helm does, plus appearance and accessibility.")
             }
 
+            Section {
+                Button { showingPaywall = true } label: {
+                    HStack {
+                        Label("Helm Pro", systemImage: "sailboat.fill")
+                        Spacer()
+                        if proStore.isPro { Text("Unlocked").foregroundStyle(.green) }
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                Button("Restore purchase") { Task { await proStore.restore() } }
+                    .disabled(proStore.isWorking)
+            } header: {
+                Text("Helm Pro")
+            } footer: {
+                Text(proStore.isPro
+                     ? "Thanks for supporting Helm."
+                     : "A one-time unlock. Everything in Helm is free right now — Pro simply supports its development.")
+            }
+
             googleSection
 
             dataSection
@@ -374,6 +398,7 @@ struct SettingsForm: View {
                 payCycleAnchor = PaySettings.anchorString(DayKey(containing: .now, in: payDisplayCalendar))
             }
         }
+        .sheet(isPresented: $showingPaywall) { PaywallView() }
         .sheet(isPresented: $showingPremiumRules) {
             NavigationStack {
                 PremiumRulesView()

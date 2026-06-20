@@ -24,6 +24,8 @@ struct HelmApp: App {
     /// changing the theme in the macOS Settings window updates the main window
     /// live). Persists its selection to UserDefaults itself.
     @State private var theme = ThemeManager()
+    /// One StoreKit manager for the whole app (v9 paywall foundation).
+    @State private var proStore = ProStore()
 
     init() {
         self.modelContainer = HelmApp.sharedModelContainer
@@ -44,6 +46,7 @@ struct HelmApp: App {
                 #endif
                     .helmThemed(theme)
                     .environment(SyncProgress.shared)
+                    .environment(proStore)
             }
         }
         .modelContainer(modelContainer)
@@ -59,6 +62,7 @@ struct HelmApp: App {
                 .frame(minWidth: 520, idealWidth: 560, minHeight: 480)
                 .helmThemed(theme)
                 .environment(SyncProgress.shared)
+                .environment(proStore)
         }
         .modelContainer(modelContainer)
         #endif

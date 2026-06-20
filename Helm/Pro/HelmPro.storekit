@@ -1,0 +1,45 @@
+{
+  "appPolicies" : {
+    "eula" : "",
+    "policies" : [
+      {
+        "locale" : "en_US",
+        "policyText" : "",
+        "policyURL" : ""
+      }
+    ]
+  },
+  "identifier" : "5C7A1E20-1A2B-4C3D-9E4F-0A1B2C3D4E5F",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+    {
+      "displayPrice" : "9.99",
+      "familyShareable" : true,
+      "internalID" : "A1B2C3D4-0001-4000-8000-000000000001",
+      "localizations" : [
+        {
+          "description" : "Unlock Helm Pro forever — a one-time purchase.",
+          "displayName" : "Helm Pro",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "Fusion-Studios.Helm.pro.lifetime",
+      "referenceName" : "Helm Pro (Lifetime)",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_applicationInternalID" : "0000000000",
+    "_developerTeamID" : "0000000000",
+    "_lastSynchronizedDate" : 0
+  },
+  "subscriptionGroups" : [
+
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}
