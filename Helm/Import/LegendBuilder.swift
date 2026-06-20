@@ -12,13 +12,35 @@
 import Foundation
 import SwiftData
 import HelmDomain
+import HelmParsing
 
 @MainActor
 enum LegendBuilder {
+    /// Convert sniffed legend entries (the file's own key) into learned-tier
+    /// entries. They carry no `lastUsedAt`, so a real user mapping for the same
+    /// code always wins the merge dedupe. Overnight ends wrap past 1440.
+    static func learned(fromSniffed entries: [SniffedLegendEntry]) -> [LegendMerger.Learned] {
+        entries.compactMap { entry in
+            guard let times = entry.times else { return nil }
+            let end = times.endMinuteOfDay <= times.startMinuteOfDay
+                ? times.endMinuteOfDay + 1440
+                : times.endMinuteOfDay
+            return LegendMerger.Learned(
+                code: entry.code, action: .timed, label: entry.label,
+                startMinute: times.startMinuteOfDay, endMinute: end,
+                id: "sniffed:\(entry.code)"
+            )
+        }
+    }
+
     /// Build the merged legend for a source (nil source → globals only).
     /// Always rebuilt FROM THE STORE — never patched in place — so panel-save
     /// re-resolution is byte-identical to what the next real import would do.
-    static func legend(forSourceName sourceName: String?, in context: ModelContext) -> MergedLegend {
+    /// `sniffed` (v9) adds the file's own key in the learned tier; the caller
+    /// only passes entries for codes that are otherwise unknown, so they can't
+    /// override a real mapping.
+    static func legend(forSourceName sourceName: String?, in context: ModelContext,
+                       sniffed: [LegendMerger.Learned] = []) -> MergedLegend {
         let types = (try? context.fetch(FetchDescriptor<ShiftType>())) ?? []
         let globals: [LegendMerger.GlobalType] = types.compactMap { type in
             guard let code = type.code, !code.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
@@ -56,7 +78,7 @@ enum LegendBuilder {
                 }
             }
         }
-        return LegendMerger.merge(globalTypes: globals, learned: learned)
+        return LegendMerger.merge(globalTypes: globals, learned: sniffed + learned)
     }
 
     /// What the user decided an unknown code means.

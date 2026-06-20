@@ -33,6 +33,9 @@ final class ImportCoordinator {
     /// The raw decoded grid, retained so the user can manually map columns
     /// (when auto-detect fails, or via "Columns wrong?").
     var grid: SpreadsheetGrid?
+    /// v9 Auto-Learn: how many unknown codes were just resolved from the file's
+    /// own legend/key (for the preview banner).
+    var sniffedCount = 0
     /// The file's stem — the re-import fingerprint + legend key for re-resolution.
     private(set) var sourceName: String = ""
 
@@ -66,6 +69,7 @@ final class ImportCoordinator {
             grid = loadedGrid
             if let auto {
                 result = auto
+                applyLegendSniff(modelContext: modelContext)
                 phase = .loaded
             } else {
                 phase = .needsMapping
@@ -73,6 +77,25 @@ final class ImportCoordinator {
         } catch {
             phase = .failed(message(for: error))
         }
+    }
+
+    /// v9 Auto-Learn Codes: fill any still-unknown codes from the file's OWN
+    /// legend/key (a sniffed code+times block), so the user doesn't teach codes
+    /// the file already defines. Conservative — only unmapped codes are filled,
+    /// so a stray match can never override a real mapping; nothing is persisted
+    /// (the file's key is re-read every import).
+    func applyLegendSniff(modelContext: ModelContext) {
+        sniffedCount = 0
+        guard let grid, let current = result, !current.unmappedCodes.isEmpty else { return }
+        let unknown = Set(current.unmappedCodes)
+        let sniffed = LegendSniffer.sniff(grid: grid).filter { unknown.contains($0.code) }
+        guard !sniffed.isEmpty else { return }
+        let legend = LegendBuilder.legend(forSourceName: sourceName, in: modelContext,
+                                          sniffed: LegendBuilder.learned(fromSniffed: sniffed))
+        let before = current.unmappedCodes.count
+        result = RosterImporter.reresolve(current, legend: legend)
+        sniffedCount = max(0, before - (result?.unmappedCodes.count ?? before))
+        plan = nil
     }
 
     /// v9 Smart Import: route Foundation-Models-extracted CSV through the SAME
@@ -113,6 +136,7 @@ final class ImportCoordinator {
         let legend = LegendBuilder.legend(forSourceName: sourceName, in: modelContext)
         result = RosterImporter.resolveManual(grid: grid, sheetIndex: sheetIndex, mapping: mapping,
                                               sourceName: sourceName, legend: legend, dateOrder: dateOrder)
+        applyLegendSniff(modelContext: modelContext)
         plan = nil
         preparePlan(modelContext: modelContext)
         phase = .loaded
@@ -322,6 +346,15 @@ struct ImportView: View {
             }
             .padding(.horizontal)
             .padding(.bottom, 6)
+            if coordinator.sniffedCount > 0 {
+                Label("Read \(coordinator.sniffedCount) code\(coordinator.sniffedCount == 1 ? "" : "s") from your file's key — no need to teach \(coordinator.sniffedCount == 1 ? "it" : "them").",
+                      systemImage: "sparkles.rectangle.stack")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.bottom, 6)
+            }
             if !result.unmappedCodes.isEmpty {
                 // Bounded: expanded editors scroll inside the panel instead of
                 // starving the calendar preview below.
