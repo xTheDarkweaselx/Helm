@@ -271,7 +271,12 @@ struct ContentView: View {
             QuickAddShiftView(dateISO: iso, onDone: { selection = .calendar($0) })
         case let .roster(id):
             if let roster = rosters.first(where: { $0.id == id }) {
+                // Identity tied to the roster: switching rosters reuses this same
+                // structural position, so without .id the view-mode @State (the
+                // calendar's selected day/month, etc.) would carry over to the
+                // next roster. .id resets it on every roster change.
                 ShiftListView(roster: roster, onDeleted: { selection = .overview }, onImportUpdate: { selection = .importer })
+                    .id(roster.id)
             } else { placeholder }
         case let .schedule(id):
             if let schedule = schedules.first(where: { $0.id == id }) {
