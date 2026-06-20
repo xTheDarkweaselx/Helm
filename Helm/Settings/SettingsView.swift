@@ -45,6 +45,11 @@ struct SettingsForm: View {
     @AppStorage(PaySettings.overtimeThresholdKey) private var payOvertimeThreshold: Double = PaySettings.defaultThreshold
     @AppStorage(PaySettings.overtimeMultiplierKey) private var payOvertimeMultiplier: Double = PaySettings.defaultMultiplier
     @AppStorage(PaySettings.taxYearPresetKey) private var payTaxYearPreset: String = "uk"
+    // v9 Payday Forecast — pay cycle
+    @AppStorage(PaySettings.payCycleEnabledKey) private var payCycleEnabled: Bool = false
+    @AppStorage(PaySettings.payCycleFrequencyKey) private var payCycleFrequency: String = PayFrequency.monthly.rawValue
+    @AppStorage(PaySettings.payCycleAnchorKey) private var payCycleAnchor: String = ""
+    @AppStorage(PaySettings.payCycleLagKey) private var payCycleLag: Int = 0
     // v7.6: App Lock + wake-up alarms (both iOS only).
     #if os(iOS)
     @AppStorage(AppLockSetting.enabledKey) private var requireAppLock: Bool = false
@@ -77,6 +82,26 @@ struct SettingsForm: View {
     @State private var exportErrorMessage: String?  // surfaced via .alert
     @State private var exportSavedSummary: String?  // shown after a successful save
     @State private var showingPremiumRules = false  // v9 premium-pay editor (sheet — works in every Settings home)
+
+    private var payDisplayCalendar: Calendar { CalendarViewModel.displayCalendar }
+
+    /// DatePicker ↔ the stored "yyyy-MM-dd" anchor, in the display calendar.
+    private var payCycleAnchorBinding: Binding<Date> {
+        Binding(
+            get: { PaySettings.anchorDayKey(payCycleAnchor)?.startOfDay(in: payDisplayCalendar) ?? .now },
+            set: { payCycleAnchor = PaySettings.anchorString(DayKey(containing: $0, in: payDisplayCalendar)) }
+        )
+    }
+
+    private var payCycleFooter: String {
+        guard let cycle = PaySettings.payCycle else {
+            return "Pick a recent payday and how often you're paid."
+        }
+        let today = DayKey(containing: .now, in: payDisplayCalendar)
+        let pd = cycle.nextPayday(after: today, calendar: payDisplayCalendar)
+        let date = pd.startOfDay(in: payDisplayCalendar).formatted(.dateTime.weekday().day().month())
+        return "Your next payday is \(date). The projection shows on the Timesheet."
+    }
 
     private var googleUsable: Bool { GoogleConfig.isConfigured && googleSignedIn }
     private var reminderOffsets: Set<Int> { Set(ReminderOffsets.parse(reminderOffsetsCSV)) }
@@ -178,6 +203,34 @@ struct SettingsForm: View {
                 Text("Set your hourly rate to unlock the Timesheet — gross pay, weekly/monthly/tax-year totals, and CSV export — plus the Overview pay card. Figures are before tax.")
             }
 
+            if hourlyRate > 0 {
+                Section {
+                    Toggle("Forecast my paydays", isOn: $payCycleEnabled)
+                    if payCycleEnabled {
+                        Picker("Pay frequency", selection: $payCycleFrequency) {
+                            ForEach(PayFrequency.allCases, id: \.rawValue) { f in
+                                Text(f.label).tag(f.rawValue)
+                            }
+                        }
+                        DatePicker(payCycleFrequency == PayFrequency.monthly.rawValue ? "A recent payday" : "Start of a pay period",
+                                   selection: payCycleAnchorBinding, displayedComponents: .date)
+                        if payCycleFrequency != PayFrequency.monthly.rawValue {
+                            Stepper(value: $payCycleLag, in: 0...14) {
+                                LabeledContent("Paid", value: payCycleLag == 0
+                                               ? "on the period's last day"
+                                               : "\(payCycleLag) day\(payCycleLag == 1 ? "" : "s") later")
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Pay cycle")
+                } footer: {
+                    Text(payCycleEnabled
+                         ? payCycleFooter
+                         : "Tell Helm how often you're paid to forecast your next payday and what it'll be worth, on the Timesheet.")
+                }
+            }
+
             #if os(iOS)
             Section {
                 Toggle("Require \(AppLockSetting.biometryLabel)", isOn: $requireAppLock)
@@ -267,6 +320,13 @@ struct SettingsForm: View {
             Button("OK", role: .cancel) {}
         } message: {
             if let exportErrorMessage { Text(exportErrorMessage) }
+        }
+        .onChange(of: payCycleEnabled) { _, on in
+            // Seed a sensible anchor (today) the first time forecasting is enabled,
+            // so the cycle resolves immediately instead of staying nil.
+            if on, PaySettings.anchorDayKey(payCycleAnchor) == nil {
+                payCycleAnchor = PaySettings.anchorString(DayKey(containing: .now, in: payDisplayCalendar))
+            }
         }
         .sheet(isPresented: $showingPremiumRules) {
             NavigationStack {

@@ -19,6 +19,10 @@ enum PaySettings {
     static let taxYearPresetKey = "payTaxYearPreset"        // "uk" | "calendar"
     static let premiumRulesKey = "payPremiumRules"          // v9 — JSON [PremiumRule]
     static let premiumStackingKey = "payPremiumStacking"    // v9 — "highest" | "sum"
+    static let payCycleEnabledKey = "payCycleEnabled"       // v9 — Payday Forecast
+    static let payCycleFrequencyKey = "payCycleFrequency"   // PayFrequency.rawValue
+    static let payCycleAnchorKey = "payCycleAnchor"         // "yyyy-MM-dd"
+    static let payCycleLagKey = "payCycleLag"               // arrears days (fixed cycles)
 
     static let defaultThreshold = 40.0
     static let defaultMultiplier = 1.5
@@ -26,6 +30,27 @@ enum PaySettings {
     /// Tax-year start (month, day) for a stored preset.
     static func taxYearStart(for preset: String) -> (month: Int, day: Int) {
         preset == "calendar" ? (1, 1) : (4, 6) // default UK 6 April
+    }
+
+    // MARK: Pay cycle (v9 Payday Forecast)
+
+    static func anchorDayKey(_ s: String) -> DayKey? {
+        let p = s.split(separator: "-").compactMap { Int($0) }
+        guard p.count == 3, p[1] >= 1, p[1] <= 12, p[2] >= 1, p[2] <= 31 else { return nil }
+        return DayKey(year: p[0], month: p[1], day: p[2])
+    }
+    static func anchorString(_ key: DayKey) -> String {
+        String(format: "%04d-%02d-%02d", key.year, key.month, key.day)
+    }
+
+    /// The configured pay cycle, or nil if the user hasn't set one up.
+    static var payCycle: PayCycle? {
+        let d = UserDefaults.standard
+        guard d.bool(forKey: payCycleEnabledKey),
+              let freq = PayFrequency(rawValue: d.string(forKey: payCycleFrequencyKey) ?? ""),
+              let anchor = anchorDayKey(d.string(forKey: payCycleAnchorKey) ?? "")
+        else { return nil }
+        return PayCycle(frequency: freq, anchor: anchor, lagDays: max(0, d.integer(forKey: payCycleLagKey)))
     }
 
     /// User-authored premium rules (v9), persisted as JSON.

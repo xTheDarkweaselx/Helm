@@ -127,6 +127,8 @@ struct TimesheetView: View {
 
             Section { summaryCard(p.combined) }
 
+            forecastSection
+
             if multi {
                 Section("By employer") {
                     ForEach(p.employers) { employerRow($0) }
@@ -141,6 +143,48 @@ struct TimesheetView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Payday forecast (v9)
+
+    private var payCycle: PayCycle? { PaySettings.payCycle }
+
+    @ViewBuilder
+    private var forecastSection: some View {
+        if let cycle = payCycle {
+            let upcoming = cycle.upcomingPaydays(from: today, count: 2, calendar: calendar)
+            Section {
+                ForEach(Array(upcoming.enumerated()), id: \.offset) { _, entry in
+                    forecastRow(payday: entry.payday, period: entry.period)
+                }
+            } header: {
+                Text("Upcoming paydays")
+            } footer: {
+                Text("Projected from your scheduled shifts at your current rates — an estimate, not a promise.")
+            }
+        }
+    }
+
+    private func forecastRow(payday: DayKey, period: ClosedRange<DayKey>) -> some View {
+        let gross = JobPay.breakdown(instances: instances, in: period, global: rules, calendar: calendar).combined.grossPay
+        return HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(payday.startOfDay(in: calendar), format: .dateTime.weekday().day().month())
+                    .font(.subheadline.weight(.medium))
+                Text(forecastSubtitle(payday: payday, period: period))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text(gross, format: .currency(code: currency)).font(.subheadline.monospacedDigit())
+        }
+    }
+
+    private func forecastSubtitle(payday: DayKey, period: ClosedRange<DayKey>) -> String {
+        let days = calendar.dateComponents([.day], from: today.startOfDay(in: calendar), to: payday.startOfDay(in: calendar)).day ?? 0
+        let when = days <= 0 ? "today" : (days == 1 ? "tomorrow" : "in \(days) days")
+        let lo = period.lowerBound.startOfDay(in: calendar).formatted(.dateTime.day().month())
+        let hi = period.upperBound.startOfDay(in: calendar).formatted(.dateTime.day().month())
+        return "\(when) · for \(lo)–\(hi)"
     }
 
     /// One employer's subtotal in the multi-job breakdown.
