@@ -101,6 +101,47 @@ struct HoursIntent: AppIntent {
     }
 }
 
+struct WorkingOnDateIntent: AppIntent {
+    static let title: LocalizedStringResource = "Working On A Day"
+    static let description = IntentDescription("Tells you whether you're working on a given day, and which shift.")
+
+    @Parameter(title: "Date", requestValueDialog: "Which day shall I check?")
+    var date: Date
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let context = HelmApp.sharedModelContainer.mainContext
+        let instances = (try? context.fetch(FetchDescriptor<ShiftInstance>())) ?? []
+        let calendar = CalendarViewModel.displayCalendar
+        let day = DayKey(containing: date, in: calendar)
+        let dayLabel = date.formatted(.dateTime.weekday(.wide).day().month())
+
+        // Use the SAME civil-day bucketing as the dashboard (InsightsSnapshot buckets
+        // each shift in its own time zone), so Siri and the calendar always agree.
+        let onDay = InsightsSnapshot.shifts(from: instances)
+            .filter { $0.day == day }
+            .sorted { ($0.start ?? .distantPast) < ($1.start ?? .distantPast) }
+
+        guard !onDay.isEmpty else {
+            return .result(dialog: "You're not working on \(dayLabel).")
+        }
+        let phrases = onDay.map(shiftPhrase)
+        let list = phrases.count == 1 ? phrases[0]
+            : phrases.dropLast().joined(separator: ", ") + " and " + (phrases.last ?? "")
+        return .result(dialog: IntentDialog(stringLiteral: "Yes — you're working \(dayLabel): \(list)."))
+    }
+
+    private func shiftPhrase(_ shift: InsightShift) -> String {
+        let label = shift.typeLabel ?? "a shift"
+        guard !shift.isAllDay, let start = shift.start, let end = shift.end else {
+            return "\(label) (times to be confirmed)"
+        }
+        let from = start.formatted(.dateTime.hour().minute())
+        let to = end.formatted(.dateTime.hour().minute())
+        return "\(label) from \(from) to \(to)"
+    }
+}
+
 struct OpenCalendarIntent: AppIntent {
     static let title: LocalizedStringResource = "Show Helm Calendar"
     static let description = IntentDescription("Opens Helm on the calendar.")
@@ -133,6 +174,16 @@ struct HelmShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Shift Hours",
             systemImageName: "sum"
+        )
+        AppShortcut(
+            intent: WorkingOnDateIntent(),
+            phrases: [
+                "Am I working in \(.applicationName)?",
+                "Do I work a shift in \(.applicationName)?",
+                "Check if I'm working in \(.applicationName)",
+            ],
+            shortTitle: "Working on a day",
+            systemImageName: "calendar.badge.checkmark"
         )
         AppShortcut(
             intent: OpenCalendarIntent(),
