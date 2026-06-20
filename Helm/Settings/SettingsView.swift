@@ -76,6 +76,7 @@ struct SettingsForm: View {
     @State private var exportSummary: String?       // captured to confirm the save
     @State private var exportErrorMessage: String?  // surfaced via .alert
     @State private var exportSavedSummary: String?  // shown after a successful save
+    @State private var showingPremiumRules = false  // v9 premium-pay editor (sheet — works in every Settings home)
 
     private var googleUsable: Bool { GoogleConfig.isConfigured && googleSignedIn }
     private var reminderOffsets: Set<Int> { Set(ReminderOffsets.parse(reminderOffsetsCSV)) }
@@ -159,6 +160,17 @@ struct SettingsForm: View {
                 Picker("Tax year starts", selection: $payTaxYearPreset) {
                     Text("6 April (UK)").tag("uk")
                     Text("1 January").tag("calendar")
+                }
+                if hourlyRate > 0 {
+                    Button { showingPremiumRules = true } label: {
+                        HStack {
+                            Text("Premium pay rules")
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(Rectangle())
                 }
             } header: {
                 Text("Pay")
@@ -255,6 +267,16 @@ struct SettingsForm: View {
             Button("OK", role: .cancel) {}
         } message: {
             if let exportErrorMessage { Text(exportErrorMessage) }
+        }
+        .sheet(isPresented: $showingPremiumRules) {
+            NavigationStack {
+                PremiumRulesView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showingPremiumRules = false }
+                        }
+                    }
+            }
         }
         // Run the legacy single-value migrations so the new keys exist before
         // the @AppStorage defaults mask them.

@@ -135,15 +135,16 @@ struct TimesheetView: View {
                 if summary.overtimeHours > 0 {
                     metric("Overtime", "\(hoursText(summary.overtimeHours)) h")
                 }
+                if summary.premiumPay > 0 {
+                    metric("Premium", summary.premiumPay.formatted(.currency(code: currency)))
+                }
                 metric("Shifts", "\(summary.shiftCount)")
             }
             if summary.tentativeCount > 0 {
                 Text("\(summary.tentativeCount) shift\(summary.tentativeCount == 1 ? "" : "s") awaiting times — not yet paid.")
                     .font(.caption2).foregroundStyle(.orange)
             }
-            Text(summary.overtimeHours > 0
-                 ? "Gross, before tax — includes the overtime premium above \(hoursText(rules.overtimeThresholdHours)) h/week at \(rules.overtimeMultiplier.formatted(.number))×."
-                 : "Gross, before tax, at a flat hourly rate.")
+            Text(grossFooter)
                 .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(.vertical, 4)
@@ -175,8 +176,23 @@ struct TimesheetView: View {
             VStack(alignment: .trailing, spacing: 1) {
                 Text(item.pay, format: .currency(code: currency)).font(.subheadline.monospacedDigit())
                 Text("\(hoursText(item.hours)) h").font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                if item.premiumPay > 0 {
+                    Text("incl. \(item.premiumPay.formatted(.currency(code: currency)))")
+                        .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                }
             }
         }
+    }
+
+    /// Explains what's inside the gross figure (overtime and/or premium rules).
+    private var grossFooter: String {
+        var parts: [String] = []
+        if summary.overtimeHours > 0 {
+            parts.append("the overtime premium above \(hoursText(rules.overtimeThresholdHours)) h/week at \(rules.overtimeMultiplier.formatted(.number))×")
+        }
+        if summary.premiumPay > 0 { parts.append("your premium pay rules") }
+        guard !parts.isEmpty else { return "Gross, before tax, at a flat hourly rate." }
+        return "Gross, before tax — includes " + parts.joined(separator: " and ") + "."
     }
 
     private var rangeLabel: String {

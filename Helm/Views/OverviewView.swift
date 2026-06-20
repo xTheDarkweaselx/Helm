@@ -53,7 +53,8 @@ enum InsightsSnapshot {
                 typeLabel: instance.shiftType?.label ?? instance.shiftType?.code ?? "Other",
                 colorHex: instance.shiftType?.colorHex,
                 isAllDay: instance.isAllDay ?? false,
-                isPaid: instance.shiftType?.paid ?? true
+                isPaid: instance.shiftType?.paid ?? true,
+                tags: instance.shiftType?.tags ?? []
             )
         }
     }
