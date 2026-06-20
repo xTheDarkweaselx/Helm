@@ -148,12 +148,12 @@ struct ColumnMappingView: View {
         .safeAreaInset(edge: .bottom) {
             HStack {
                 Button("Cancel", role: .cancel, action: onCancel)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                 Spacer()
                 Button("Use this mapping") {
                     if let mapping { onApply(sheetIndex, mapping, effectiveOrder) }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .disabled(mapping == nil || previewShifts.isEmpty)
             }
             .padding()

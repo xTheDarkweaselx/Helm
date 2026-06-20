@@ -182,7 +182,7 @@ private struct LockScreen: View {
                               systemImage: AppLockSetting.biometryLabel == "Touch ID" ? "touchid" : "faceid")
                             .padding(.horizontal, 8)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     .disabled(lock.isAuthenticating)
                     if !lock.lastError.isEmpty {
                         Text(lock.lastError)

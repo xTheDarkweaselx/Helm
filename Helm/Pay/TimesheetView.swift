@@ -112,7 +112,7 @@ struct TimesheetView: View {
         } description: {
             Text("Add your hourly rate in Settings to see pay totals and export a timesheet.")
         } actions: {
-            Button("Open Settings", action: openSettings).buttonStyle(.borderedProminent)
+            Button("Open Settings", action: openSettings).buttonStyle(.glassProminent)
         }
     }
 

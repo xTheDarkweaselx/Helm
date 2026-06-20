@@ -137,9 +137,9 @@ private struct ShiftAgendaRow: View {
                         onEditNote?(shift.id, draftNote.isEmpty ? nil : draftNote)
                         editingNote = false
                     }
-                    .buttonStyle(.borderedProminent).controlSize(.small)
+                    .buttonStyle(.glassProminent).controlSize(.small)
                     Button("Cancel") { editingNote = false }
-                        .buttonStyle(.bordered).controlSize(.small)
+                        .buttonStyle(.glass).controlSize(.small)
                 }
             }
             .font(.caption)

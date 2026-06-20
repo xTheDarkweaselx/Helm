@@ -139,7 +139,7 @@ struct ShiftListView: View {
             Text("This roster has no shifts yet.")
         } actions: {
             Button("Add shift", systemImage: "plus") { isAddingShift = true }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .disabled(syncProgress.isActive)
         }
     }

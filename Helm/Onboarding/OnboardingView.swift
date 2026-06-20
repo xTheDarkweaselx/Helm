@@ -78,7 +78,7 @@ struct OnboardingView: View {
                 if page == lastPage { onFinish() }
                 else { withAnimation { page += 1 } }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
             .controlSize(.large)
             .frame(maxWidth: 420)
             .padding()

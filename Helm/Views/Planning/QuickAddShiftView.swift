@@ -83,7 +83,7 @@ struct QuickAddShiftView: View {
                     if saving { ProgressView() } else { Text("Add shift") }
                 }
                 .disabled(saving || syncProgress.isActive)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
             }
         }
         .formStyle(.grouped)

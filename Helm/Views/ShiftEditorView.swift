@@ -108,7 +108,7 @@ struct ShiftEditorView: View {
                 } label: {
                     if saving { ProgressView() } else { Text("Save & update calendar") }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .disabled(saving || syncProgress.isActive)
             } footer: {
                 Text("Your edit is kept even if you re-import the roster file.")

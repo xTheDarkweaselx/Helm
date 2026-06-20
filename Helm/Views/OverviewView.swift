@@ -100,7 +100,7 @@ struct OverviewView: View {
             Text("Import a spreadsheet roster, or build a custom rota, and Helm keeps your calendar in step with it.")
         } actions: {
             Button("Import roster", systemImage: "square.and.arrow.down", action: importRoster)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
             Button("New schedule", systemImage: "slider.horizontal.3", action: newSchedule)
         }
     }
@@ -361,7 +361,7 @@ struct OverviewView: View {
             Button("Import roster…", systemImage: "square.and.arrow.down", action: importRoster)
             Button("New schedule", systemImage: "slider.horizontal.3", action: newSchedule)
         }
-        .buttonStyle(.bordered)
+        .buttonStyle(.glass)
     }
 
     private func hoursText(_ hours: Double) -> String {

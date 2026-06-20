@@ -241,7 +241,7 @@ struct SchedulePreviewView: View {
             } description: {
                 Text(summary.userDescription)
             } actions: {
-                Button("Done") { dismiss() }.buttonStyle(.borderedProminent)
+                Button("Done") { dismiss() }.buttonStyle(.glassProminent)
             }
         case let .failed(message):
             ContentUnavailableView {

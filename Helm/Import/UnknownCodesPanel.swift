@@ -129,7 +129,7 @@ private struct UnknownCodeRow: View {
                             if label.isEmpty, let l = suggestion.label { label = l }
                         }
                         .font(.caption)
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                         Label(suggestion.reason, systemImage: confidenceIcon)
                             .font(.caption2)
                             .foregroundStyle(confidenceColor)
@@ -143,7 +143,7 @@ private struct UnknownCodeRow: View {
                             }
                         }
                         .font(.caption)
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                         .disabled(aiBusy)
                     }
                     #endif
@@ -164,7 +164,7 @@ private struct UnknownCodeRow: View {
                 }
 
                 Button("Save mapping") { save() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     .disabled((mode == .existing && selectedTypeID == nil)
                               // An equal pick is a mis-pick, not a 24h shift.
                               || (mode == .newTimed && endMinutes == startMinutes && !overnight))

@@ -280,7 +280,7 @@ struct ImportView: View {
             Text("Pick an Excel (.xlsx) or CSV file — Helm finds the dates and shift codes automatically. On‑device Apple Intelligence can also read a roster you paste as plain text.")
         } actions: {
             Button("Choose file…", systemImage: "folder") { isFileImporterPresented = true }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
             #if canImport(FoundationModels)
             if SmartImport.isAvailable {
                 Button("Paste text instead…", systemImage: "sparkles") { showingSmartPaste = true }
@@ -358,19 +358,27 @@ struct ImportView: View {
                     .opacity(previewStyle == .list ? 1 : 0)
                     .allowsHitTesting(previewStyle == .list)
             }
+
+            commitBar(diff: diff, isReimport: isReimport, result: result, enabled: hasChanges)
         }
-        .safeAreaInset(edge: .bottom) {
-            Button {
-                Task { await coordinator.commit(modelContext: modelContext) }
-            } label: {
-                Text(commitTitle(diff: diff, isReimport: isReimport, result: result))
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.glassProminent)
-            .controlSize(.large)
-            .disabled(!hasChanges)
-            .padding()
+    }
+
+    /// A glass bottom bar in the layout flow — NOT a `.safeAreaInset` overlay: the
+    /// calendar preview's body is a GeometryReader (safe-area-greedy), so a
+    /// floating inset button drew on top of the month grid + agenda.
+    private func commitBar(diff: RosterDiff?, isReimport: Bool, result: RosterImportResult, enabled: Bool) -> some View {
+        Button {
+            Task { await coordinator.commit(modelContext: modelContext) }
+        } label: {
+            Text(commitTitle(diff: diff, isReimport: isReimport, result: result))
+                .frame(maxWidth: .infinity)
         }
+        .buttonStyle(.glassProminent)
+        .controlSize(.large)
+        .disabled(!enabled)
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .background(.bar)
     }
 
     private func listPreview(_ result: RosterImportResult, diff: RosterDiff?, isReimport: Bool) -> some View {
@@ -453,7 +461,8 @@ struct ImportView: View {
 
     private func commitTitle(diff: RosterDiff?, isReimport: Bool, result: RosterImportResult) -> String {
         let destination = SyncSummary.name(for: resolvedDestinations)
-        guard let diff else { return "Add \(result.writableCount) shifts to \(destination)" }
+        func shifts(_ n: Int) -> String { "\(n) shift\(n == 1 ? "" : "s")" }
+        guard let diff else { return "Add \(shifts(result.writableCount)) to \(destination)" }
         if !diff.hasChanges {
             return destinationChangePending(isReimport: isReimport)
                 ? "Move shifts to \(destination)"
@@ -466,7 +475,7 @@ struct ImportView: View {
             if diff.removed.count > 0 { parts.append("−\(diff.removed.count)") }
             return "Apply changes to \(destination) (\(parts.joined(separator: " ")))"
         }
-        return "Add \(diff.added.count) shifts to \(destination)"
+        return "Add \(shifts(diff.added.count)) to \(destination)"
     }
 
     private func finishedView(summary: SyncSummary) -> some View {
@@ -475,7 +484,7 @@ struct ImportView: View {
         } description: {
             Text(summary.userDescription)
         } actions: {
-            Button("Done") { close() }.buttonStyle(.borderedProminent)
+            Button("Done") { close() }.buttonStyle(.glassProminent)
         }
     }
 
@@ -491,12 +500,12 @@ struct ImportView: View {
                 Button("Map columns manually", systemImage: "tablecells") {
                     coordinator.enterManualMapping()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 Button("Try another file", action: retryAnotherFile)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
             } else {
                 Button("Try another file", action: retryAnotherFile)
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
             }
         }
     }
