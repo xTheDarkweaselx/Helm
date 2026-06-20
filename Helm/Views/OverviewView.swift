@@ -71,6 +71,7 @@ struct OverviewView: View {
     @AppStorage("module_planning") private var planningModule = true
     @AppStorage("module_insights") private var insightsModule = true
     @Environment(\.helmAccent) private var accent
+    @State private var showingYearReview = false
 
     /// Open the import flow / create a schedule (owned by ContentView).
     let importRoster: () -> Void
@@ -78,6 +79,10 @@ struct OverviewView: View {
 
     private var calendar: Calendar { CalendarViewModel.displayCalendar }
     private var today: DayKey { DayKey(containing: .now, in: calendar) }
+    private var currentYear: Int { calendar.component(.year, from: .now) }
+    private var yearReview: YearInReview {
+        YearInReview.compute(shifts: InsightsSnapshot.shifts(from: instances), year: currentYear, calendar: calendar)
+    }
 
     var body: some View {
         Group {
@@ -89,6 +94,33 @@ struct OverviewView: View {
         }
         .themedPane(.plain) // v7.1 wash
         .navigationTitle("Overview")
+        .sheet(isPresented: $showingYearReview) {
+            YearInReviewView(review: yearReview)
+        }
+    }
+
+    // MARK: Year in Review (v9)
+
+    private var yearReviewCard: some View {
+        Button { showingYearReview = true } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles")
+                    .font(.title2).foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .background(LinearGradient(colors: [accent, accent.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                               in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Your \(String(currentYear)) in shifts").font(.subheadline.weight(.semibold))
+                    Text("\(yearReview.totalShifts) shifts so far — see your year in review")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+            }
+            .padding(14)
+            .glassCard(cornerRadius: 14)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - First launch
@@ -126,6 +158,7 @@ struct OverviewView: View {
                 }
                 if payModule, anyPayConfigured { payCard() }
                 if planningModule { leaveCard }
+                if insightsModule, yearReview.hasData { yearReviewCard }
                 quickActions
             }
             .padding(16)
