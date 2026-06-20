@@ -23,19 +23,31 @@ public struct PayRules: Sendable, Equatable {
     /// Tax-year start (month, day). UK default is 6 April.
     public let taxYearStartMonth: Int
     public let taxYearStartDay: Int
+    /// v9 Premium Pay — enhanced rates the user configures (night/weekend/etc.).
+    public let premiumRules: [PremiumRule]
+    /// How overlapping premiums combine on one hour.
+    public let premiumStacking: PremiumStacking
+    /// Days the user (or their calendar) marks as bank holidays, for `.bankHoliday`.
+    public let bankHolidays: Set<DayKey>
 
     public init(hourlyRate: Double,
                 overtimeEnabled: Bool = false,
                 overtimeThresholdHours: Double = 40,
                 overtimeMultiplier: Double = 1.5,
                 taxYearStartMonth: Int = 4,
-                taxYearStartDay: Int = 6) {
+                taxYearStartDay: Int = 6,
+                premiumRules: [PremiumRule] = [],
+                premiumStacking: PremiumStacking = .highest,
+                bankHolidays: Set<DayKey> = []) {
         self.hourlyRate = max(0, hourlyRate)
         self.overtimeEnabled = overtimeEnabled
         self.overtimeThresholdHours = max(0, overtimeThresholdHours)
         self.overtimeMultiplier = max(1, overtimeMultiplier)
         self.taxYearStartMonth = min(12, max(1, taxYearStartMonth))
         self.taxYearStartDay = min(28, max(1, taxYearStartDay)) // 28 keeps every month valid
+        self.premiumRules = premiumRules
+        self.premiumStacking = premiumStacking
+        self.bankHolidays = bankHolidays
     }
 
     public var isActive: Bool { hourlyRate > 0 }
@@ -48,14 +60,30 @@ public struct PaySummary: Sendable, Equatable {
     public let overtimeHours: Double
     public let basePay: Double
     public let overtimePay: Double
+    /// v9 — extra earned from premium rules, above base + overtime.
+    public let premiumPay: Double
     public let shiftCount: Int
     /// Shifts counted but awaiting times (no hours, no pay yet).
     public let tentativeCount: Int
 
-    public var grossPay: Double { basePay + overtimePay }
+    public init(totalHours: Double, baseHours: Double, overtimeHours: Double,
+                basePay: Double, overtimePay: Double, premiumPay: Double = 0,
+                shiftCount: Int, tentativeCount: Int) {
+        self.totalHours = totalHours
+        self.baseHours = baseHours
+        self.overtimeHours = overtimeHours
+        self.basePay = basePay
+        self.overtimePay = overtimePay
+        self.premiumPay = premiumPay
+        self.shiftCount = shiftCount
+        self.tentativeCount = tentativeCount
+    }
+
+    public var grossPay: Double { basePay + overtimePay + premiumPay }
 
     public static let zero = PaySummary(totalHours: 0, baseHours: 0, overtimeHours: 0,
-                                        basePay: 0, overtimePay: 0, shiftCount: 0, tentativeCount: 0)
+                                        basePay: 0, overtimePay: 0, premiumPay: 0,
+                                        shiftCount: 0, tentativeCount: 0)
 }
 
 /// A single shift's row in a timesheet (base pay = hours × rate; overtime is a
@@ -67,9 +95,14 @@ public struct PayLineItem: Sendable, Equatable, Identifiable {
     public let end: Date?
     public let hours: Double
     public let typeLabel: String?
+    /// This shift's pay INCLUDING its premium uplift (base + premium). Overtime
+    /// stays a summary-level concept (it's a whole-week calculation).
     public let pay: Double
+    /// v9 — the premium portion of `pay` (0 when no rule applies), so the UI can
+    /// show "£X (incl. £Y premium)".
+    public let premiumPay: Double
 
-    public init(id: String, day: DayKey, start: Date?, end: Date?, hours: Double, typeLabel: String?, pay: Double) {
+    public init(id: String, day: DayKey, start: Date?, end: Date?, hours: Double, typeLabel: String?, pay: Double, premiumPay: Double = 0) {
         self.id = id
         self.day = day
         self.start = start
@@ -77,6 +110,7 @@ public struct PayLineItem: Sendable, Equatable, Identifiable {
         self.hours = hours
         self.typeLabel = typeLabel
         self.pay = pay
+        self.premiumPay = premiumPay
     }
 }
 
@@ -92,6 +126,7 @@ public enum PayEngine {
         var weekHoursAll: [DayKey: Double] = [:]      // whole week, for the OT threshold
         var weekHoursInRange: [DayKey: Double] = [:]  // this period's share of each week
         var totalHours = 0.0
+        var premiumTotal = 0.0                        // v9 — per-shift premium, attributed to its own period
         var shiftCount = 0
         var tentativeCount = 0
         for shift in shifts {
@@ -103,6 +138,7 @@ public enum PayEngine {
                     weekHoursInRange[week, default: 0] += h
                     totalHours += h
                     shiftCount += 1
+                    premiumTotal += premiumPay(for: shift, rate: rules.hourlyRate, rules: rules, calendar: calendar)
                 }
             } else if shift.isAllDay, range.contains(shift.day) {
                 shiftCount += 1
@@ -130,6 +166,7 @@ public enum PayEngine {
             overtimeHours: overtimeHours,
             basePay: baseHours * rules.hourlyRate,
             overtimePay: overtimeHours * rules.hourlyRate * rules.overtimeMultiplier,
+            premiumPay: premiumTotal,
             shiftCount: shiftCount,
             tentativeCount: tentativeCount
         )
@@ -151,6 +188,8 @@ public enum PayEngine {
             .enumerated()
             .map { index, pair in
                 let (shift, hours) = pair
+                let base = hours * rules.hourlyRate
+                let premium = premiumPay(for: shift, rate: rules.hourlyRate, rules: rules, calendar: calendar)
                 return PayLineItem(
                     id: "\(index)",
                     day: shift.day,
@@ -158,7 +197,8 @@ public enum PayEngine {
                     end: shift.end,
                     hours: hours,
                     typeLabel: shift.typeLabel,
-                    pay: hours * rules.hourlyRate
+                    pay: base + premium,
+                    premiumPay: premium
                 )
             }
     }

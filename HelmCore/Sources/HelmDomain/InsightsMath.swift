@@ -26,8 +26,10 @@ public struct InsightShift: Sendable, Equatable {
     /// unpaid training, TOIL). Such shifts earn nothing on a pay report. Worked
     /// shifts, leave, on-call and standby default to `true` (paid).
     public let isPaid: Bool
+    /// Shift-type tags (v9) — let premium-pay rules key off e.g. "On-call".
+    public let tags: [String]
 
-    public init(day: DayKey, start: Date?, end: Date?, paidHours: Double?, typeKey: String?, typeLabel: String?, colorHex: String?, isAllDay: Bool, isPaid: Bool = true) {
+    public init(day: DayKey, start: Date?, end: Date?, paidHours: Double?, typeKey: String?, typeLabel: String?, colorHex: String?, isAllDay: Bool, isPaid: Bool = true, tags: [String] = []) {
         self.day = day
         self.start = start
         self.end = end
@@ -37,6 +39,7 @@ public struct InsightShift: Sendable, Equatable {
         self.colorHex = colorHex
         self.isAllDay = isAllDay
         self.isPaid = isPaid
+        self.tags = tags
     }
 }
 
