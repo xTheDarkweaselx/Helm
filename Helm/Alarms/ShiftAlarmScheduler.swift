@@ -19,11 +19,13 @@
 //  iOS-only; gated out of macOS/visionOS/watchOS.
 //
 
-#if os(iOS)
 import Foundation
 import HelmDomain
 
-/// Settings + persistence (available on every iOS build, independent of AlarmKit).
+/// Settings + persistence for the "wake me up for my shift" alarm. Cross-platform:
+/// the global default lives in UserDefaults and a per-roster override lives on the
+/// Roster (so both are editable from the Mac), even though the alarm itself only
+/// fires on iOS via AlarmKit.
 enum ShiftAlarmSetting {
     // nonisolated so the (non-MainActor) ShiftAlarmScheduler actor can read them
     // — the app target defaults to MainActor isolation.
@@ -32,16 +34,46 @@ enum ShiftAlarmSetting {
     nonisolated static let signatureKey = "shiftAlarmsSignature"
     nonisolated static let defaultLeadMinutes = 60
 
-    /// Offered lead times (minutes before the shift start).
+    /// Offered quick-pick lead times (minutes before the shift start); a roster
+    /// can also store any custom value.
     nonisolated static let leadChoices = [15, 30, 45, 60, 90, 120, 180]
 
     nonisolated static var isEnabled: Bool { UserDefaults.standard.bool(forKey: enabledKey) }
+
+    /// The global default lead — the value a roster inherits when it has no override.
     nonisolated static var leadMinutes: Int {
         let stored = UserDefaults.standard.integer(forKey: leadMinutesKey)
         return stored > 0 ? stored : defaultLeadMinutes
     }
+
+    /// A shift's effective lead: its roster's override (nil = inherit), else the
+    /// global default.
+    nonisolated static func effectiveLead(override: Int?) -> Int {
+        override ?? leadMinutes
+    }
+
+    /// Human label for a lead time: "45 min" / "1 hr" / "2 hr 15 min".
+    nonisolated static func label(forLead minutes: Int) -> String {
+        let total = max(0, minutes)
+        guard total > 0 else { return "at shift start" }
+        let hours = total / 60, mins = total % 60
+        switch (hours, mins) {
+        case (0, _): return "\(mins) min"
+        case (_, 0): return "\(hours) hr"
+        default:     return "\(hours) hr \(mins) min"
+        }
+    }
 }
-#endif
+
+/// One shift's wake-up request, carrying its OWN (roster-resolved) lead so the
+/// scheduler can mix leads across rosters in a single pass.
+struct ShiftAlarmRequest: Sendable {
+    let start: Date?
+    let isAllDay: Bool
+    let isTentative: Bool
+    let title: String
+    let leadMinutes: Int
+}
 
 #if os(iOS) && canImport(AlarmKit)
 import AlarmKit
@@ -66,21 +98,21 @@ actor ShiftAlarmScheduler {
         let title: String
     }
 
-    /// (Re)build the alarm set from the live shifts. Cheap no-op when the desired
-    /// set matches what we last scheduled. Actor-isolated, so concurrent callers
-    /// run one-at-a-time.
-    func reschedule(from inputs: [SnapshotInputShift], leadMinutes: Int) async {
+    /// (Re)build the alarm set from the live shifts, each request carrying its own
+    /// (roster-resolved) lead. Cheap no-op when the desired set matches what we
+    /// last scheduled. Actor-isolated, so concurrent callers run one-at-a-time.
+    func reschedule(from requests: [ShiftAlarmRequest]) async {
         let now = Date()
         let horizon = Calendar.current.date(byAdding: .day, value: Self.horizonDays, to: now) ?? now
-        let lead = TimeInterval(max(0, leadMinutes) * 60)
 
-        let pending: [Pending] = inputs
-            .compactMap { shift -> Pending? in
+        let pending: [Pending] = requests
+            .compactMap { request -> Pending? in
                 // Only timed, non-tentative shifts have a real wake-up moment.
-                guard !shift.isAllDay, !shift.isTentative, let start = shift.start else { return nil }
+                guard !request.isAllDay, !request.isTentative, let start = request.start else { return nil }
+                let lead = TimeInterval(max(0, request.leadMinutes) * 60)
                 let fire = start.addingTimeInterval(-lead)
                 guard fire > now, start <= horizon else { return nil }
-                return Pending(fireDate: fire, title: shift.title)
+                return Pending(fireDate: fire, title: request.title)
             }
             .sorted { $0.fireDate < $1.fireDate }
             .prefix(Self.maxAlarms)

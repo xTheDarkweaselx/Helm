@@ -50,12 +50,24 @@ enum SnapshotWriter {
             WatchBridge.shared.activate()
             WatchBridge.shared.push(snapshotData: data)
             // v7.6: keep "wake me up for my shift" alarms in step with the live
-            // shifts. Diffs internally, so foregrounding doesn't churn alarms.
+            // shifts. Each request carries its shift's effective lead (the roster's
+            // per-roster override, else the global default). Diffs internally, so
+            // foregrounding doesn't churn alarms.
             #if canImport(AlarmKit)
             if ShiftAlarmSetting.isEnabled, #available(iOS 26.0, *) {
-                let lead = ShiftAlarmSetting.leadMinutes
-                let alarmInputs = inputs
-                Task.detached { await ShiftAlarmScheduler.shared.reschedule(from: alarmInputs, leadMinutes: lead) }
+                let globalLead = ShiftAlarmSetting.leadMinutes
+                let requests: [ShiftAlarmRequest] = instances.map { inst in
+                    ShiftAlarmRequest(
+                        start: inst.startUTC,
+                        isAllDay: inst.isAllDay ?? false,
+                        // TBC = an IMPORTED tentative row; user-made all-day shifts
+                        // (.added/.modified) are deliberate.
+                        isTentative: (inst.isAllDay ?? false) && inst.overrideKind == .none,
+                        title: inst.title ?? inst.shiftType?.label ?? inst.shiftType?.code ?? "Shift",
+                        leadMinutes: inst.roster?.alarmLeadMinutesOverride ?? globalLead
+                    )
+                }
+                Task.detached { await ShiftAlarmScheduler.shared.reschedule(from: requests) }
             }
             #endif
             #endif

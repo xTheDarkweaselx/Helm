@@ -380,7 +380,7 @@ struct ShiftListView: View {
                     Button("Import updated file…", systemImage: "square.and.arrow.down") {
                         onImportUpdate()
                     }
-                    Button("Reminders for this roster…", systemImage: "bell.badge") {
+                    Button("Reminders & wake-up alarm…", systemImage: "bell.badge") {
                         isEditingReminders = true
                     }
                     // Full rewrite of every event — also the restore path after

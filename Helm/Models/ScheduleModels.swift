@@ -189,6 +189,12 @@ final class Roster {
     /// Optional for CloudKit; parsed via HelmDomain.ReminderOffsets.
     var reminderOffsetsRaw: String?
 
+    /// Per-roster wake-up-alarm lead, minutes before each timed shift's start.
+    /// nil = inherit the global ShiftAlarmSetting default. Optional for CloudKit;
+    /// consumed by the iOS scheduler (the alarm itself is iOS-only) but editable
+    /// on every platform so it can be chosen from the Mac.
+    var alarmLeadMinutesOverride: Int?
+
     var user: UserProfile?
 
     @Relationship(deleteRule: .cascade, inverse: \ShiftInstance.roster)

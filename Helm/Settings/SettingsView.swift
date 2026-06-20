@@ -87,12 +87,6 @@ struct SettingsForm: View {
     private var googleRosterCount: Int {
         importProfiles.filter { $0.targets.contains(.google) }.count
     }
-    /// Human label for an alarm lead time, e.g. "30 min", "1 hr", "1.5 hr".
-    private func leadLabel(_ minutes: Int) -> String {
-        if minutes < 60 { return "\(minutes) min" }
-        let hours = Double(minutes) / 60
-        return hours == hours.rounded() ? "\(Int(hours)) hr" : String(format: "%.1f hr", hours)
-    }
 
     var body: some View {
         Form {
@@ -194,14 +188,14 @@ struct SettingsForm: View {
                     if shiftAlarmsEnabled {
                         Picker("Alarm before shift", selection: $shiftAlarmLead) {
                             ForEach(ShiftAlarmSetting.leadChoices, id: \.self) { mins in
-                                Text(leadLabel(mins)).tag(mins)
+                                Text(ShiftAlarmSetting.label(forLead: mins)).tag(mins)
                             }
                         }
                     }
                 } header: {
                     Text("Wake-up alarms")
                 } footer: {
-                    Text("Sets a real alarm \(leadLabel(shiftAlarmLead)) before each upcoming timed shift. Like a Clock alarm it rings through Silent mode and Focus — including Sleep. Apple doesn't let apps change your Sleep schedule's wake-up alarm, so this is Helm's own alarm.")
+                    Text("Sets a real alarm \(ShiftAlarmSetting.label(forLead: shiftAlarmLead)) before each upcoming timed shift. Like a Clock alarm it rings through Silent mode and Focus — including Sleep. A roster can override this timing from its “Reminders & wake-up alarm” page. Apple doesn't let apps change your Sleep schedule's wake-up alarm, so this is Helm's own alarm.")
                 }
                 .onChange(of: shiftAlarmsEnabled) { _, on in
                     if on {
