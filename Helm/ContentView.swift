@@ -55,6 +55,8 @@ struct ContentView: View {
     @AppStorage("module_planning") private var planningModule = true
     // v9 first-run welcome guide (replayable from Settings).
     @AppStorage(OnboardingState.completedKey) private var hasCompletedOnboarding = false
+    // v9 rota templates gallery (shown by "New schedule").
+    @State private var showingTemplates = false
     @State private var deleteErrorMessage: String?
     @State private var scheduleAwaitingForcedDelete: Schedule?
     @Environment(\.scenePhase) private var scenePhase
@@ -124,6 +126,12 @@ struct ContentView: View {
             get: { !hasCompletedOnboarding },
             set: { showing in if !showing { hasCompletedOnboarding = true } }
         ), onFinish: { hasCompletedOnboarding = true }))
+        .sheet(isPresented: $showingTemplates) {
+            RotaTemplatesGallery { template in
+                showingTemplates = false
+                createSchedule(from: template)
+            }
+        }
         .task {
             if PendingRoute.openCalendar {
                 PendingRoute.openCalendar = false
@@ -318,13 +326,21 @@ struct ContentView: View {
         }
     }
 
-    private func newSchedule() {
-        let schedule = Schedule(title: "New schedule")
-        let today = Calendar.current.startOfDay(for: .now)
-        schedule.horizonStart = today
-        schedule.horizonEnd = Calendar.current.date(byAdding: .month, value: 6, to: today)
-        modelContext.insert(schedule)
-        try? modelContext.save()
+    /// v9: "New schedule" now offers a templates gallery first.
+    private func newSchedule() { showingTemplates = true }
+
+    private func createSchedule(from template: RotaTemplate?) {
+        let schedule: Schedule
+        if let template {
+            schedule = RotaTemplateMaterializer.makeSchedule(from: template, in: modelContext)
+        } else {
+            schedule = Schedule(title: "New schedule")
+            let today = Calendar.current.startOfDay(for: .now)
+            schedule.horizonStart = today
+            schedule.horizonEnd = Calendar.current.date(byAdding: .month, value: 6, to: today)
+            modelContext.insert(schedule)
+            try? modelContext.save()
+        }
         selection = .schedule(schedule.id)
     }
 
