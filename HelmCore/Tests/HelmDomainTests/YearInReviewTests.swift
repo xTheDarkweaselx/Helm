@@ -71,6 +71,13 @@ struct YearInReviewTests {
         #expect(r.hasData)
     }
 
+    @Test func busiestMonthTieBreaksToEarliestMonth() {
+        // Jan and Mar tie at 8h — the earliest month must win deterministically.
+        let shifts = [shift(d(2026, 3, 1), startHour: 9, hours: 8),
+                      shift(d(2026, 1, 1), startHour: 9, hours: 8)]
+        #expect(YearInReview.compute(shifts: shifts, year: 2026, calendar: cal).busiestMonth == 1)
+    }
+
     @Test func emptyYearHasNoData() {
         let r = YearInReview.compute(shifts: [], year: 2026, calendar: cal)
         #expect(!r.hasData)

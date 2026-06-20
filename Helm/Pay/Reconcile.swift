@@ -95,7 +95,12 @@ enum Reconcile {
             return ReconcileResult(expected: 0, actual: slip.actualGross, flaggedShortfall: 0, shiftCount: 0, checkedCount: 0)
         }
         let range = DayKey(containing: s, in: calendar)...DayKey(containing: e, in: calendar)
-        let expected = JobPay.breakdown(instances: periodShifts, in: range, global: PaySettings.rules, calendar: calendar).combined.grossPay
+        // Expected must see the FULL (employer-scoped) instance set and let breakdown
+        // clip via `range` — passing date-clipped shifts would truncate a week that
+        // straddles the period boundary and drop its weekly-overtime proration, making
+        // the Payslip "Expected" disagree with the Timesheet for the same period.
+        let scoped = slip.rosterID.map { rid in allInstances.filter { $0.roster?.id == rid } } ?? allInstances
+        let expected = JobPay.breakdown(instances: scoped, in: range, global: PaySettings.rules, calendar: calendar).combined.grossPay
 
         var shortfall = 0.0
         var checked = 0

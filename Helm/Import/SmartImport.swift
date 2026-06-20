@@ -149,8 +149,16 @@ extension ExtractedRoster {
             let date = s.date.trimmingCharacters(in: .whitespaces)
             guard !date.isEmpty else { continue }
             let start = digits(s.startTime), end = digits(s.endTime)
-            let cell = (start.count == 4 && end.count == 4) ? "\(start)-\(end)"
-                                                            : s.code.trimmingCharacters(in: .whitespaces)
+            let code = s.code.trimmingCharacters(in: .whitespaces)
+            // Prefer both-times, then the code, then a single known time (surfaced
+            // as an unknown code in the preview) — keep the date row either way so a
+            // partial extraction is never a SILENT drop.
+            let cell: String
+            if start.count == 4, end.count == 4 { cell = "\(start)-\(end)" }
+            else if !code.isEmpty { cell = code }
+            else if start.count == 4 { cell = start }
+            else if end.count == 4 { cell = end }
+            else { cell = "" }
             guard !cell.isEmpty else { continue }
             lines.append("\(field(date)),\(field(cell))")
         }

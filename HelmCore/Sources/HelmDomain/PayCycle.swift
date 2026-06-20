@@ -97,13 +97,26 @@ extension PayCycle {
 
     /// The first payday strictly after `day` (bounded scan forward).
     public func nextPayday(after day: DayKey, calendar cal: Calendar) -> DayKey {
-        var probe = day
-        for _ in 0..<400 { // ~13 months of weekly paydays — a safe upper bound
-            let pd = payday(forPeriodContaining: probe, calendar: cal)
-            if pd > day { return pd }
-            probe = period(containing: probe, calendar: cal).upperBound.advanced(by: 1, in: cal)
+        guard frequency.fixedDays != nil else {
+            // Monthly: payday is a day-of-month within each month — step by month.
+            var probe = day
+            for _ in 0..<400 {
+                let pd = payday(forPeriodContaining: probe, calendar: cal)
+                if pd > day { return pd }
+                probe = period(containing: probe, calendar: cal).upperBound.advanced(by: 1, in: cal)
+            }
+            return payday(forPeriodContaining: day, calendar: cal)
         }
-        return payday(forPeriodContaining: day, calendar: cal)
+        // Fixed cycle: payday = period end + lag. Iterate over PERIODS (not paydays)
+        // so the stride stays one period even when lag ≥ the period length (a payday
+        // can belong to a period up to `lagDays` earlier — start the scan there).
+        var p = period(containing: day.advanced(by: -lagDays, in: cal), calendar: cal)
+        for _ in 0..<800 {
+            let pd = p.upperBound.advanced(by: lagDays, in: cal)
+            if pd > day { return pd }
+            p = period(containing: p.upperBound.advanced(by: 1, in: cal), calendar: cal)
+        }
+        return p.upperBound.advanced(by: lagDays, in: cal)
     }
 
     /// Up to `count` upcoming paydays on/after `day`, each with the period it pays.

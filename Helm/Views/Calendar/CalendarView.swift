@@ -31,6 +31,17 @@ struct CalendarView: View {
 
     private var shiftFocus: ShiftFocus { ShiftFocus(rawValue: shiftFocusRaw) }
 
+    /// A focus whose type/tag no longer exists (deleted/renamed) would hide EVERY
+    /// shift with no way back — degrade it to `.all` for display.
+    private var focusIsDangling: Bool {
+        switch shiftFocus {
+        case .all: false
+        case .type(let id): !focusTypes.contains { $0.id == id }
+        case .tag(let name): !focusTags.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
+        }
+    }
+    private var effectiveFocus: ShiftFocus { focusIsDangling ? .all : shiftFocus }
+
     private struct FocusType: Identifiable { let id: String; let label: String }
     /// Distinct shift types present in the calendar, for the focus menu.
     private var focusTypes: [FocusType] {
@@ -702,13 +713,15 @@ struct CalendarView: View {
     private func computeShiftsByDay() -> [DayKey: [ShiftItem]] {
         // Focus only narrows the LIVE calendar — never the import-preview diff.
         ShiftBucketer.itemsByDay(instances, suppressing: mode.overlay?.suppressedShiftKeys ?? [],
-                                 focus: isLive ? shiftFocus : .all)
+                                 focus: isLive ? effectiveFocus : .all)
     }
 
     /// v9 Shift Focus: narrow the live calendar to one shift type or tag.
     @ViewBuilder
     private var shiftFocusMenu: some View {
-        if isLive, focusTypes.count + focusTags.count > 1 {
+        // Also show whenever a focus is active, so the user can always reach "All
+        // shifts" — even if the focused type/tag was deleted.
+        if isLive, focusTypes.count + focusTags.count > 1 || shiftFocus.isActive {
             Menu {
                 Button { shiftFocusRaw = "" } label: {
                     Label("All shifts", systemImage: shiftFocus == .all ? "checkmark" : "circle")

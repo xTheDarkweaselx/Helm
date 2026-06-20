@@ -319,7 +319,9 @@ struct ContentView: View {
                 Button("New schedule", systemImage: "slider.horizontal.3") { newSchedule() }
                 Button("Quick add shift", systemImage: "calendar.badge.plus") { selection = .quickAddShift("") }
                     .disabled(syncProgress.isActive)
-                Button("Plan time off", systemImage: "airplane") { selection = .planning }
+                if planningModule {
+                    Button("Plan time off", systemImage: "airplane") { selection = .planning }
+                }
             } label: {
                 Label("Add", systemImage: "plus")
             }

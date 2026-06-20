@@ -88,7 +88,15 @@ enum RotaTemplateMaterializer {
         var typesByCode: [String: ShiftType] = [:]
         for spec in template.types {
             let code = spec.code.uppercased()
-            if let match = existing.first(where: { ($0.code ?? "").uppercased() == code }) {
+            // Reuse an existing type ONLY if its code AND times match — reusing a
+            // same-code type with different hours would give the rota wrong times
+            // (and wrong pay). Otherwise create the template's own type.
+            if let match = existing.first(where: { t in
+                (t.code ?? "").uppercased() == code
+                    && t.startMinuteOfDay == spec.startMinute
+                    && t.endMinuteOfDay == spec.endMinute
+                    && (t.endDayOffset > 0) == spec.overnight
+            }) {
                 typesByCode[spec.code] = match
             } else {
                 let type = ShiftType(

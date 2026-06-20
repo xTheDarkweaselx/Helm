@@ -76,7 +76,10 @@ extension PayEngine {
     /// `rules.premiumStacking`. Breaks reduce the premium in proportion (the
     /// engine doesn't know WHEN the break falls, so it scales by paid/clock).
     public static func premiumPay(for shift: InsightShift, rate: Double, rules: PayRules, calendar: Calendar) -> Double {
-        guard shift.isPaid, rate > 0 else { return 0 }
+        // Note: rate may be 0 (e.g. a job with custom premiums but no base rate).
+        // A flat-per-hour allowance is independent of the base rate, so don't gate
+        // on rate > 0 — multiplier uplifts already compute to 0 at rate 0.
+        guard shift.isPaid else { return 0 }
         let active = rules.premiumRules.filter(\.enabled)
         guard !active.isEmpty else { return 0 }
 

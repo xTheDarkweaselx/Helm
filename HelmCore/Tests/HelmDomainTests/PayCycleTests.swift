@@ -78,4 +78,13 @@ struct PayCycleTests {
         #expect(up.map(\.payday) == [d(2026, 6, 7), d(2026, 6, 14), d(2026, 6, 21)])
         #expect(up[0].period == d(2026, 6, 1)...d(2026, 6, 7))
     }
+
+    @Test func upcomingPaydaysStillStrideByPeriodWhenLagExceedsPeriod() {
+        // Weekly, paid 2 weeks in arrears (lag 14 ≥ 7) — paydays must still be 7
+        // days apart, not 14 (the pre-fix scan skipped every other payday).
+        let c = PayCycle(frequency: .weekly, anchor: d(2026, 6, 1), lagDays: 14)
+        let up = c.upcomingPaydays(from: d(2026, 6, 21), count: 3, calendar: cal)
+        #expect(up.map(\.payday) == [d(2026, 6, 21), d(2026, 6, 28), d(2026, 7, 5)])
+        #expect(up[0].period == d(2026, 6, 1)...d(2026, 6, 7)) // 21 Jun pays for 1–7 Jun
+    }
 }

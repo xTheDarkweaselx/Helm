@@ -62,12 +62,16 @@ extension YearInReview {
                 let startMinute = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
                 earliest = min(earliest ?? startMinute, startMinute)
                 // A "night" shift: starts in the evening, or runs past midnight.
-                let overnight = shift.end.map { $0 <= start } ?? false
+                // Strict `<` — a zero-length (end == start) shift isn't overnight,
+                // matching InsightsMath/PremiumPay's `end > start` convention.
+                let overnight = shift.end.map { $0 < start } ?? false
                 if startMinute >= 18 * 60 || overnight { nightShifts += 1 }
             }
         }
 
-        let busiest = monthHours.max { $0.value < $1.value }
+        // Deterministic tie-break on month (earliest wins), like topType below —
+        // dictionary order is unspecified, so a bare value compare flickers on ties.
+        let busiest = monthHours.max { ($0.value, $1.key) < ($1.value, $0.key) }
         let topType = typeCounts.max { ($0.value, $1.key) < ($1.value, $0.key) }
 
         return YearInReview(

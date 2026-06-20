@@ -156,6 +156,10 @@ final class ImportCoordinator {
         guard let result else { return }
         let legend = LegendBuilder.legend(forSourceName: result.sourceName, in: modelContext)
         self.result = RosterImporter.reresolve(result, legend: legend)
+        // Re-apply the file's own key (sniffed entries are in-memory only, so the
+        // re-resolve above drops them) — otherwise teaching one code would silently
+        // revert every Auto-Learned code back to "unknown".
+        applyLegendSniff(modelContext: modelContext)
         plan = nil
         preparePlan(modelContext: modelContext)
     }
