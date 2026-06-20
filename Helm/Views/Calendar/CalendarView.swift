@@ -672,41 +672,10 @@ struct CalendarView: View {
 
     /// Live shifts bucketed by their own-timezone civil day, with preview
     /// suppression applied (updated/removed keys render via the overlay).
-    /// Called exactly once per body pass.
+    /// Called exactly once per body pass. The bucketing + ShiftItem mapping is
+    /// shared with the roster-detail Calendar mode via `ShiftBucketer`.
     private func computeShiftsByDay() -> [DayKey: [ShiftItem]] {
-        let suppressed = mode.overlay?.suppressedShiftKeys ?? []
-        var calendarByZone: [String: Calendar] = [:]
-        var byDay: [DayKey: [ShiftItem]] = [:]
-        for instance in instances {
-            if let key = instance.dedupKey, suppressed.contains(key) { continue }
-            guard let localDate = instance.localDate else { continue }
-            let zoneID = instance.timeZoneIdentifier
-            let cal = calendarByZone[zoneID] ?? {
-                var c = Calendar(identifier: .gregorian)
-                c.timeZone = TimeZone(identifier: zoneID) ?? .current
-                calendarByZone[zoneID] = c
-                return c
-            }()
-            let (day, endsLater) = DayBucketer.shiftDay(
-                localDate: localDate, start: instance.startUTC, end: instance.endUTC, calendar: cal
-            )
-            byDay[day, default: []].append(ShiftItem(
-                id: instance.id,
-                dedupKey: instance.dedupKey,
-                title: instance.title ?? instance.shiftType?.label ?? instance.shiftType?.code ?? "Shift",
-                start: instance.startUTC,
-                end: instance.endUTC,
-                colorHex: instance.shiftType?.colorHex,
-                location: instance.locationName,
-                endsOnLaterDay: endsLater,
-                paidHours: instance.computedPaidHours,
-                isAllDay: instance.isAllDay ?? false,
-                tags: instance.shiftType?.tags ?? [],
-                note: instance.note,
-                timeZoneIdentifier: zoneID
-            ))
-        }
-        return byDay
+        ShiftBucketer.itemsByDay(instances, suppressing: mode.overlay?.suppressedShiftKeys ?? [])
     }
 
     private func items(for day: DayKey, shiftBuckets: [DayKey: [ShiftItem]]) -> [CalendarDayItem] {

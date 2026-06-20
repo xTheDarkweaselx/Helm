@@ -105,26 +105,6 @@ struct ShiftListView: View {
         .sorted { ($0.label.localizedLowercase, $0.key) < ($1.label.localizedLowercase, $1.key) }
     }
 
-    /// Roster shifts bucketed by their own-timezone civil day (for the Calendar
-    /// view's month grid + day agenda). Computed once per render by the caller.
-    private var instancesByDay: [DayKey: [ShiftInstance]] {
-        var byDay: [DayKey: [ShiftInstance]] = [:]
-        var zoneCals: [String: Calendar] = [:]
-        for instance in sortedInstances {
-            guard let localDate = instance.localDate else { continue }
-            let zoneID = instance.timeZoneIdentifier
-            let cal = zoneCals[zoneID] ?? {
-                var c = Calendar(identifier: .gregorian)
-                c.timeZone = TimeZone(identifier: zoneID) ?? .current
-                zoneCals[zoneID] = c
-                return c
-            }()
-            let (day, _) = DayBucketer.shiftDay(localDate: localDate, start: instance.startUTC, end: instance.endUTC, calendar: cal)
-            byDay[day, default: []].append(instance)
-        }
-        return byDay
-    }
-
     private var rosterFirstDay: DayKey {
         let earliest = (roster.instances ?? []).compactMap(\.localDate).min() ?? .now
         return DayKey(containing: earliest, in: calendar)
@@ -134,17 +114,6 @@ struct ShiftListView: View {
         Binding(
             get: { selectedCalendarDay ?? rosterFirstDay },
             set: { selectedCalendarDay = $0; visibleMonth = MonthKey(of: $0) }
-        )
-    }
-
-    private func shiftItem(from i: ShiftInstance) -> ShiftItem {
-        ShiftItem(
-            id: i.id, dedupKey: i.dedupKey,
-            title: i.title ?? i.shiftType?.label ?? i.shiftType?.code ?? "Shift",
-            start: i.startUTC, end: i.endUTC, colorHex: i.shiftType?.colorHex,
-            location: i.locationName, endsOnLaterDay: false,
-            paidHours: i.computedPaidHours, isAllDay: i.isAllDay ?? false,
-            tags: i.shiftType?.tags ?? [], note: i.note, timeZoneIdentifier: i.timeZoneIdentifier
         )
     }
 
@@ -252,7 +221,11 @@ struct ShiftListView: View {
 
     /// This roster's shifts on a month grid, with the selected day's agenda below.
     private var calendarContent: some View {
-        let byDay = instancesByDay
+        // Shared bucketer: items (correct overnight flag) feed the grid chips;
+        // instances feed the agenda (it edits/removes the real ShiftInstance).
+        let sorted = sortedInstances
+        let itemsByDay = ShiftBucketer.itemsByDay(sorted)
+        let instancesByDay = ShiftBucketer.byDay(sorted) { instance, _ in instance }
         let today = DayKey(containing: .now, in: calendar)
         return VStack(spacing: 8) {
             calendarHeader
@@ -264,12 +237,12 @@ struct ShiftListView: View {
                 compact: false,
                 cellHeight: 64,
                 dayContent: { day in
-                    DayCellSummary(shifts: (byDay[day] ?? []).map(shiftItem(from:)),
+                    DayCellSummary(shifts: itemsByDay[day] ?? [],
                                    previews: [], eventCount: 0, eventColors: [], hasConflict: false)
                 }
             )
             Divider()
-            calendarAgenda(byDay: byDay)
+            calendarAgenda(byDay: instancesByDay)
         }
         .padding(.horizontal, 12)
         .padding(.top, 10)
