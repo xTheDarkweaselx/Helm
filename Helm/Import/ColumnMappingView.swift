@@ -28,6 +28,8 @@ struct ColumnMappingView: View {
     @State private var titleCol: Int?
     @State private var locationCol: Int?
     @State private var dateOrder: RosterDateParser.Order = .auto
+    @State private var aiSuggesting = false
+    @State private var aiError: String?
 
     // `body` only builds `mapper` (the sole user of `sheet`) when sheets is
     // non-empty, and RosterImporter.grid() rejects an empty grid — but never
@@ -83,6 +85,26 @@ struct ColumnMappingView: View {
                 Text("Helm couldn’t auto-detect the columns in “\(sourceDisplayName)”. Tell it which columns hold your shifts — the preview updates as you choose.")
                     .font(.callout).foregroundStyle(.secondary)
             }
+
+            #if canImport(FoundationModels)
+            if SmartImport.isAvailable {
+                Section {
+                    Button { Task { await suggestColumnsWithAI() } } label: {
+                        HStack {
+                            Label("Suggest columns with Apple Intelligence", systemImage: "sparkles")
+                            Spacer()
+                            if aiSuggesting { ProgressView() }
+                        }
+                    }
+                    .disabled(aiSuggesting)
+                    if let aiError {
+                        Text(aiError).font(.caption).foregroundStyle(.orange)
+                    }
+                } footer: {
+                    Text("Reads the sheet on-device and fills in the columns below for you to confirm.")
+                }
+            }
+            #endif
 
             if grid.sheets.count > 1 {
                 Section("Sheet") {
@@ -251,6 +273,37 @@ struct ColumnMappingView: View {
         if locationCol == nil { locationCol = m.locationColumn }
         if dateCol != nil || codeCol != nil { headerRow = max(0, m.headerRowCount - 1) }
     }
+
+    #if canImport(FoundationModels)
+    /// Tab-separated rows of the sheet (first ~12), each column labelled with its
+    /// 0-based index, for the model to map roles onto.
+    private func gridText() -> String {
+        let rows = min(sheet.rowCount, 12)
+        let cols = columnIndices
+        var lines = [cols.map { "Col\($0)" }.joined(separator: "\t")]
+        for r in 0..<max(rows, 0) {
+            lines.append(cols.map { sheet.cell(CellReference(column: $0, row: r))?.text ?? "" }.joined(separator: "\t"))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func suggestColumnsWithAI() async {
+        guard #available(iOS 26, macOS 26, *) else { return }
+        aiError = nil
+        aiSuggesting = true
+        defer { aiSuggesting = false }
+        do {
+            let s = try await SmartImport.suggestColumns(from: gridText())
+            let maxCol = sheet.columnCount - 1
+            if (0...max(0, maxCol)).contains(s.dateColumn) { dateCol = s.dateColumn }
+            if (0...max(0, maxCol)).contains(s.codeColumn) { codeCol = s.codeColumn }
+            titleCol = (0...max(0, maxCol)).contains(s.titleColumn) ? s.titleColumn : nil
+            headerRow = max(0, min(s.headerRows - 1, max(0, sheet.rowCount - 1), 9))
+        } catch {
+            aiError = error.localizedDescription
+        }
+    }
+    #endif
 }
 
 private func hhmmCell(_ minute: Int) -> String {

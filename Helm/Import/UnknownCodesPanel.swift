@@ -100,6 +100,7 @@ private struct UnknownCodeRow: View {
     @State private var endMinutes = 17 * 60
     @State private var overnight = false
     @State private var isExpanded = false
+    @State private var aiBusy = false
 
     var body: some View {
         DisclosureGroup(isExpanded: $isExpanded) {
@@ -133,6 +134,19 @@ private struct UnknownCodeRow: View {
                             .font(.caption2)
                             .foregroundStyle(confidenceColor)
                     }
+                    #if canImport(FoundationModels)
+                    if SmartImport.isAvailable {
+                        Button { Task { await decodeWithAI() } } label: {
+                            HStack(spacing: 5) {
+                                if aiBusy { ProgressView().controlSize(.mini) }
+                                Label("Suggest with Apple Intelligence", systemImage: "sparkles")
+                            }
+                        }
+                        .font(.caption)
+                        .buttonStyle(.bordered)
+                        .disabled(aiBusy)
+                    }
+                    #endif
                     TextField("Label (e.g. Late)", text: $label)
                     HStack {
                         minutePicker("Starts", selection: $startMinutes)
@@ -196,6 +210,27 @@ private struct UnknownCodeRow: View {
         startMinutes = snap(suggestion.start)
         endMinutes = snap(overnight ? suggestion.end - 1440 : suggestion.end)
     }
+
+    #if canImport(FoundationModels)
+    /// Ask the on-device model what this code likely means and prefill the row.
+    private func decodeWithAI() async {
+        guard #available(iOS 26, macOS 26, *) else { return }
+        aiBusy = true
+        defer { aiBusy = false }
+        guard let m = try? await SmartImport.decodeCode(code, sampleTitle: sampleTitle) else { return }
+        let trimmed = m.label.trimmingCharacters(in: .whitespaces)
+        if !trimmed.isEmpty { label = trimmed }
+        if let s = parseHHMM(m.startTime), let e = parseHHMM(m.endTime), s != e {
+            applyPrefill((s, e <= s ? e + 1440 : e)) // wrap an overnight end
+        }
+    }
+
+    private func parseHHMM(_ s: String) -> Int? {
+        let parts = s.split(separator: ":").compactMap { Int($0) }
+        guard parts.count == 2, (0..<24).contains(parts[0]), (0..<60).contains(parts[1]) else { return nil }
+        return parts[0] * 60 + parts[1]
+    }
+    #endif
 
     private func save() {
         switch mode {

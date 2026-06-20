@@ -65,6 +65,30 @@ enum SmartImport {
         blank or annual leave. Never invent shifts that aren't in the text.
         """
     }
+
+    /// AI-assist for the spreadsheet importer: which columns hold what.
+    @available(iOS 26, macOS 26, *)
+    static func suggestColumns(from gridText: String) async throws -> ColumnSuggestion {
+        let session = LanguageModelSession(instructions: """
+            You are given a spreadsheet of a work roster as tab-separated rows. The first row labels each \
+            column with its 0-based index (Col0, Col1, …). Identify which column index holds the calendar \
+            DATE, which holds the SHIFT code or name, and an optional TITLE/description column (-1 if none). \
+            Also say how many rows at the top are headers before the shift data begins.
+            """)
+        return try await session.respond(to: gridText, generating: ColumnSuggestion.self).content
+    }
+
+    /// AI-assist for the teach-Helm panel: what an unknown shift code likely means.
+    @available(iOS 26, macOS 26, *)
+    static func decodeCode(_ code: String, sampleTitle: String?) async throws -> CodeMeaning {
+        let context = sampleTitle.map { " It sometimes appears with the description: \"\($0)\"." } ?? ""
+        let session = LanguageModelSession(instructions: """
+            You interpret short codes used on UK work rosters for shift types. Given a code, give a likely \
+            full name and the typical start and end times (24-hour HH:mm) for that kind of shift. If it's \
+            plainly an overnight shift, the end time may be earlier than the start.
+            """)
+        return try await session.respond(to: "Shift code: \"\(code)\".\(context)", generating: CodeMeaning.self).content
+    }
     #endif
 }
 
@@ -87,6 +111,30 @@ struct ExtractedShift {
     @Guide(description: "Start time as HH:mm 24-hour, or empty if not stated")
     var startTime: String
     @Guide(description: "End time as HH:mm 24-hour, or empty if not stated")
+    var endTime: String
+}
+
+@available(iOS 26, macOS 26, *)
+@Generable
+struct ColumnSuggestion {
+    @Guide(description: "0-based index of the column that holds calendar dates")
+    var dateColumn: Int
+    @Guide(description: "0-based index of the column that holds the shift code or name")
+    var codeColumn: Int
+    @Guide(description: "0-based index of an optional title/description column, or -1 if there isn't one")
+    var titleColumn: Int
+    @Guide(description: "How many rows at the top are headers before the shift data begins (usually 1)")
+    var headerRows: Int
+}
+
+@available(iOS 26, macOS 26, *)
+@Generable
+struct CodeMeaning {
+    @Guide(description: "A short human-readable name for this shift code, e.g. 'Long Day' for 'LD'")
+    var label: String
+    @Guide(description: "The most likely start time as HH:mm 24-hour")
+    var startTime: String
+    @Guide(description: "The most likely end time as HH:mm 24-hour")
     var endTime: String
 }
 
