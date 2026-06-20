@@ -75,6 +75,23 @@ final class ImportCoordinator {
         }
     }
 
+    /// v9 Smart Import: route Foundation-Models-extracted CSV through the SAME
+    /// pipeline as a file, landing on the preview (with the teach-Helm panel for
+    /// any unknown codes, exactly like a file import).
+    func loadFromText(_ csv: String, sourceName: String, modelContext: ModelContext) {
+        plan = nil
+        grid = nil
+        self.sourceName = sourceName
+        let legend = LegendBuilder.legend(forSourceName: sourceName, in: modelContext)
+        do {
+            result = try RosterImporter.importCSV(text: csv, sourceName: sourceName, legend: legend)
+            preparePlan(modelContext: modelContext)
+            phase = .loaded
+        } catch {
+            phase = .failed(message(for: error))
+        }
+    }
+
     /// Open the manual column mapper over the already-loaded grid.
     func enterManualMapping() {
         guard let grid, !grid.sheets.isEmpty else { return }
@@ -153,6 +170,7 @@ struct ImportView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var coordinator = ImportCoordinator()
     @State private var isFileImporterPresented = false
+    @State private var showingSmartPaste = false
     @State private var previewStyle: PreviewStyle = .calendar
     /// Built ONCE per plan (fetches ShiftType colors); cleared on new loads.
     @State private var overlay: PreviewOverlay?
@@ -202,6 +220,22 @@ struct ImportView: View {
                     coordinator.phase = .failed(error.localizedDescription)
                 }
             }
+            #if canImport(FoundationModels)
+            .sheet(isPresented: $showingSmartPaste) {
+                if #available(iOS 26, macOS 26, *) {
+                    SmartPasteSheet { csv, sourceName in
+                        showingSmartPaste = false
+                        overlay = nil
+                        coordinator.loadFromText(csv, sourceName: sourceName, modelContext: modelContext)
+                        if let plan = coordinator.plan {
+                            overlay = PlanOverlayBuilder.build(from: plan, in: modelContext)
+                        }
+                    } onCancel: {
+                        showingSmartPaste = false
+                    }
+                }
+            }
+            #endif
     }
 
     private func close() {
@@ -241,12 +275,17 @@ struct ImportView: View {
 
     private var idleView: some View {
         ContentUnavailableView {
-            Label("Choose a roster file", systemImage: "tablecells")
+            Label("Add your roster", systemImage: "tablecells")
         } description: {
-            Text("Pick an Excel (.xlsx) or CSV file of your roster. Helm finds the dates and shift codes automatically.")
+            Text("Pick an Excel (.xlsx) or CSV file — Helm finds the dates and shift codes automatically. On‑device Apple Intelligence can also read a roster you paste as plain text.")
         } actions: {
             Button("Choose file…", systemImage: "folder") { isFileImporterPresented = true }
                 .buttonStyle(.borderedProminent)
+            #if canImport(FoundationModels)
+            if SmartImport.isAvailable {
+                Button("Paste text instead…", systemImage: "sparkles") { showingSmartPaste = true }
+            }
+            #endif
         }
     }
 
