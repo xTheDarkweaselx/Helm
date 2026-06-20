@@ -376,8 +376,15 @@ struct ShiftListView: View {
             }
             ToolbarItem {
                 Menu {
-                    if let icsURL {
-                        ShareLink("Export .ics", item: icsURL)
+                    if hasShifts {
+                        Menu {
+                            if let icsURL {
+                                ShareLink("Calendar file (.ics)", item: icsURL)
+                            }
+                            ShareLink("Roster card (text)", item: rosterSummaryText)
+                        } label: {
+                            Label("Share roster", systemImage: "square.and.arrow.up")
+                        }
                     }
                     Button("Import updated file…", systemImage: "square.and.arrow.down") {
                         onImportUpdate()
@@ -552,6 +559,29 @@ struct ShiftListView: View {
             rangeText = first == last ? l : "\(f) – \(l)"
         }
         return (instances.count, hours, tbc, edited, rangeText)
+    }
+
+    /// v9 Roster Card: a readable text version of the roster for sharing.
+    private var rosterSummaryText: String {
+        let stats = rosterStats()
+        let tf = DateFormatter()
+        tf.dateFormat = "HH:mm"
+        tf.timeZone = calendar.timeZone
+        let lines: [RosterSummary.ShiftLine] = (roster.instances ?? []).compactMap { inst in
+            guard let date = inst.localDate else { return nil }
+            let label = inst.title ?? inst.shiftType?.label ?? inst.shiftType?.code ?? "Shift"
+            let detail: String?
+            if inst.isAllDay == true {
+                detail = inst.overrideKind == .none ? "TBC" : "all-day"
+            } else if let s = inst.startUTC, let e = inst.endUTC {
+                detail = "\(tf.string(from: s))–\(tf.string(from: e))"
+            } else {
+                detail = nil
+            }
+            return RosterSummary.ShiftLine(date: date, label: label, detail: detail)
+        }
+        return RosterSummary.text(title: roster.title ?? "Roster", rangeText: stats.rangeText,
+                                  shiftCount: stats.count, hours: stats.hours, lines: lines, calendar: calendar)
     }
 
     private func monthTitle(_ month: MonthKey) -> String {
