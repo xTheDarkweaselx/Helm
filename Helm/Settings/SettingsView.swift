@@ -40,6 +40,10 @@ struct SettingsForm: View {
     @AppStorage(GoogleConfig.signedInDefaultsKey) private var googleSignedIn: Bool = false
     @AppStorage(GoogleConfig.accountEmailDefaultsKey) private var googleEmail: String = ""
     @AppStorage("hourlyRate") private var hourlyRate: Double = 0
+    // v9 Modules
+    @AppStorage(AppModule.pay.key) private var payModule = true
+    @AppStorage(AppModule.planning.key) private var planningModule = true
+    @AppStorage(AppModule.insights.key) private var insightsModule = true
     // v8 Pay
     @AppStorage(PaySettings.overtimeEnabledKey) private var payOvertimeEnabled: Bool = false
     @AppStorage(PaySettings.overtimeThresholdKey) private var payOvertimeThreshold: Double = PaySettings.defaultThreshold
@@ -103,6 +107,14 @@ struct SettingsForm: View {
         return "Your next payday is \(date). The projection shows on the Timesheet."
     }
 
+    private func moduleBinding(_ module: AppModule) -> Binding<Bool> {
+        switch module {
+        case .pay: $payModule
+        case .planning: $planningModule
+        case .insights: $insightsModule
+        }
+    }
+
     private var googleUsable: Bool { GoogleConfig.isConfigured && googleSignedIn }
     private var reminderOffsets: Set<Int> { Set(ReminderOffsets.parse(reminderOffsetsCSV)) }
     private var chosenDestinations: Set<CalendarTargetKind> {
@@ -116,6 +128,21 @@ struct SettingsForm: View {
 
     var body: some View {
         Form {
+            Section {
+                ForEach(AppModule.allCases) { module in
+                    Toggle(isOn: moduleBinding(module)) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label(module.title, systemImage: module.icon)
+                            Text(module.summary).font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } header: {
+                Text("Features")
+            } footer: {
+                Text("Turn off features you don't use to declutter the app. Nothing is deleted — switch one back on to restore it.")
+            }
+
             Section {
                 ForEach(ReminderSetting.presets, id: \.minutes) { preset in
                     Toggle(preset.label, isOn: reminderBinding(for: preset.minutes))
@@ -149,6 +176,7 @@ struct SettingsForm: View {
                 }
             }
 
+            if payModule {
             Section {
                 LabeledContent("Hourly rate") {
                     HStack(spacing: 2) {
@@ -230,6 +258,7 @@ struct SettingsForm: View {
                          : "Tell Helm how often you're paid to forecast your next payday and what it'll be worth, on the Timesheet.")
                 }
             }
+            } // if payModule
 
             #if os(iOS)
             Section {

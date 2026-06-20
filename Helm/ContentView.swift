@@ -50,6 +50,9 @@ struct ContentView: View {
     }
 
     @State private var selection: Selection? = .overview
+    // v9 Modules — hide switched-off secondary features (default ON).
+    @AppStorage("module_pay") private var payModule = true
+    @AppStorage("module_planning") private var planningModule = true
     @State private var deleteErrorMessage: String?
     @State private var scheduleAwaitingForcedDelete: Schedule?
     @Environment(\.scenePhase) private var scenePhase
@@ -111,6 +114,9 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .helmOpenCalendar)) { _ in
             selection = .calendar(nil)
         }
+        // If a module is switched off while you're on its screen, step back to Overview.
+        .onChange(of: payModule) { _, on in if !on, selection == .timesheet { selection = .overview } }
+        .onChange(of: planningModule) { _, on in if !on, selection == .planning { selection = .overview } }
         .task {
             if PendingRoute.openCalendar {
                 PendingRoute.openCalendar = false
@@ -185,8 +191,8 @@ struct ContentView: View {
                 navRow(.calendar(nil), "Calendar", "calendar")
                 navRow(.search, "Search", "magnifyingglass")
                 navRow(.shiftTypes, "Shift Types", "clock")
-                navRow(.planning, "Planning", "calendar.badge.clock")
-                navRow(.timesheet, "Timesheet", "banknote")
+                if planningModule { navRow(.planning, "Planning", "calendar.badge.clock") }
+                if payModule { navRow(.timesheet, "Timesheet", "banknote") }
                 navRow(.settings, "Settings", "gearshape")
             }
 

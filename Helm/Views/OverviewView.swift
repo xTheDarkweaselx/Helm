@@ -66,6 +66,10 @@ struct OverviewView: View {
     @Query private var instances: [ShiftInstance]
     @Query private var timeOffs: [TimeOff]
     @AppStorage("hourlyRate") private var hourlyRate: Double = 0
+    // v9 Modules — hide switched-off sections.
+    @AppStorage("module_pay") private var payModule = true
+    @AppStorage("module_planning") private var planningModule = true
+    @AppStorage("module_insights") private var insightsModule = true
     @Environment(\.helmAccent) private var accent
 
     /// Open the import flow / create a schedule (owned by ContentView).
@@ -115,11 +119,13 @@ struct OverviewView: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 nextShiftHero
-                statRow(weekSummary: weekSummary, months: months, streak: streak)
-                weeklyHoursCard(weekly)
-                if mix.count > 1 { typeMixCard(mix) }
-                if anyPayConfigured { payCard() }
-                leaveCard
+                if insightsModule {
+                    statRow(weekSummary: weekSummary, months: months, streak: streak)
+                    weeklyHoursCard(weekly)
+                    if mix.count > 1 { typeMixCard(mix) }
+                }
+                if payModule, anyPayConfigured { payCard() }
+                if planningModule { leaveCard }
                 quickActions
             }
             .padding(16)

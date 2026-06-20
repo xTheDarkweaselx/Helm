@@ -61,6 +61,7 @@ struct ShiftListView: View {
     @State private var icsURL: URL?
     @State private var isEditingReminders = false
     @State private var isEditingPay = false
+    @AppStorage("module_pay") private var payModule = true
     @State private var instanceToRemove: ShiftInstance?
     @State private var editingShift: ShiftInstance?
     @State private var isAddingShift = false
@@ -384,8 +385,10 @@ struct ShiftListView: View {
                     Button("Reminders & wake-up alarm…", systemImage: "bell.badge") {
                         isEditingReminders = true
                     }
-                    Button("Pay & employer…", systemImage: "sterlingsign.circle") {
-                        isEditingPay = true
+                    if payModule {
+                        Button("Pay & employer…", systemImage: "sterlingsign.circle") {
+                            isEditingPay = true
+                        }
                     }
                     // Full rewrite of every event — also the restore path after
                     // "Remove Helm events" in Settings (re-import alone sees
