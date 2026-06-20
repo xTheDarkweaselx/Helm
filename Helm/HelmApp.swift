@@ -95,6 +95,8 @@ extension HelmApp {
             TimeOff.self,
             AvailabilityRule.self,
             AvailabilityWindow.self,
+            // v9 payslip reconcile.
+            Payslip.self,
         ])
     }
 

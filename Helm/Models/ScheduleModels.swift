@@ -49,6 +49,10 @@ final class UserProfile {
     @Relationship(deleteRule: .cascade, inverse: \AvailabilityWindow.user)
     var availabilityWindows: [AvailabilityWindow]?
 
+    // v9 Payslip Reconcile. Explicit inverse (CloudKit needs it on both sides).
+    @Relationship(deleteRule: .cascade, inverse: \Payslip.user)
+    var payslips: [Payslip]?
+
     init(id: String = UUID().uuidString, displayName: String? = nil, nameAliases: [String]? = nil) {
         self.id = id
         self.displayName = displayName
@@ -220,6 +224,45 @@ final class Roster {
     }
 }
 
+// MARK: - Payslip (v9 reconcile ledger)
+
+/// One pay period the user reconciles against a real payslip: the period it
+/// covers, optionally scoped to one employer (roster), the actual gross they
+/// were paid, and whether it's been resolved. Helm's *expected* figure is
+/// recomputed live from the shifts in the period, so it isn't stored here.
+@Model
+final class Payslip {
+    var id: String = UUID().uuidString
+    var createdAt: Date = Date.now
+    /// Inclusive pay period (date-only, start-of-day in the display zone).
+    var periodStart: Date?
+    var periodEnd: Date?
+    var payday: Date?
+    /// Employer scope: a Roster.id, or nil for all jobs combined.
+    var rosterID: String?
+    /// Snapshot of the employer name for display (rosters can be renamed/deleted).
+    var employerLabel: String?
+    /// Gross the user was actually paid, from their payslip. nil = not entered yet.
+    var actualGross: Double?
+    var resolved: Bool = false
+    var note: String?
+
+    var user: UserProfile?
+
+    init(id: String = UUID().uuidString, periodStart: Date? = nil, periodEnd: Date? = nil,
+         payday: Date? = nil, rosterID: String? = nil, employerLabel: String? = nil,
+         user: UserProfile? = nil) {
+        self.id = id
+        self.createdAt = .now
+        self.periodStart = periodStart
+        self.periodEnd = periodEnd
+        self.payday = payday
+        self.rosterID = rosterID
+        self.employerLabel = employerLabel
+        self.user = user
+    }
+}
+
 // MARK: - ShiftInstance (the push-to-calendar unit)
 
 @Model
@@ -249,6 +292,12 @@ final class ShiftInstance {
     var title: String?
     var locationName: String?
     var note: String?
+
+    /// v9 Payslip Reconcile — was this shift actually paid? nil = not yet checked
+    /// ("unknown"); otherwise "paid" | "notPaid" | "wrong".
+    var paidStatusRaw: String?
+    /// For a "wrong" status — what was actually paid for this shift (gross).
+    var actualPay: Double?
 
     var shiftType: ShiftType?
     var roster: Roster?

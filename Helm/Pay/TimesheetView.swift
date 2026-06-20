@@ -30,6 +30,7 @@ struct TimesheetView: View {
         }
     }
     @State private var period: Period = .month
+    @State private var showingPayslips = false
     @State private var isExporting = false
     /// Built once when Export is tapped (not on every body render) so the file
     /// reflects the period showing at that moment.
@@ -77,6 +78,9 @@ struct TimesheetView: View {
         .toolbar {
             if payActive {
                 ToolbarItem {
+                    Button("Payslips", systemImage: "doc.text.magnifyingglass") { showingPayslips = true }
+                }
+                ToolbarItem {
                     Button("Export CSV", systemImage: "square.and.arrow.up") {
                         exportText = csv()
                         isExporting = true
@@ -85,6 +89,7 @@ struct TimesheetView: View {
                 }
             }
         }
+        .navigationDestination(isPresented: $showingPayslips) { PayslipsView() }
         .fileExporter(isPresented: $isExporting,
                       document: CSVFile(text: exportText),
                       contentType: .commaSeparatedText,
