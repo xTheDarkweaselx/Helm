@@ -17,6 +17,7 @@ struct CalendarView: View {
     let mode: CalendarMode
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.helmAccent) private var accent
     @Query(sort: \ShiftInstance.localDate) private var instances: [ShiftInstance]
     // v7 planning overlays.
     @Query private var timeOffs: [TimeOff]
@@ -41,6 +42,16 @@ struct CalendarView: View {
         }
     }
     private var effectiveFocus: ShiftFocus { focusIsDangling ? .all : shiftFocus }
+
+    /// The active focus's display name (for the removable header chip), or nil
+    /// when showing all shifts.
+    private var activeFocusLabel: String? {
+        switch effectiveFocus {
+        case .all: nil
+        case .type(let id): focusTypes.first { $0.id == id }?.label
+        case .tag(let name): name
+        }
+    }
 
     private struct FocusType: Identifiable { let id: String; let label: String }
     /// Distinct shift types present in the calendar, for the focus menu.
@@ -256,6 +267,24 @@ struct CalendarView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
+                // v10: a visible, removable cue when a Shift Focus is active —
+                // otherwise the filter is invisible and feels like missing shifts.
+                if isLive, let focusName = activeFocusLabel {
+                    Button { shiftFocusRaw = "" } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "eye.fill")
+                            Text(focusName).lineLimit(1)
+                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                        }
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(accent)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Capsule().fill(accent.opacity(0.15)))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Showing only \(focusName). Tap to show all shifts.")
+                }
             }
     }
 
@@ -269,18 +298,7 @@ struct CalendarView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
-            if displayMode != .month {
-                Menu {
-                    Button("Compact") { hourHeight = 32 }
-                    Button("Comfortable") { hourHeight = 48 }
-                    Button("Spacious") { hourHeight = 72 }
-                } label: {
-                    Label("Zoom", systemImage: "arrow.up.left.and.arrow.down.right").labelStyle(.iconOnly)
-                }
-                .menuIndicator(.hidden)
-            }
-            calendarFilterMenu
-            shiftFocusMenu
+            overflowMenu
             Button {
                 stepBackward()
             } label: {
@@ -363,31 +381,77 @@ struct CalendarView: View {
         }
     }
 
-    /// v4: choose which system calendars' events appear (Apple/iCloud, Google
-    /// accounts added to the system, …) — grouped by account, Apple-style.
+    /// v10: the secondary calendar controls — Shift Focus, the calendar filter,
+    /// and (timeline) row height — folded into ONE "More" menu so the header row
+    /// stays clear. An active focus surfaces separately as a removable chip under
+    /// the title, so it's never hidden when it matters.
     @ViewBuilder
-    private var calendarFilterMenu: some View {
-        if !model.availableCalendars.isEmpty {
+    private var overflowMenu: some View {
+        let showFocus = isLive && (focusTypes.count + focusTags.count > 1 || shiftFocus.isActive)
+        let showCalendars = !model.availableCalendars.isEmpty
+        let showZoom = displayMode != .month
+        if showFocus || showCalendars || showZoom {
             Menu {
-                let grouped = Dictionary(grouping: model.availableCalendars, by: \.sourceTitle)
-                ForEach(grouped.keys.sorted(), id: \.self) { source in
-                    Section(source) {
-                        ForEach(grouped[source] ?? []) { choice in
-                            Toggle(isOn: Binding(
-                                get: { !model.hiddenCalendarIDs.contains(choice.id) },
-                                set: { model.setCalendar(id: choice.id, hidden: !$0) }
-                            )) {
-                                Text(choice.title)
+                if showFocus {
+                    Menu {
+                        Button { shiftFocusRaw = "" } label: {
+                            Label("All shifts", systemImage: shiftFocus == .all ? "checkmark" : "circle")
+                        }
+                        if !focusTypes.isEmpty {
+                            Section("Shift type") {
+                                ForEach(focusTypes) { t in
+                                    Button { shiftFocusRaw = "type:\(t.id)" } label: {
+                                        Label(t.label, systemImage: shiftFocus == .type(id: t.id) ? "checkmark" : "circle")
+                                    }
+                                }
                             }
                         }
+                        if !focusTags.isEmpty {
+                            Section("Tag") {
+                                ForEach(focusTags, id: \.self) { tag in
+                                    Button { shiftFocusRaw = "tag:\(tag)" } label: {
+                                        Label(tag, systemImage: shiftFocus == .tag(tag) ? "checkmark" : "circle")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Focus on a shift type", systemImage: shiftFocus.isActive ? "eye.fill" : "eye")
+                    }
+                }
+                if showCalendars {
+                    Menu {
+                        let grouped = Dictionary(grouping: model.availableCalendars, by: \.sourceTitle)
+                        ForEach(grouped.keys.sorted(), id: \.self) { source in
+                            Section(source) {
+                                ForEach(grouped[source] ?? []) { choice in
+                                    Toggle(isOn: Binding(
+                                        get: { !model.hiddenCalendarIDs.contains(choice.id) },
+                                        set: { model.setCalendar(id: choice.id, hidden: !$0) }
+                                    )) {
+                                        Text(choice.title)
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        Label("Calendars to show",
+                              systemImage: model.hiddenCalendarIDs.isEmpty
+                                  ? "line.3.horizontal.decrease.circle"
+                                  : "line.3.horizontal.decrease.circle.fill")
+                    }
+                }
+                if showZoom {
+                    Menu {
+                        Button("Compact") { hourHeight = 32 }
+                        Button("Comfortable") { hourHeight = 48 }
+                        Button("Spacious") { hourHeight = 72 }
+                    } label: {
+                        Label("Row height", systemImage: "arrow.up.left.and.arrow.down.right")
                     }
                 }
             } label: {
-                Label("Calendars",
-                      systemImage: model.hiddenCalendarIDs.isEmpty
-                          ? "line.3.horizontal.decrease.circle"
-                          : "line.3.horizontal.decrease.circle.fill")
-                    .labelStyle(.iconOnly)
+                Label("More", systemImage: "ellipsis.circle").labelStyle(.iconOnly)
             }
             .menuIndicator(.hidden)
         }
@@ -714,42 +778,6 @@ struct CalendarView: View {
         // Focus only narrows the LIVE calendar — never the import-preview diff.
         ShiftBucketer.itemsByDay(instances, suppressing: mode.overlay?.suppressedShiftKeys ?? [],
                                  focus: isLive ? effectiveFocus : .all)
-    }
-
-    /// v9 Shift Focus: narrow the live calendar to one shift type or tag.
-    @ViewBuilder
-    private var shiftFocusMenu: some View {
-        // Also show whenever a focus is active, so the user can always reach "All
-        // shifts" — even if the focused type/tag was deleted.
-        if isLive, focusTypes.count + focusTags.count > 1 || shiftFocus.isActive {
-            Menu {
-                Button { shiftFocusRaw = "" } label: {
-                    Label("All shifts", systemImage: shiftFocus == .all ? "checkmark" : "circle")
-                }
-                if !focusTypes.isEmpty {
-                    Section("Shift type") {
-                        ForEach(focusTypes) { t in
-                            Button { shiftFocusRaw = "type:\(t.id)" } label: {
-                                Label(t.label, systemImage: shiftFocus == .type(id: t.id) ? "checkmark" : "circle")
-                            }
-                        }
-                    }
-                }
-                if !focusTags.isEmpty {
-                    Section("Tag") {
-                        ForEach(focusTags, id: \.self) { tag in
-                            Button { shiftFocusRaw = "tag:\(tag)" } label: {
-                                Label(tag, systemImage: shiftFocus == .tag(tag) ? "checkmark" : "circle")
-                            }
-                        }
-                    }
-                }
-            } label: {
-                Label("Focus", systemImage: shiftFocus.isActive ? "eye.fill" : "eye")
-                    .labelStyle(.iconOnly)
-            }
-            .menuIndicator(.hidden)
-        }
     }
 
     private func items(for day: DayKey, shiftBuckets: [DayKey: [ShiftItem]]) -> [CalendarDayItem] {
