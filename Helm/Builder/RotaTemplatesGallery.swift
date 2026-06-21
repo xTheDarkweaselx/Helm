@@ -46,7 +46,7 @@ struct RotaTemplatesGallery: View {
             }
             .formStyle(.grouped)
             .themedPane()
-            .navigationTitle("New schedule")
+            .navigationTitle("Build a rota")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif

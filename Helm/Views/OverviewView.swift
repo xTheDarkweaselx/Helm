@@ -76,6 +76,12 @@ struct OverviewView: View {
     /// Open the import flow / create a schedule (owned by ContentView).
     let importRoster: () -> Void
     let newSchedule: () -> Void
+    // v10: surface routes that already exist — quick-add, and tap a card to open
+    // its screen (next shift → calendar, pay → timesheet, leave → planning).
+    let quickAdd: () -> Void
+    let openDay: (DayKey?) -> Void
+    let openTimesheet: () -> Void
+    let openPlanning: () -> Void
 
     private var calendar: Calendar { CalendarViewModel.displayCalendar }
     private var today: DayKey { DayKey(containing: .now, in: calendar) }
@@ -133,7 +139,7 @@ struct OverviewView: View {
         } actions: {
             Button("Import roster", systemImage: "square.and.arrow.down", action: importRoster)
                 .buttonStyle(.glassProminent)
-            Button("New schedule", systemImage: "slider.horizontal.3", action: newSchedule)
+            Button("Build a rota", systemImage: "square.grid.2x2", action: newSchedule)
         }
     }
 
@@ -175,29 +181,37 @@ struct OverviewView: View {
     @ViewBuilder
     private var nextShiftHero: some View {
         if let next = NextShiftSelector.next(in: instances) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Next shift").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                Text(next.title ?? next.shiftType?.label ?? next.shiftType?.code ?? "Shift")
-                    .font(.title2.weight(.bold))
-                if next.isAllDay == true, let day = next.localDate {
-                    Text(day, format: .dateTime.weekday(.wide).day().month())
-                        .foregroundStyle(.secondary)
-                    Label("All-day — times to be confirmed", systemImage: "clock.badge.questionmark")
-                        .font(.caption).foregroundStyle(.orange)
-                } else if let start = next.startUTC {
-                    Text(start, format: .dateTime.weekday(.wide).day().month().hour().minute())
-                        .foregroundStyle(.secondary)
-                    Text(start, format: .relative(presentation: .named))
-                        .font(.caption).foregroundStyle(.secondary)
+            Button {
+                openDay(next.localDate.map { DayKey(containing: $0, in: calendar) })
+            } label: {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Next shift").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        Text(next.title ?? next.shiftType?.label ?? next.shiftType?.code ?? "Shift")
+                            .font(.title2.weight(.bold))
+                        if next.isAllDay == true, let day = next.localDate {
+                            Text(day, format: .dateTime.weekday(.wide).day().month())
+                                .foregroundStyle(.secondary)
+                            Label("All-day — times to be confirmed", systemImage: "clock.badge.questionmark")
+                                .font(.caption).foregroundStyle(.orange)
+                        } else if let start = next.startUTC {
+                            Text(start, format: .dateTime.weekday(.wide).day().month().hour().minute())
+                                .foregroundStyle(.secondary)
+                            Text(start, format: .relative(presentation: .named))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        if let location = next.locationName, !location.isEmpty {
+                            Label(location, systemImage: "mappin.and.ellipse")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.tertiary)
                 }
-                if let location = next.locationName, !location.isEmpty {
-                    Label(location, systemImage: "mappin.and.ellipse")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
+                .padding(14)
+                .glassCard(cornerRadius: 14)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .glassCard(cornerRadius: 14)
+            .buttonStyle(.plain)
         }
     }
 
@@ -309,29 +323,35 @@ struct OverviewView: View {
     private func payCard() -> some View {
         let currency = PaySettings.currencyCode
         let pay = JobPay.breakdown(instances: instances, in: monthRange, global: PaySettings.rules, calendar: calendar)
-        return VStack(alignment: .leading, spacing: 4) {
-            Text("Estimated pay this month").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            Text(pay.combined.grossPay, format: .currency(code: currency))
-                .font(.title3.weight(.bold)).monospacedDigit()
-            Text(payCaption(pay.combined, employers: pay.employers.count, currency: currency))
-                .font(.caption2).foregroundStyle(.secondary)
-            if pay.employers.count > 1 {
-                VStack(spacing: 2) {
-                    ForEach(pay.employers.prefix(4)) { e in
-                        HStack {
-                            Text(e.employer).lineLimit(1)
-                            Spacer()
-                            Text(e.summary.grossPay, format: .currency(code: currency)).monospacedDigit()
-                        }
+        return Button(action: openTimesheet) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Estimated pay this month").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text(pay.combined.grossPay, format: .currency(code: currency))
+                        .font(.title3.weight(.bold)).monospacedDigit()
+                    Text(payCaption(pay.combined, employers: pay.employers.count, currency: currency))
                         .font(.caption2).foregroundStyle(.secondary)
+                    if pay.employers.count > 1 {
+                        VStack(spacing: 2) {
+                            ForEach(pay.employers.prefix(4)) { e in
+                                HStack {
+                                    Text(e.employer).lineLimit(1)
+                                    Spacer()
+                                    Text(e.summary.grossPay, format: .currency(code: currency)).monospacedDigit()
+                                }
+                                .font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.top, 2)
                     }
                 }
-                .padding(.top, 2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.tertiary)
             }
+            .padding(14)
+            .glassCard(cornerRadius: 14)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .glassCard(cornerRadius: 14)
+        .buttonStyle(.plain)
     }
 
     private func payCaption(_ s: PaySummary, employers: Int, currency: String) -> String {
@@ -349,23 +369,29 @@ struct OverviewView: View {
     private var leaveCard: some View {
         let summary = leaveSummary()
         if summary.totalDays > 0 {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Leave this year").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                HStack(spacing: 16) {
-                    leaveStat("\(summary.totalDays)d", "booked")
-                    leaveStat("\(summary.paidDays)d", "paid")
-                    if summary.hours > 0 {
-                        leaveStat(summary.hours.formatted(.number.precision(.fractionLength(0...1))) + "h", "credited")
+            Button(action: openPlanning) {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Leave this year").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                        HStack(spacing: 16) {
+                            leaveStat("\(summary.totalDays)d", "booked")
+                            leaveStat("\(summary.paidDays)d", "paid")
+                            if summary.hours > 0 {
+                                leaveStat(summary.hours.formatted(.number.precision(.fractionLength(0...1))) + "h", "credited")
+                            }
+                        }
+                        if let top = summary.byKind.first {
+                            Text("Mostly \(top.kind.displayName.lowercased()) (\(top.days)d)")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.tertiary)
                 }
-                if let top = summary.byKind.first {
-                    Text("Mostly \(top.kind.displayName.lowercased()) (\(top.days)d)")
-                        .font(.caption2).foregroundStyle(.secondary)
-                }
+                .padding(14)
+                .glassCard(cornerRadius: 14)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .glassCard(cornerRadius: 14)
+            .buttonStyle(.plain)
         }
     }
 
@@ -390,11 +416,15 @@ struct OverviewView: View {
     }
 
     private var quickActions: some View {
-        HStack {
-            Button("Import roster…", systemImage: "square.and.arrow.down", action: importRoster)
-            Button("New schedule", systemImage: "slider.horizontal.3", action: newSchedule)
+        // Horizontal scroll so three actions never crowd a narrow iPhone.
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack {
+                Button("Import roster", systemImage: "square.and.arrow.down", action: importRoster)
+                Button("Add shift", systemImage: "calendar.badge.plus", action: quickAdd)
+                Button("Build a rota", systemImage: "square.grid.2x2", action: newSchedule)
+            }
+            .buttonStyle(.glass)
         }
-        .buttonStyle(.glass)
     }
 
     private func hoursText(_ hours: Double) -> String {

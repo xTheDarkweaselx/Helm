@@ -267,7 +267,14 @@ struct ContentView: View {
     private var detail: some View {
         switch selection {
         case .overview, nil:
-            OverviewView(importRoster: { selection = .importer }, newSchedule: newSchedule)
+            OverviewView(
+                importRoster: { selection = .importer },
+                newSchedule: newSchedule,
+                quickAdd: { selection = .quickAddShift("") },
+                openDay: { selection = .calendar($0) },
+                openTimesheet: { selection = .timesheet },
+                openPlanning: { selection = .planning }
+            )
         case let .calendar(day):
             CalendarView(mode: .live, initialDay: day)
                 .navigationTitle("Calendar")
@@ -313,15 +320,16 @@ struct ContentView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         // Settings lives in the sidebar (and ⌘, on macOS) — no toolbar gear.
+        // The most-common verb (add a one-off shift) gets its own button; the
+        // "+" menu holds the rarer create actions. Planning has a sidebar row.
+        ToolbarItem {
+            Button("Add shift", systemImage: "calendar.badge.plus") { selection = .quickAddShift("") }
+                .disabled(syncProgress.isActive)
+        }
         ToolbarItem {
             Menu {
-                Button("Import roster…", systemImage: "square.and.arrow.down") { selection = .importer }
-                Button("New schedule", systemImage: "slider.horizontal.3") { newSchedule() }
-                Button("Quick add shift", systemImage: "calendar.badge.plus") { selection = .quickAddShift("") }
-                    .disabled(syncProgress.isActive)
-                if planningModule {
-                    Button("Plan time off", systemImage: "airplane") { selection = .planning }
-                }
+                Button("Import roster", systemImage: "square.and.arrow.down") { selection = .importer }
+                Button("Build a rota", systemImage: "square.grid.2x2") { newSchedule() }
             } label: {
                 Label("Add", systemImage: "plus")
             }

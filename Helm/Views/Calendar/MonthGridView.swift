@@ -97,7 +97,7 @@ struct DayCellView: View {
                 .background(Circle().fill(isToday ? accent : .clear))
             if summary.hasConflict {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 8))
+                    .font(.caption2)
                     .foregroundStyle(.orange)
             }
         }
@@ -135,7 +135,7 @@ struct DayCellView: View {
         HStack(spacing: 2) {
             if let status {
                 Image(systemName: statusSymbol(status))
-                    .font(.system(size: 7, weight: .bold))
+                    .font(.caption2.weight(.bold))
             }
             Text(text)
                 .strikethrough(status == .removed)
@@ -188,7 +188,7 @@ struct DayCellView: View {
             }
             if summary.eventCount > 4 {
                 Text("\(summary.eventCount)")
-                    .font(.system(size: 8))
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
         }
