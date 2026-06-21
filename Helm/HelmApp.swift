@@ -56,13 +56,16 @@ struct HelmApp: App {
 
         #if os(macOS)
         // Standard Mac Settings window (⌘,) — same form as the sidebar's
-        // Settings destination, minus the navigation chrome. Same ThemeManager.
+        // Settings destination. Wrapped in a NavigationStack so the grouped
+        // sub-screens (Calendar & reminders, Pay, …) can push here too.
         Settings {
-            SettingsForm()
-                .frame(minWidth: 520, idealWidth: 560, minHeight: 480)
-                .helmThemed(theme)
-                .environment(SyncProgress.shared)
-                .environment(proStore)
+            NavigationStack {
+                SettingsForm()
+            }
+            .frame(minWidth: 520, idealWidth: 560, minHeight: 480)
+            .helmThemed(theme)
+            .environment(SyncProgress.shared)
+            .environment(proStore)
         }
         .modelContainer(modelContainer)
         #endif
