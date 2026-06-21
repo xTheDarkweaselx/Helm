@@ -1,0 +1,215 @@
+//
+//  PayEngine.swift
+//  HelmDomain
+//
+//  v8 Pay & timesheets: a PURE earnings engine over the same `InsightShift`
+//  values the Insights dashboard uses — so hours never disagree between the two.
+//  Gross pay = paid hours × rate, with optional WEEKLY overtime (each locale
+//  week's hours beyond a threshold are paid at a multiplier) and a configurable
+//  tax-year boundary (UK 6 April by default). No SwiftData, no SwiftUI; fully
+//  unit-tested. Currency FORMATTING is the UI's job — the engine returns Doubles.
+//
+
+import Foundation
+
+/// User pay configuration, resolved from settings.
+public struct PayRules: Sendable, Equatable {
+    public let hourlyRate: Double
+    public let overtimeEnabled: Bool
+    /// Weekly paid hours beyond which overtime applies.
+    public let overtimeThresholdHours: Double
+    /// Multiplier on the base rate for overtime hours (e.g. 1.5 = time-and-a-half).
+    public let overtimeMultiplier: Double
+    /// Tax-year start (month, day). UK default is 6 April.
+    public let taxYearStartMonth: Int
+    public let taxYearStartDay: Int
+    /// v9 Premium Pay — enhanced rates the user configures (night/weekend/etc.).
+    public let premiumRules: [PremiumRule]
+    /// How overlapping premiums combine on one hour.
+    public let premiumStacking: PremiumStacking
+    /// Days the user (or their calendar) marks as bank holidays, for `.bankHoliday`.
+    public let bankHolidays: Set<DayKey>
+
+    public init(hourlyRate: Double,
+                overtimeEnabled: Bool = false,
+                overtimeThresholdHours: Double = 40,
+                overtimeMultiplier: Double = 1.5,
+                taxYearStartMonth: Int = 4,
+                taxYearStartDay: Int = 6,
+                premiumRules: [PremiumRule] = [],
+                premiumStacking: PremiumStacking = .highest,
+                bankHolidays: Set<DayKey> = []) {
+        self.hourlyRate = max(0, hourlyRate)
+        self.overtimeEnabled = overtimeEnabled
+        self.overtimeThresholdHours = max(0, overtimeThresholdHours)
+        self.overtimeMultiplier = max(1, overtimeMultiplier)
+        self.taxYearStartMonth = min(12, max(1, taxYearStartMonth))
+        self.taxYearStartDay = min(28, max(1, taxYearStartDay)) // 28 keeps every month valid
+        self.premiumRules = premiumRules
+        self.premiumStacking = premiumStacking
+        self.bankHolidays = bankHolidays
+    }
+
+    public var isActive: Bool { hourlyRate > 0 }
+}
+
+/// One period's pay totals + hours breakdown.
+public struct PaySummary: Sendable, Equatable {
+    public let totalHours: Double
+    public let baseHours: Double
+    public let overtimeHours: Double
+    public let basePay: Double
+    public let overtimePay: Double
+    /// v9 — extra earned from premium rules, above base + overtime.
+    public let premiumPay: Double
+    public let shiftCount: Int
+    /// Shifts counted but awaiting times (no hours, no pay yet).
+    public let tentativeCount: Int
+
+    public init(totalHours: Double, baseHours: Double, overtimeHours: Double,
+                basePay: Double, overtimePay: Double, premiumPay: Double = 0,
+                shiftCount: Int, tentativeCount: Int) {
+        self.totalHours = totalHours
+        self.baseHours = baseHours
+        self.overtimeHours = overtimeHours
+        self.basePay = basePay
+        self.overtimePay = overtimePay
+        self.premiumPay = premiumPay
+        self.shiftCount = shiftCount
+        self.tentativeCount = tentativeCount
+    }
+
+    public var grossPay: Double { basePay + overtimePay + premiumPay }
+
+    public static let zero = PaySummary(totalHours: 0, baseHours: 0, overtimeHours: 0,
+                                        basePay: 0, overtimePay: 0, premiumPay: 0,
+                                        shiftCount: 0, tentativeCount: 0)
+}
+
+/// A single shift's row in a timesheet (base pay = hours × rate; overtime is a
+/// weekly concept surfaced at the summary level, not split per shift).
+public struct PayLineItem: Sendable, Equatable, Identifiable {
+    public let id: String
+    public let day: DayKey
+    public let start: Date?
+    public let end: Date?
+    public let hours: Double
+    public let typeLabel: String?
+    /// This shift's pay INCLUDING its premium uplift (base + premium). Overtime
+    /// stays a summary-level concept (it's a whole-week calculation).
+    public let pay: Double
+    /// v9 — the premium portion of `pay` (0 when no rule applies), so the UI can
+    /// show "£X (incl. £Y premium)".
+    public let premiumPay: Double
+
+    public init(id: String, day: DayKey, start: Date?, end: Date?, hours: Double, typeLabel: String?, pay: Double, premiumPay: Double = 0) {
+        self.id = id
+        self.day = day
+        self.start = start
+        self.end = end
+        self.hours = hours
+        self.typeLabel = typeLabel
+        self.pay = pay
+        self.premiumPay = premiumPay
+    }
+}
+
+public enum PayEngine {
+    /// Gross pay + hours breakdown for a day range. Overtime is a WHOLE-WEEK
+    /// concept: each locale week's FULL hours (across all shifts, in-range or not)
+    /// are split into base/overtime at the threshold, then attributed to this
+    /// period in proportion to the week's in-range hours. So a week straddling a
+    /// month or tax-year boundary keeps its overtime premium — shared across the
+    /// two periods rather than vanishing from both. Shifts on types the user marked
+    /// unpaid (`isPaid == false`) earn nothing and don't appear on the report.
+    public static func summary(shifts: [InsightShift], in range: ClosedRange<DayKey>, rules: PayRules, calendar: Calendar) -> PaySummary {
+        var weekHoursAll: [DayKey: Double] = [:]      // whole week, for the OT threshold
+        var weekHoursInRange: [DayKey: Double] = [:]  // this period's share of each week
+        var totalHours = 0.0
+        var premiumTotal = 0.0                        // v9 — per-shift premium, attributed to its own period
+        var shiftCount = 0
+        var tentativeCount = 0
+        for shift in shifts {
+            guard shift.isPaid else { continue }      // explicitly-unpaid types never earn
+            let week = InsightsMath.weekStart(of: shift.day, calendar: calendar)
+            if let h = InsightsMath.hours(for: shift) {
+                weekHoursAll[week, default: 0] += h
+                if range.contains(shift.day) {
+                    weekHoursInRange[week, default: 0] += h
+                    totalHours += h
+                    shiftCount += 1
+                    premiumTotal += premiumPay(for: shift, rate: rules.hourlyRate, rules: rules, calendar: calendar)
+                }
+            } else if shift.isAllDay, range.contains(shift.day) {
+                shiftCount += 1
+                tentativeCount += 1
+            }
+        }
+
+        var baseHours = 0.0
+        var overtimeHours = 0.0
+        if rules.overtimeEnabled, rules.overtimeThresholdHours > 0 {
+            for (week, inRange) in weekHoursInRange {
+                let full = weekHoursAll[week] ?? inRange
+                guard full > 0 else { continue }
+                let fraction = inRange / full         // this period's slice of the week
+                baseHours += min(full, rules.overtimeThresholdHours) * fraction
+                overtimeHours += max(0, full - rules.overtimeThresholdHours) * fraction
+            }
+        } else {
+            baseHours = totalHours
+        }
+
+        return PaySummary(
+            totalHours: totalHours,
+            baseHours: baseHours,
+            overtimeHours: overtimeHours,
+            basePay: baseHours * rules.hourlyRate,
+            overtimePay: overtimeHours * rules.hourlyRate * rules.overtimeMultiplier,
+            premiumPay: premiumTotal,
+            shiftCount: shiftCount,
+            tentativeCount: tentativeCount
+        )
+    }
+
+    /// Per-shift earnings for a timesheet detail, chronological. Base pay only
+    /// (hours × rate); the overtime premium lives in `summary().overtimePay`.
+    public static func lineItems(shifts: [InsightShift], in range: ClosedRange<DayKey>, rules: PayRules, calendar: Calendar) -> [PayLineItem] {
+        shifts
+            .filter { range.contains($0.day) && $0.isPaid }
+            .compactMap { shift -> (InsightShift, Double)? in
+                guard let h = InsightsMath.hours(for: shift) else { return nil }
+                return (shift, h)
+            }
+            .sorted { lhs, rhs in
+                if lhs.0.day != rhs.0.day { return lhs.0.day < rhs.0.day }
+                return (lhs.0.start ?? .distantPast) < (rhs.0.start ?? .distantPast)
+            }
+            .enumerated()
+            .map { index, pair in
+                let (shift, hours) = pair
+                let base = hours * rules.hourlyRate
+                let premium = premiumPay(for: shift, rate: rules.hourlyRate, rules: rules, calendar: calendar)
+                return PayLineItem(
+                    id: "\(index)",
+                    day: shift.day,
+                    start: shift.start,
+                    end: shift.end,
+                    hours: hours,
+                    typeLabel: shift.typeLabel,
+                    pay: base + premium,
+                    premiumPay: premium
+                )
+            }
+    }
+
+    /// The tax-year range containing `day`: [start … day-before-next-start].
+    public static func taxYearRange(containing day: DayKey, rules: PayRules, calendar: Calendar) -> ClosedRange<DayKey> {
+        let startThisYear = DayKey(year: day.year, month: rules.taxYearStartMonth, day: rules.taxYearStartDay)
+        let start = (day < startThisYear)
+            ? DayKey(year: day.year - 1, month: rules.taxYearStartMonth, day: rules.taxYearStartDay)
+            : startThisYear
+        let nextStart = DayKey(year: start.year + 1, month: rules.taxYearStartMonth, day: rules.taxYearStartDay)
+        return start...nextStart.advanced(by: -1, in: calendar)
+    }
+}

@@ -2,9 +2,28 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>Fusion-Studios.Helm.refresh</string>
+		<string>Fusion-Studios.Helm.reimport</string>
+	</array>
+	<key>HelmGoogleClientID</key>
+	<string></string>
+	<key>NSAlarmKitUsageDescription</key>
+	<string>Helm sets alarms to wake you up before your shifts.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Helm adds your imported work shifts to your calendar and updates or removes them when you re-import a changed roster, so your calendar always matches your latest schedule.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Helm adds your imported work shifts to your calendar.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Helm uses Face ID to lock your shift schedule so only you can open it.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
+		<string>fetch</string>
+		<string>processing</string>
 	</array>
 </dict>
 </plist>

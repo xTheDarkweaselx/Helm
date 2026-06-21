@@ -1,0 +1,788 @@
+//
+//  CalendarView.swift
+//  Helm
+//
+//  The v3 calendar: a native month grid + day agenda merging Helm's shifts
+//  (first-class, shift-type colored) with the user's other events from any
+//  system calendar account (iCloud/Google/…). One view, two modes: .live in
+//  the sidebar, .preview(overlay) inside import/schedule sheets — the overlay
+//  renders the pending diff (added/updated/removed) against real life.
+//
+
+import SwiftUI
+import SwiftData
+import HelmDomain
+
+struct CalendarView: View {
+    let mode: CalendarMode
+
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \ShiftInstance.localDate) private var instances: [ShiftInstance]
+    // v7 planning overlays.
+    @Query private var timeOffs: [TimeOff]
+    @Query(sort: \AvailabilityRule.createdAt) private var availabilityRules: [AvailabilityRule]
+    @Query(sort: \AvailabilityWindow.localDate) private var availabilityWindows: [AvailabilityWindow]
+    @State private var model: CalendarViewModel
+    @State private var shiftToRemove: ShiftItem?
+    @State private var removalError: String?
+    @AppStorage("calendarDisplayMode") private var displayModeRaw: String = CalendarDisplayMode.month.rawValue
+    @AppStorage("timelineHourHeight") private var hourHeight: Double = 48
+    @AppStorage("calendarShiftFocus") private var shiftFocusRaw: String = "" // v9 Shift Focus
+
+    private var shiftFocus: ShiftFocus { ShiftFocus(rawValue: shiftFocusRaw) }
+
+    /// A focus whose type/tag no longer exists (deleted/renamed) would hide EVERY
+    /// shift with no way back — degrade it to `.all` for display.
+    private var focusIsDangling: Bool {
+        switch shiftFocus {
+        case .all: false
+        case .type(let id): !focusTypes.contains { $0.id == id }
+        case .tag(let name): !focusTags.contains { $0.caseInsensitiveCompare(name) == .orderedSame }
+        }
+    }
+    private var effectiveFocus: ShiftFocus { focusIsDangling ? .all : shiftFocus }
+
+    private struct FocusType: Identifiable { let id: String; let label: String }
+    /// Distinct shift types present in the calendar, for the focus menu.
+    private var focusTypes: [FocusType] {
+        var seen = Set<String>()
+        var out: [FocusType] = []
+        for inst in instances {
+            guard let t = inst.shiftType else { continue }
+            if seen.insert(t.id).inserted { out.append(FocusType(id: t.id, label: t.label ?? t.code ?? "Shift")) }
+        }
+        return out.sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
+    }
+    /// Distinct shift-type tags present, for the focus menu.
+    private var focusTags: [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for inst in instances {
+            for tag in inst.shiftType?.tags ?? [] where seen.insert(tag.lowercased()).inserted { out.append(tag) }
+        }
+        return out.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private var displayMode: CalendarDisplayMode {
+        CalendarDisplayMode(rawValue: displayModeRaw) ?? .month
+    }
+
+    /// Pager pages: fixed window around the month at first appearance (stable ids).
+    private let pagedMonths: [MonthKey]
+    /// The route's requested day (live mode); re-applied to the model on change,
+    /// since the @State model is only seeded once per structural identity.
+    private let initialDay: DayKey?
+
+    init(mode: CalendarMode, initialDay: DayKey? = nil) {
+        self.mode = mode
+        self.initialDay = initialDay
+        let resolved = initialDay ?? mode.overlay?.firstChangedDay
+        let model = CalendarViewModel(initialDay: resolved)
+        _model = State(initialValue: model)
+        let base = model.visibleMonth
+        self.pagedMonths = (-120...120).map { base.advanced(by: $0) }
+    }
+
+    private var isLive: Bool {
+        if case .live = mode { return true }
+        return false
+    }
+
+    /// Side-by-side needs real room: grid ≥ ~360 + agenda 300. Below this the
+    /// stacked layout is used EVEN on macOS — sheets there open ~500pt wide,
+    /// and platform-based branching crushed the grid into ~170pt.
+    private static let sideBySideMinWidth: CGFloat = 680
+
+    var body: some View {
+        // ONE bucketing pass per body evaluation, shared by all 42 cells and
+        // the agenda (a per-cell computed property would re-walk every
+        // ShiftInstance 42× per render).
+        let shiftBuckets = computeShiftsByDay()
+        let dayDetail = DayDetailView(
+            day: model.selectedDay,
+            items: items(for: model.selectedDay, shiftBuckets: shiftBuckets),
+            conflicts: conflictTitles(for: model.selectedDay, shiftBuckets: shiftBuckets),
+            leave: timeOffLabels(on: model.selectedDay),
+            onRemoveShift: isLive ? { shiftToRemove = $0 } : nil,
+            onEditNote: isLive ? { id, note in editNote(id, note) } : nil
+        )
+        GeometryReader { geo in
+            // Layout by ACTUAL width, never by platform.
+            let isWide = geo.size.width >= Self.sideBySideMinWidth
+            if displayMode != .month {
+                // Timeline modes: the hour grid IS the detail — full width.
+                timelinePane(shiftBuckets: shiftBuckets, isWide: isWide)
+            } else if isWide {
+                HStack(spacing: 0) {
+                    monthPane(shiftBuckets: shiftBuckets, isWide: true)
+                    Divider()
+                    dayDetail
+                        .frame(width: 300)
+                        .background(.ultraThinMaterial)
+                }
+            } else {
+                VStack(spacing: 0) {
+                    monthPane(shiftBuckets: shiftBuckets, isWide: false)
+                    Divider()
+                    dayDetail
+                        .frame(minHeight: 160, maxHeight: 280)
+                        .background(.ultraThinMaterial)
+                }
+            }
+        }
+        .task(id: LoadKey(month: model.visibleMonth, token: model.reloadToken)) {
+            await model.loadEvents()
+        }
+        .onChange(of: initialDay) { _, new in
+            guard isLive else { return }
+            let target = new ?? DayKey(containing: .now, in: CalendarViewModel.displayCalendar)
+            model.selectedDay = target
+            model.visibleMonth = MonthKey(of: target)
+        }
+        .confirmationDialog(
+            "Remove this shift from your calendar and from Helm?",
+            isPresented: Binding(get: { shiftToRemove != nil }, set: { if !$0 { shiftToRemove = nil } }),
+            titleVisibility: .visible,
+            presenting: shiftToRemove
+        ) { shift in
+            Button("Remove shift", role: .destructive) { remove(shift) }
+            Button("Cancel", role: .cancel) {}
+        } message: { shift in
+            Text("“\(shift.title)” will be deleted from the calendar and from its roster. Re-importing the file or re-applying its schedule would add it back.")
+        }
+        .alert("Couldn't remove shift", isPresented: .constant(removalError != nil)) {
+            Button("OK") { removalError = nil }
+        } message: {
+            Text(removalError ?? "")
+        }
+        .themedPane(.plain, active: isLive) // v7.1 wash; hosts wash preview mode
+    }
+
+    /// Persist an edited note (app-local — notes are not mirrored to calendar
+    /// events in v7, so this never triggers a re-sync / content-hash churn).
+    private func editNote(_ id: String, _ note: String?) {
+        let descriptor = FetchDescriptor<ShiftInstance>(predicate: #Predicate { $0.id == id })
+        guard let instance = try? modelContext.fetch(descriptor).first else { return }
+        instance.note = note
+        try? modelContext.save()
+    }
+
+    private func remove(_ shift: ShiftItem) {
+        let context = modelContext
+        Task {
+            do {
+                let id = shift.id
+                let descriptor = FetchDescriptor<ShiftInstance>(predicate: #Predicate { $0.id == id })
+                guard let instance = try context.fetch(descriptor).first else { return }
+                let destinations = instance.roster.map { RosterSyncEngine.destinations(for: $0, in: context) } ?? [.eventkit]
+                let targets = try await CalendarTargetProvider.authorizedTargets(for: destinations)
+                try await RosterSyncEngine.removeInstance(instance, targets: targets, in: context)
+            } catch {
+                removalError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            }
+        }
+    }
+
+    private struct LoadKey: Equatable {
+        let month: MonthKey
+        let token: Int
+    }
+
+    // MARK: - Month pane
+
+    private func monthPane(shiftBuckets: [DayKey: [ShiftItem]], isWide: Bool) -> some View {
+        VStack(spacing: 8) {
+            // No hours caption in preview mode: suppressed/incoming shifts make
+            // the figure misleading there, and that header is about the diff.
+            header(monthHours: mode.overlay == nil ? monthHours(shiftBuckets: shiftBuckets) : 0)
+            scopeSwitcher
+            if mode.overlay != nil { legend }
+            weekdayHeader
+            // Size cells AND pages from the actual pane geometry: page width
+            // must equal the scroll viewport exactly (containerRelativeFrame
+            // resolved against the SHEET in modal presentations, overlapping
+            // adjacent month pages into doubled numerals).
+            GeometryReader { geo in
+                pager(
+                    pageWidth: geo.size.width,
+                    cellHeight: max(40, min(isWide ? 96 : 64, (geo.size.height / 6).rounded(.down))),
+                    isWide: isWide,
+                    shiftBuckets: shiftBuckets
+                )
+            }
+            .frame(minHeight: 6 * 40)
+            if case .unavailable = model.accessState {
+                Label("Calendar access is off — only your shifts are shown.", systemImage: "eye.slash")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 6)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+    }
+
+    private func header(monthHours: Double) -> some View {
+        // One row when everything fits (Mac/iPad); title row + controls row
+        // on iPhone widths — v6 added the mode picker and zoom to this header.
+        ViewThatFits(in: .horizontal) {
+            HStack {
+                titleBlock(monthHours: monthHours)
+                Spacer()
+                headerControls
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                titleBlock(monthHours: monthHours)
+                HStack {
+                    headerControls
+                    Spacer()
+                }
+            }
+        }
+        .buttonStyle(.borderless)
+    }
+
+    private func titleBlock(monthHours: Double) -> some View {
+            VStack(alignment: .leading, spacing: 1) {
+                headerTitle
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .contentTransition(.numericText())
+                    .accessibilityAddTraits(.isHeader)
+                if monthHours > 0, displayMode == .month {
+                    Text("\(monthHours.formatted(.number.precision(.fractionLength(0...1)))) h of shifts this month")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var headerControls: some View {
+            Picker("View", selection: $displayModeRaw) {
+                ForEach(CalendarDisplayMode.allCases, id: \.rawValue) { mode in
+                    Text(mode.label).tag(mode.rawValue)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            if displayMode != .month {
+                Menu {
+                    Button("Compact") { hourHeight = 32 }
+                    Button("Comfortable") { hourHeight = 48 }
+                    Button("Spacious") { hourHeight = 72 }
+                } label: {
+                    Label("Zoom", systemImage: "arrow.up.left.and.arrow.down.right").labelStyle(.iconOnly)
+                }
+                .menuIndicator(.hidden)
+            }
+            calendarFilterMenu
+            shiftFocusMenu
+            Button {
+                stepBackward()
+            } label: {
+                Label("Previous", systemImage: "chevron.left").labelStyle(.iconOnly)
+            }
+            // Shortcuts only on the LIVE instance: the sidebar calendar and a
+            // preview sheet can be alive simultaneously — duplicate shortcuts
+            // resolve unpredictably.
+            .keyboardShortcut(isLive ? KeyboardShortcut(.leftArrow, modifiers: .command) : nil)
+            Button("Today") { model.jumpToToday() }
+                .keyboardShortcut(isLive ? KeyboardShortcut("t", modifiers: .command) : nil)
+            Button {
+                stepForward()
+            } label: {
+                Label("Next", systemImage: "chevron.right").labelStyle(.iconOnly)
+            }
+            .keyboardShortcut(isLive ? KeyboardShortcut(.rightArrow, modifiers: .command) : nil)
+    }
+
+    private var headerTitle: Text {
+        let cal = CalendarViewModel.displayCalendar
+        switch displayMode {
+        case .month:
+            return Text(model.visibleMonth.start(in: cal), format: .dateTime.month(.wide).year())
+        case .week:
+            let start = InsightsMath.weekStart(of: model.selectedDay, calendar: cal)
+            let end = start.advanced(by: 6, in: cal)
+            let s = start.startOfDay(in: cal).formatted(.dateTime.day().month())
+            let e = end.startOfDay(in: cal).formatted(.dateTime.day().month().year())
+            return Text(verbatim: s + " - " + e)
+        case .day:
+            return Text(model.selectedDay.startOfDay(in: cal), format: .dateTime.weekday(.wide).day().month().year())
+        }
+    }
+
+    /// Chevrons step by the visible unit (month / week / day).
+    private func stepBackward() { step(direction: -1) }
+    private func stepForward() { step(direction: 1) }
+
+    private func step(direction: Int) {
+        let cal = CalendarViewModel.displayCalendar
+        switch displayMode {
+        case .month:
+            model.step(months: direction)
+        case .week:
+            model.selectedDay = model.selectedDay.advanced(by: 7 * direction, in: cal)
+            model.visibleMonth = MonthKey(of: model.selectedDay)
+        case .day:
+            model.selectedDay = model.selectedDay.advanced(by: direction, in: cal)
+            model.visibleMonth = MonthKey(of: model.selectedDay)
+        }
+    }
+
+    /// v4.1: the Apple/Google view switcher. Shown once Google is relevant
+    /// (a Google account in the system Calendar, or Helm signed into Google).
+    @ViewBuilder
+    private var scopeSwitcher: some View {
+        if model.hasGoogleSources || GoogleConfig.isSignedIn {
+            HStack {
+                Picker("Show events from", selection: Binding(
+                    get: { model.scope },
+                    set: { model.scope = $0 }
+                )) {
+                    ForEach(CalendarScope.allCases, id: \.self) { scope in
+                        Text(scope.label).tag(scope)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 260)
+                Spacer()
+            }
+            if model.scope == .google && !model.hasGoogleSources {
+                Label("Your shifts are written to Google's “Helm Shifts” calendar. To also see your other Google events here, add the Google account to the system Calendar (Internet Accounts).",
+                      systemImage: "info.circle")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    /// v4: choose which system calendars' events appear (Apple/iCloud, Google
+    /// accounts added to the system, …) — grouped by account, Apple-style.
+    @ViewBuilder
+    private var calendarFilterMenu: some View {
+        if !model.availableCalendars.isEmpty {
+            Menu {
+                let grouped = Dictionary(grouping: model.availableCalendars, by: \.sourceTitle)
+                ForEach(grouped.keys.sorted(), id: \.self) { source in
+                    Section(source) {
+                        ForEach(grouped[source] ?? []) { choice in
+                            Toggle(isOn: Binding(
+                                get: { !model.hiddenCalendarIDs.contains(choice.id) },
+                                set: { model.setCalendar(id: choice.id, hidden: !$0) }
+                            )) {
+                                Text(choice.title)
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Label("Calendars",
+                      systemImage: model.hiddenCalendarIDs.isEmpty
+                          ? "line.3.horizontal.decrease.circle"
+                          : "line.3.horizontal.decrease.circle.fill")
+                    .labelStyle(.iconOnly)
+            }
+            .menuIndicator(.hidden)
+        }
+    }
+
+    private func monthHours(shiftBuckets: [DayKey: [ShiftItem]]) -> Double {
+        let month = model.visibleMonth
+        var total: Double = 0
+        for (day, shifts) in shiftBuckets where day.year == month.year && day.month == month.month {
+            for shift in shifts {
+                if let paid = shift.paidHours {
+                    total += paid
+                } else if let start = shift.start, let end = shift.end, end > start {
+                    total += end.timeIntervalSince(start) / 3600
+                }
+            }
+        }
+        return total
+    }
+
+    /// The day's events under the current Apple/Google scope — every consumer
+    /// (agenda, cell dots, conflicts) goes through this, so the switcher
+    /// governs the whole view consistently.
+    private func scopedEvents(on day: DayKey) -> [EventItem] {
+        (model.eventsByDay[day] ?? []).filter { model.scope.includes(isGoogleSource: $0.isGoogleSource) }
+    }
+
+    /// Timed events from EVERY display day a span touches — an overnight
+    /// shift's post-midnight tail must see the NEXT day's events too (shifts
+    /// bucket to their start day; events bucket to every day they span).
+    private func timedEvents(spanning start: Date, _ end: Date) -> [EventItem] {
+        let cal = CalendarViewModel.displayCalendar
+        var seen = Set<String>()
+        var out: [EventItem] = []
+        for day in DayBucketer.dayKeys(start: start, end: end, in: cal) {
+            for event in scopedEvents(on: day) where !event.isAllDay && seen.insert(event.id).inserted {
+                out.append(event)
+            }
+        }
+        return out
+    }
+
+    /// Day-level conflict: any shift (or pending non-removed preview) bucketed
+    /// on this day whose FULL interval intersects a timed event (next-day tail
+    /// included). Half-open — back-to-back is fine.
+    private func dayHasConflict(_ day: DayKey, shiftBuckets: [DayKey: [ShiftItem]]) -> Bool {
+        for shift in shiftBuckets[day] ?? [] {
+            guard let s = shift.start, let e = shift.end else { continue }
+            if timedEvents(spanning: s, e).contains(where: { IntervalOverlap.intersects(s, e, $0.start, $0.end) }) {
+                return true
+            }
+        }
+        for preview in mode.overlay?.itemsByDay[day] ?? [] where preview.status != .removed {
+            guard let s = preview.start, let e = preview.end else { continue }
+            if timedEvents(spanning: s, e).contains(where: { IntervalOverlap.intersects(s, e, $0.start, $0.end) }) {
+                return true
+            }
+        }
+        // v7: a shift clashing with an "unavailable" availability band counts too.
+        if !availabilityConflictIDs(on: day, shifts: shiftBuckets[day] ?? []).isEmpty { return true }
+        return false
+    }
+
+    /// For the agenda: item id → titles of the events it overlaps.
+    private func conflictTitles(for day: DayKey, shiftBuckets: [DayKey: [ShiftItem]]) -> [String: [String]] {
+        var map: [String: [String]] = [:]
+        for shift in shiftBuckets[day] ?? [] {
+            guard let s = shift.start, let e = shift.end else { continue }
+            let overlapping = timedEvents(spanning: s, e)
+                .filter { IntervalOverlap.intersects(s, e, $0.start, $0.end) }.map(\.title)
+            if !overlapping.isEmpty { map["s:\(shift.id)"] = overlapping }
+        }
+        for preview in mode.overlay?.itemsByDay[day] ?? [] where preview.status != .removed {
+            guard let s = preview.start, let e = preview.end else { continue }
+            let overlapping = timedEvents(spanning: s, e)
+                .filter { IntervalOverlap.intersects(s, e, $0.start, $0.end) }.map(\.title)
+            if !overlapping.isEmpty { map["p:\(preview.id)"] = overlapping }
+        }
+        // v7: flag shifts that clash with the user's "unavailable" availability.
+        let availConflicts = availabilityConflictIDs(on: day, shifts: shiftBuckets[day] ?? [])
+        for shift in shiftBuckets[day] ?? [] where availConflicts.contains(shift.id) {
+            map["s:\(shift.id)", default: []].append("Clashes with your availability")
+        }
+        return map
+    }
+
+    // MARK: - Planning overlays (v7)
+
+    private var availabilityRuleSpecs: [AvailabilityRuleSpec] {
+        let cal = CalendarViewModel.displayCalendar
+        return availabilityRules.map { r in
+            AvailabilityRuleSpec(
+                id: r.id, kind: r.kind, weekdays: r.weekdays,
+                startMinute: r.startMinuteOfDay, endMinute: r.endMinuteOfDay,
+                effectiveFrom: r.effectiveFrom.map { DayKey(containing: $0, in: cal) },
+                effectiveTo: r.effectiveTo.map { DayKey(containing: $0, in: cal) }
+            )
+        }
+    }
+
+    private var availabilityWindowSpecs: [AvailabilityWindowSpec] {
+        let cal = CalendarViewModel.displayCalendar
+        return availabilityWindows.compactMap { w in
+            guard let d = w.localDate else { return nil }
+            return AvailabilityWindowSpec(
+                id: w.id, kind: w.kind, day: DayKey(containing: d, in: cal),
+                startMinute: w.startMinuteOfDay, endMinute: w.endMinuteOfDay, allDay: w.allDay
+            )
+        }
+    }
+
+    /// Unavailable bands to shade on a day's timeline column.
+    private func availabilityBands(on day: DayKey) -> [AvailabilityBand] {
+        AvailabilityMerger.bands(on: day, rules: availabilityRuleSpecs, windows: availabilityWindowSpecs, calendar: CalendarViewModel.displayCalendar)
+            .filter { $0.kind == .unavailable }
+    }
+
+    /// Ids of this day's shifts that overlap an "unavailable" band.
+    private func availabilityConflictIDs(on day: DayKey, shifts: [ShiftItem]) -> Set<String> {
+        guard !availabilityRules.isEmpty || !availabilityWindows.isEmpty else { return [] }
+        let cal = CalendarViewModel.displayCalendar
+        var zoneCals: [String: Calendar] = [:]
+        let availShifts: [AvailabilityShift] = shifts.compactMap { s in
+            guard !s.isAllDay, let start = s.start, let end = s.end else { return nil }
+            // Minute-of-day measured against the shift's OWN-zone midnight.
+            let zoneCal = zoneCals[s.timeZoneIdentifier] ?? {
+                var c = Calendar(identifier: .gregorian)
+                c.timeZone = TimeZone(identifier: s.timeZoneIdentifier) ?? .current
+                zoneCals[s.timeZoneIdentifier] = c
+                return c
+            }()
+            let dayStart = day.startOfDay(in: zoneCal)
+            let sMin = Int(start.timeIntervalSince(dayStart) / 60)
+            let eMin = Int(end.timeIntervalSince(dayStart) / 60)
+            return AvailabilityShift(id: s.id, day: day, startMinute: sMin, endMinute: eMin, isAllDay: false)
+        }
+        return AvailabilityMerger.conflictingShiftIDs(shifts: availShifts, rules: availabilityRuleSpecs, windows: availabilityWindowSpecs, calendar: cal)
+    }
+
+    /// Time-off labels covering a day (for the agenda banner).
+    private func timeOffLabels(on day: DayKey) -> [String] {
+        guard !timeOffs.isEmpty else { return [] }
+        let cal = CalendarViewModel.displayCalendar
+        return timeOffs.compactMap { to -> String? in
+            guard let s = to.startDate, let e = to.endDate else { return nil }
+            let sk = DayKey(containing: s, in: cal)
+            let ek = DayKey(containing: e, in: cal)
+            guard sk <= day && day <= ek else { return nil }
+            let name = to.title?.isEmpty == false ? to.title! : to.kind.displayName
+            return to.paid ? name : "\(name) (unpaid)"
+        }
+    }
+
+    private var legend: some View {
+        HStack(spacing: 12) {
+            LegendTag(symbol: "plus", text: "Added", color: .green)
+            LegendTag(symbol: "pencil", text: "Changed", color: .orange)
+            LegendTag(symbol: "minus", text: "Removed", color: .red)
+            Spacer()
+        }
+        .font(.caption)
+    }
+
+    private var weekdayHeader: some View {
+        let symbols = CalendarGridMath.orderedWeekdaySymbols(CalendarViewModel.displayCalendar)
+        return HStack(spacing: 0) {
+            ForEach(Array(symbols.enumerated()), id: \.offset) { _, symbol in
+                Text(symbol)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private func pager(pageWidth: CGFloat, cellHeight: CGFloat, isWide: Bool, shiftBuckets: [DayKey: [ShiftItem]]) -> some View {
+        ScrollView(.horizontal) {
+            LazyHStack(spacing: 0) {
+                ForEach(pagedMonths, id: \.self) { month in
+                    MonthGridView(
+                        grid: MonthGrid.make(month: month, calendar: CalendarViewModel.displayCalendar),
+                        selectedDay: $model.selectedDay,
+                        today: DayKey(containing: .now, in: CalendarViewModel.displayCalendar),
+                        compact: !isWide,
+                        cellHeight: cellHeight,
+                        dayContent: { cellSummary(for: $0, shiftBuckets: shiftBuckets) }
+                    )
+                    .frame(width: max(pageWidth, 1)) // exact viewport width: no page bleed
+                    .id(month)
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .scrollTargetBehavior(.paging)
+        .scrollPosition(id: pagerBinding)
+        .scrollIndicators(.hidden)
+        #if os(macOS)
+        .focusable()
+        .onMoveCommand { direction in
+            let cal = CalendarViewModel.displayCalendar
+            let step: Int
+            switch direction {
+            case .left: step = -1
+            case .right: step = 1
+            case .up: step = -7
+            case .down: step = 7
+            default: step = 0
+            }
+            guard step != 0 else { return }
+            model.selectedDay = model.selectedDay.advanced(by: step, in: cal)
+            let month = MonthKey(of: model.selectedDay)
+            if month != model.visibleMonth {
+                withAnimation { model.visibleMonth = month }
+            }
+        }
+        #endif
+    }
+
+    private var pagerBinding: Binding<MonthKey?> {
+        Binding(
+            get: { model.visibleMonth },
+            set: { if let month = $0 { model.visibleMonth = month } }
+        )
+    }
+
+    // MARK: - Timeline (v6)
+
+    private func timelinePane(shiftBuckets: [DayKey: [ShiftItem]], isWide: Bool) -> some View {
+        let cal = CalendarViewModel.displayCalendar
+        let days: [DayKey]
+        if displayMode == .week {
+            let start = InsightsMath.weekStart(of: model.selectedDay, calendar: cal)
+            days = (0..<7).map { start.advanced(by: $0, in: cal) }
+        } else {
+            days = [model.selectedDay]
+        }
+        return VStack(spacing: 8) {
+            header(monthHours: 0)
+            scopeSwitcher
+            if mode.overlay != nil { legend }
+            TimelinePane(
+                days: days,
+                today: DayKey(containing: .now, in: cal),
+                selectedDay: model.selectedDay,
+                hourHeight: hourHeight,
+                blocks: { timelineBlocks(for: $0) },
+                onSelectDay: { model.selectedDay = $0 },
+                bands: { availabilityBands(on: $0) }
+            )
+            if case .unavailable = model.accessState {
+                Label("Calendar access is off — only your shifts are shown.", systemImage: "eye.slash")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 6)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+    }
+
+    /// Timeline sources by INTERVAL INTERSECTION — bucket-only lookup would
+    /// amputate an overnight shift's post-midnight tail from the next day's
+    /// column. Preview suppression applies exactly like the month grid.
+    private func timelineBlocks(for day: DayKey) -> DayBlocks {
+        let cal = CalendarViewModel.displayCalendar
+        let dayStart = day.startOfDay(in: cal)
+        let dayEnd = day.advanced(by: 1, in: cal).startOfDay(in: cal)
+        let suppressed = mode.overlay?.suppressedShiftKeys ?? []
+        var timed: [TimelineBlock] = []
+        var allDay: [TimelineAllDayChip] = []
+        var zoneCals: [String: Calendar] = [:]
+
+        for instance in instances {
+            if let key = instance.dedupKey, suppressed.contains(key) { continue }
+            let title = instance.title ?? instance.shiftType?.label ?? instance.shiftType?.code ?? "Shift"
+            if instance.isAllDay == true {
+                guard let localDate = instance.localDate else { continue }
+                let zoneID = instance.timeZoneIdentifier
+                let zoneCal = zoneCals[zoneID] ?? {
+                    var c = Calendar(identifier: .gregorian)
+                    c.timeZone = TimeZone(identifier: zoneID) ?? .current
+                    zoneCals[zoneID] = c
+                    return c
+                }()
+                if DayKey(containing: localDate, in: zoneCal) == day {
+                    allDay.append(TimelineAllDayChip(id: "s:\(instance.id)", title: title, colorHex: instance.shiftType?.colorHex, eventColor: nil, isEvent: false, previewStatus: nil))
+                }
+                continue
+            }
+            guard let start = instance.startUTC, let end = instance.endUTC, end > dayStart, start < dayEnd else { continue }
+            timed.append(TimelineBlock(id: "s:\(instance.id)", start: start, end: end, title: title, colorHex: instance.shiftType?.colorHex, eventColor: nil, isEvent: false, previewStatus: nil))
+        }
+
+        for event in scopedEvents(on: day) {
+            if event.isAllDay {
+                allDay.append(TimelineAllDayChip(id: "e:\(event.id)", title: event.title, colorHex: nil, eventColor: event.color, isEvent: true, previewStatus: nil))
+            } else {
+                // Zero-duration events (reminders-as-events) get a thin pill
+                // instead of silently vanishing from the engine's half-open math.
+                let end = event.end > event.start ? event.end : event.start.addingTimeInterval(15 * 60)
+                timed.append(TimelineBlock(id: "e:\(event.id)", start: event.start, end: end, title: event.title, colorHex: nil, eventColor: event.color, isEvent: true, previewStatus: nil))
+            }
+        }
+
+        for item in mode.overlay?.itemsByDay[day] ?? [] {
+            if item.isAllDay {
+                allDay.append(TimelineAllDayChip(id: "p:\(item.id)", title: item.title, colorHex: item.colorHex, eventColor: nil, isEvent: false, previewStatus: item.status))
+            } else if let start = item.start, let end = item.end {
+                timed.append(TimelineBlock(id: "p:\(item.id)", start: start, end: end, title: item.title, colorHex: item.colorHex, eventColor: nil, isEvent: false, previewStatus: item.status))
+            }
+        }
+
+        return DayBlocks(timed: timed, allDay: allDay)
+    }
+
+    // MARK: - Merging
+
+    /// Live shifts bucketed by their own-timezone civil day, with preview
+    /// suppression applied (updated/removed keys render via the overlay).
+    /// Called exactly once per body pass. The bucketing + ShiftItem mapping is
+    /// shared with the roster-detail Calendar mode via `ShiftBucketer`.
+    private func computeShiftsByDay() -> [DayKey: [ShiftItem]] {
+        // Focus only narrows the LIVE calendar — never the import-preview diff.
+        ShiftBucketer.itemsByDay(instances, suppressing: mode.overlay?.suppressedShiftKeys ?? [],
+                                 focus: isLive ? effectiveFocus : .all)
+    }
+
+    /// v9 Shift Focus: narrow the live calendar to one shift type or tag.
+    @ViewBuilder
+    private var shiftFocusMenu: some View {
+        // Also show whenever a focus is active, so the user can always reach "All
+        // shifts" — even if the focused type/tag was deleted.
+        if isLive, focusTypes.count + focusTags.count > 1 || shiftFocus.isActive {
+            Menu {
+                Button { shiftFocusRaw = "" } label: {
+                    Label("All shifts", systemImage: shiftFocus == .all ? "checkmark" : "circle")
+                }
+                if !focusTypes.isEmpty {
+                    Section("Shift type") {
+                        ForEach(focusTypes) { t in
+                            Button { shiftFocusRaw = "type:\(t.id)" } label: {
+                                Label(t.label, systemImage: shiftFocus == .type(id: t.id) ? "checkmark" : "circle")
+                            }
+                        }
+                    }
+                }
+                if !focusTags.isEmpty {
+                    Section("Tag") {
+                        ForEach(focusTags, id: \.self) { tag in
+                            Button { shiftFocusRaw = "tag:\(tag)" } label: {
+                                Label(tag, systemImage: shiftFocus == .tag(tag) ? "checkmark" : "circle")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Label("Focus", systemImage: shiftFocus.isActive ? "eye.fill" : "eye")
+                    .labelStyle(.iconOnly)
+            }
+            .menuIndicator(.hidden)
+        }
+    }
+
+    private func items(for day: DayKey, shiftBuckets: [DayKey: [ShiftItem]]) -> [CalendarDayItem] {
+        var items: [CalendarDayItem] = []
+        items.append(contentsOf: (shiftBuckets[day] ?? []).map(CalendarDayItem.shift))
+        items.append(contentsOf: scopedEvents(on: day).map(CalendarDayItem.event))
+        items.append(contentsOf: (mode.overlay?.itemsByDay[day] ?? []).map(CalendarDayItem.preview))
+        return items.sorted { $0.sortKey < $1.sortKey }
+    }
+
+    private func cellSummary(for day: DayKey, shiftBuckets: [DayKey: [ShiftItem]]) -> DayCellSummary {
+        let events = scopedEvents(on: day)
+        return DayCellSummary(
+            shifts: shiftBuckets[day] ?? [],
+            previews: mode.overlay?.itemsByDay[day] ?? [],
+            eventCount: events.count,
+            eventColors: events.prefix(4).map(\.color),
+            hasConflict: dayHasConflict(day, shiftBuckets: shiftBuckets)
+        )
+    }
+}
+
+private struct LegendTag: View {
+    let symbol: String
+    let text: String
+    let color: Color
+
+    var body: some View {
+        Label(text, systemImage: symbol)
+            .foregroundStyle(color)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.12), in: Capsule())
+            .fixedSize() // never stretch into giant pills in tight layouts
+    }
+}
