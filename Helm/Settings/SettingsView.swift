@@ -157,7 +157,12 @@ struct SettingsForm: View {
             appLockSection
             #endif
 
-            helmProSection
+            // Helm is a paid app with everything free inside, so the in-app
+            // upgrade entry is hidden (ProGate.offersUpgrade == false). The
+            // StoreKit foundation stays for a possible free-app + Pro-tier pivot.
+            if ProGate.offersUpgrade {
+                helmProSection
+            }
         }
         .formStyle(.grouped)
         .themedPane() // v7.1 wash (iOS; passthrough on macOS)
