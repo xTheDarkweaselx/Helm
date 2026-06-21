@@ -72,6 +72,9 @@ struct OverviewView: View {
     @AppStorage("module_insights") private var insightsModule = true
     @Environment(\.helmAccent) private var accent
     @State private var showingYearReview = false
+    // v10: the deeper analytics collapse behind one disclosure so the next-shift
+    // hero owns the first screen; remembers the user's choice.
+    @AppStorage("overviewMoreInsights") private var showMoreInsights = false
 
     /// Open the import flow / create a schedule (owned by ContentView).
     let importRoster: () -> Void
@@ -157,14 +160,16 @@ struct OverviewView: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 nextShiftHero
+                // The 3 glanceable stat chips stay above the fold; the charts move
+                // into a disclosure so "what's my next shift" owns the first screen.
                 if insightsModule {
                     statRow(weekSummary: weekSummary, months: months, streak: streak)
-                    weeklyHoursCard(weekly)
-                    if mix.count > 1 { typeMixCard(mix) }
                 }
                 if payModule, anyPayConfigured { payCard() }
                 if planningModule { leaveCard }
-                if insightsModule, yearReview.hasData { yearReviewCard }
+                if insightsModule {
+                    moreInsights(weekly: weekly, mix: mix)
+                }
                 quickActions
             }
             .padding(16)
@@ -174,6 +179,24 @@ struct OverviewView: View {
     private var currentWeekRange: ClosedRange<DayKey> {
         let start = InsightsMath.weekStart(of: today, calendar: calendar)
         return start...start.advanced(by: 6, in: calendar)
+    }
+
+    /// v10: the weekly-hours chart, shift mix and Year in Review tucked behind one
+    /// disclosure — so the actionable cards (next shift, pay, leave) come first.
+    @ViewBuilder
+    private func moreInsights(weekly: [InsightsMath.WeekBucket], mix: [InsightsMath.TypeSlice]) -> some View {
+        DisclosureGroup(isExpanded: $showMoreInsights) {
+            VStack(alignment: .leading, spacing: 14) {
+                weeklyHoursCard(weekly)
+                if mix.count > 1 { typeMixCard(mix) }
+                if yearReview.hasData { yearReviewCard }
+            }
+            .padding(.top, 8)
+        } label: {
+            Label("More insights", systemImage: "chart.bar.xaxis")
+                .font(.subheadline.weight(.semibold))
+        }
+        .tint(.secondary)
     }
 
     // MARK: Hero
