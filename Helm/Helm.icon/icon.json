@@ -1,0 +1,37 @@
+{
+  "fill" : {
+    "solid" : "srgb:0.05882,0.23922,0.37255,1.00000"
+  },
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "image-name" : "Sailboat-Layer4-Waves.svg",
+          "name" : "Sailboat-Layer4-Waves"
+        },
+        {
+          "image-name" : "Sailboat-Layer3-Hull.svg",
+          "name" : "Sailboat-Layer3-Hull"
+        },
+        {
+          "image-name" : "Sailboat-Layer2-Sails.svg",
+          "name" : "Sailboat-Layer2-Sails"
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.6
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.2
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
