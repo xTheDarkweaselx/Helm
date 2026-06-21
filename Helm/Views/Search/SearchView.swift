@@ -206,7 +206,7 @@ struct SearchView: View {
         // Plain guidance — NOT a second search field (the old magnifying-glass row
         // read like a duplicate search bar).
         Section {
-            Text("Searches shift titles, notes, locations, types and tags, plus roster and schedule names. Tap a result to open it — a shift jumps to its day on the calendar.")
+            Text("Searches shifts, rosters and schedules. Tap a shift to jump to its day.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .listRowSeparator(.hidden)

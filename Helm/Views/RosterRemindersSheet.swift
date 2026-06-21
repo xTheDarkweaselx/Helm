@@ -68,7 +68,7 @@ struct RosterRemindersView: View {
                 } footer: {
                     Text(selected.isEmpty
                          ? "No reminders for this roster's shifts."
-                         : "\(ReminderSetting.sentenceSummary(for: Array(selected))) — pick up to \(ReminderOffsets.maxCount).")
+                         : "\(ReminderSetting.sentenceSummary(for: Array(selected))) — up to \(ReminderOffsets.maxCount).")
                 }
             }
 
@@ -113,14 +113,14 @@ struct RosterRemindersView: View {
 
     private var alarmFooter: String {
         if useDefaultAlarm {
-            return "Inherits the default wake-up timing — \(ShiftAlarmSetting.label(forLead: ShiftAlarmSetting.leadMinutes)) before each shift. The default and the on/off switch live in Settings on your iPhone."
+            return "Uses the default timing — \(ShiftAlarmSetting.label(forLead: ShiftAlarmSetting.leadMinutes)) before each shift. Change it in Settings on your iPhone."
         }
         // A 0 lead means "ring at the shift's start" — drop the "before" clause so
         // it doesn't read "at shift start before each shift".
         let when = chosenLead == 0
             ? "right at each timed shift's start"
             : "\(ShiftAlarmSetting.label(forLead: chosenLead)) before each timed shift"
-        return "A real alarm \(when) in this roster. Rings on your iPhone (iOS 26+) through Silent mode and Sleep Focus, like a Clock alarm."
+        return "A real alarm \(when). Rings on your iPhone (iOS 26+) through Silent mode and Sleep Focus, like a Clock alarm."
     }
 
     // MARK: - Load / commit

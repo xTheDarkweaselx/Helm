@@ -17,7 +17,7 @@ struct PaywallView: View {
 
     private struct Perk: Identifiable { let id = UUID(); let icon: String; let text: String }
     private let perks = [
-        Perk(icon: "infinity", text: "A one-time purchase — unlocked forever, no subscription."),
+        Perk(icon: "infinity", text: "One-time purchase — yours forever, no subscription."),
         Perk(icon: "icloud.fill", text: "Works across your iPhone, iPad, Mac and Apple Watch."),
         Perk(icon: "heart.fill", text: "Supports an indie app built by one person."),
     ]
@@ -36,7 +36,7 @@ struct PaywallView: View {
                         }
                     }
                     purchaseArea
-                    Text("Helm is fully featured right now — Pro simply supports its development. Payment is charged to your Apple Account.")
+                    Text("Helm is fully featured already — Pro just supports its development. Charged to your Apple Account.")
                         .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: 460)

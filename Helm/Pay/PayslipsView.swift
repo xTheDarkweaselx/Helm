@@ -29,7 +29,7 @@ struct PayslipsView: View {
         List {
             if payslips.isEmpty {
                 Section {
-                    Text("No payslips yet. Add one for a pay period, then tick what landed to check it against Helm's estimate.")
+                    Text("No payslips yet. Add one, then tick what landed to check it against Helm's estimate.")
                         .foregroundStyle(.secondary).font(.callout)
                 }
             }
@@ -211,7 +211,7 @@ struct PayslipReconcileView: View {
                         #endif
                 }
             } footer: {
-                Text("Enter the gross on your payslip, then tick the shifts below to find any gap.")
+                Text("Enter the gross on your payslip, then tick the shifts below to spot any gap.")
             }
 
             Section("Shifts (\(periodShifts.count))") {
@@ -224,7 +224,7 @@ struct PayslipReconcileView: View {
             Section {
                 Toggle("Mark resolved", isOn: $payslip.resolved)
             } footer: {
-                Text("Tick when this payslip is sorted — correct, or the gap chased up.")
+                Text("Tick when this payslip is sorted — paid right, or chased up.")
             }
         }
         .themedPane()
@@ -260,7 +260,7 @@ struct PayslipReconcileView: View {
                 }
             }
             if r.flaggedShortfall > 0.005 {
-                Text("You flagged \(r.flaggedShortfall.formatted(.currency(code: currency))) of unpaid/short shifts below.")
+                Text("You flagged \(r.flaggedShortfall.formatted(.currency(code: currency))) in unpaid or short shifts below.")
                     .font(.caption2).foregroundStyle(.orange)
             }
         }

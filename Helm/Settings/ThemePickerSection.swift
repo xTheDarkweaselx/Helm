@@ -42,7 +42,7 @@ struct ThemePickerSection: View {
         } header: {
             Text("Appearance")
         } footer: {
-            Text("Choose a theme to apply it instantly. “Default” follows your system accent and light/dark setting.")
+            Text("Themes apply instantly. “Default” follows your system accent and light/dark setting.")
         }
     }
 }

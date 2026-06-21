@@ -32,7 +32,7 @@ struct PremiumRulesView: View {
         Form {
             Section {
                 if rules.isEmpty {
-                    Text("No premium rules yet. Add one to enhance pay for nights, weekends, bank holidays or on-call shifts.")
+                    Text("No premium rules yet. Add one to boost pay for nights, weekends, bank holidays or on-call.")
                         .foregroundStyle(.secondary)
                         .font(.callout)
                 } else {
@@ -49,7 +49,7 @@ struct PremiumRulesView: View {
             } header: {
                 Text("Premium rules")
             } footer: {
-                Text("Applied on top of your base rate when a shift matches. Helm doesn't know any pay law — these are your rules, and the result is an estimate.")
+                Text("Applied on top of your base rate when a shift matches. These are your own rules, so the total is an estimate.")
             }
 
             if rules.filter(\.enabled).count > 1 {
@@ -60,7 +60,7 @@ struct PremiumRulesView: View {
                     }
                 } footer: {
                     Text(stacking == .highest
-                         ? "A weekend night hour gets the better of the two enhancements, not both."
+                         ? "A weekend night hour gets the higher rate, not both."
                          : "Overlapping enhancements stack — a weekend night hour gets both.")
                 }
             }
@@ -206,7 +206,7 @@ struct PremiumRuleEditor: View {
                 Text("Trigger")
             } footer: {
                 if triggerKind == .timeWindow {
-                    Text("Only the hours inside the window are enhanced (it may cross midnight).")
+                    Text("Only hours inside the window are enhanced. It can cross midnight.")
                 }
             }
             Section("Enhancement") {

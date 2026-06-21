@@ -28,8 +28,8 @@ struct AvailabilityRuleEditorView: View {
                 .pickerStyle(.segmented)
             } footer: {
                 Text(rule.kind == .unavailable
-                     ? "Shifts overlapping this time on these days are flagged as clashes."
-                     : "Marks when you prefer to work; shown on the calendar.")
+                     ? "Shifts that overlap these times are flagged as clashes."
+                     : "Marks times you'd rather work; shown on the calendar.")
             }
 
             Section("Days") {

@@ -86,7 +86,7 @@ struct ShiftEditorView: View {
                 Text("Times")
             } footer: {
                 if wasTBC && !hasTimes {
-                    Text("This shift was imported without times (TBC) — it shows as an all-day event. Turn on “Times confirmed” once you know them.")
+                    Text("Imported without times, so it shows all-day. Turn on “Times confirmed” when you know them.")
                 } else if !hasTimes {
                     Text("Without times the shift stays an all-day calendar event.")
                 }
@@ -111,7 +111,7 @@ struct ShiftEditorView: View {
                 .buttonStyle(.glassProminent)
                 .disabled(saving || syncProgress.isActive)
             } footer: {
-                Text("Your edit is kept even if you re-import the roster file.")
+                Text("Your edit is kept even if you re-import the roster.")
             }
         }
         .formStyle(.grouped)
@@ -182,7 +182,7 @@ struct ShiftEditorView: View {
         let stagedPaidHours: Double?
         if hasTimes {
             if startMinute == endMinute && !overnight {
-                errorMessage = "Start and end are the same — set an end time, or turn on “Ends next day” for a 24-hour shift."
+                errorMessage = "Start and end match. Set an end time, or turn on “Ends next day” for a 24-hour shift."
                 return
             }
             // end < start without the toggle = overnight by the app's standing

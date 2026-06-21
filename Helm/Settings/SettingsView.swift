@@ -146,7 +146,7 @@ struct SettingsForm: View {
             } header: {
                 Text("Features")
             } footer: {
-                Text("Turn off features you don't use to declutter the app. Nothing is deleted — switch one back on to restore it.")
+                Text("Hide features you don't use. Nothing is deleted — switch one back on to restore it.")
             }
 
             Section {
@@ -158,7 +158,7 @@ struct SettingsForm: View {
             } header: {
                 Text("Default shift reminders")
             } footer: {
-                Text("\(reminderOffsets.isEmpty ? "No reminders" : ReminderSetting.sentenceSummary(for: Array(reminderOffsets))) — pick up to \(ReminderOffsets.maxCount). Applied to shifts as you import them; a roster can override this from its own page. To update shifts already in your calendar, open a roster and choose “Re-sync all shifts to calendar”.")
+                Text("\(reminderOffsets.isEmpty ? "No reminders" : ReminderSetting.sentenceSummary(for: Array(reminderOffsets))) — pick up to \(ReminderOffsets.maxCount). Applied to new imports; a roster can override this. To update existing shifts, open a roster and Re-sync all shifts to calendar.")
             }
 
             Section {
@@ -174,7 +174,7 @@ struct SettingsForm: View {
                     Text("Google is signed out — shifts go only to Apple Calendar until you sign in again below.")
                         .foregroundStyle(.orange)
                 } else if chosenDestinations.count > 1 {
-                    Text("New and updated shifts are written to BOTH calendars. Each roster remembers where its shifts live, so re-applying moves them when you change this.")
+                    Text("Shifts go to both calendars. Each roster remembers where its shifts live, so re-applying moves them when you change this.")
                 } else if googleUsable {
                     Text("Each roster remembers where its shifts were written, so re-importing after switching moves them to the new destination.")
                 } else {
@@ -234,7 +234,7 @@ struct SettingsForm: View {
             } header: {
                 Text("Pay")
             } footer: {
-                Text("Set your hourly rate to unlock the Timesheet — gross pay, weekly/monthly/tax-year totals, and CSV export — plus the Overview pay card. Figures are before tax.")
+                Text("Set your hourly rate to unlock the Timesheet and Overview pay card. Figures are before tax.")
             }
 
             if hourlyRate > 0 {
@@ -261,7 +261,7 @@ struct SettingsForm: View {
                 } footer: {
                     Text(payCycleEnabled
                          ? payCycleFooter
-                         : "Tell Helm how often you're paid to forecast your next payday and what it'll be worth, on the Timesheet.")
+                         : "Tell Helm how often you're paid to forecast your next payday on the Timesheet.")
                 }
             }
             } // if payModule
@@ -274,7 +274,7 @@ struct SettingsForm: View {
                 Text("App Lock")
             } footer: {
                 if AppLockSetting.canAuthenticate {
-                    Text("Lock Helm with \(AppLockSetting.biometryLabel) (or your device passcode) on launch and when you return to it, so only you can open your schedule.")
+                    Text("Lock Helm with \(AppLockSetting.biometryLabel) or your passcode on launch and when you return, so only you can open it.")
                 } else {
                     Text("Set up Face ID, Touch ID, or a device passcode first to lock Helm.")
                 }
@@ -295,7 +295,7 @@ struct SettingsForm: View {
                 } header: {
                     Text("Wake-up alarms")
                 } footer: {
-                    Text("Sets a real alarm \(ShiftAlarmSetting.label(forLead: shiftAlarmLead)) before each upcoming timed shift. Like a Clock alarm it rings through Silent mode and Focus — including Sleep. A roster can override this timing from its “Reminders & wake-up alarm” page. Apple doesn't let apps change your Sleep schedule's wake-up alarm, so this is Helm's own alarm.")
+                    Text("Rings a real alarm \(ShiftAlarmSetting.label(forLead: shiftAlarmLead)) before each timed shift — through Silent mode, Focus and Sleep. A roster can override the timing. (It's Helm's own alarm, separate from your Sleep schedule.)")
                 }
                 .onChange(of: shiftAlarmsEnabled) { _, on in
                     if on {
@@ -318,7 +318,7 @@ struct SettingsForm: View {
             } header: {
                 Text("Accessibility")
             } footer: {
-                Text("Flattens Helm's translucent glass to solid surfaces for legibility. Helm also follows your device's text size, bold text and reduce-motion settings.")
+                Text("Flattens Helm's translucent glass to solid surfaces for easier reading. Helm also follows your device's text-size and motion settings.")
             }
 
             Section {
@@ -345,7 +345,7 @@ struct SettingsForm: View {
             } footer: {
                 Text(proStore.isPro
                      ? "Thanks for supporting Helm."
-                     : "A one-time unlock. Everything in Helm is free right now — Pro simply supports its development.")
+                     : "A one-time unlock. Everything's free right now — Pro just supports Helm's development.")
             }
 
             googleSection
@@ -433,7 +433,7 @@ struct SettingsForm: View {
         } header: {
             Text("Your data")
         } footer: {
-            Text("Saves everything in Helm — shift types, rosters and their shifts, schedules, time-off, availability and your preferences — as one JSON file you can keep or move elsewhere. Helm never sends your roster data anywhere; it stays on your device and in your private iCloud.")
+            Text("Saves everything in Helm as one JSON file you can keep or move elsewhere. Your data never leaves your device and private iCloud.")
         }
     }
 
@@ -505,7 +505,7 @@ struct SettingsForm: View {
         } header: {
             Text("Remove Helm events")
         } footer: {
-            Text("Deletes every calendar event Helm has created there. Your rosters and schedules stay in Helm. To put events back, open a roster and choose “Re-sync all shifts to calendar”, or open a schedule's Preview and choose “Re-sync to Calendar” (a plain re-import sees them as unchanged and writes nothing). To remove a single shift, swipe it in its roster or right-click it in the calendar.")
+            Text("Deletes every event Helm created there; your rosters and schedules stay in Helm. To put events back, open a roster and Re-sync all shifts to calendar. To remove just one, swipe it in its roster.")
         }
         .confirmationDialog(
             "Remove ALL Helm events from \(removeAllCandidate.map(SyncSummary.name(for:)) ?? "this calendar")?",
@@ -519,7 +519,7 @@ struct SettingsForm: View {
             Button("Remove all", role: .destructive) { removeAll(from: kind) }
             Button("Cancel", role: .cancel) {}
         } message: { kind in
-            Text("Every event in the “Helm Shifts” calendar in \(SyncSummary.name(for: kind)) will be deleted. Helm's own data is untouched.")
+            Text("Deletes every event in the “Helm Shifts” calendar in \(SyncSummary.name(for: kind)). Your Helm data is untouched.")
         }
     }
 
@@ -593,7 +593,7 @@ struct SettingsForm: View {
                 }
                 .tint(theme.destructive)
                 .confirmationDialog(
-                    "\(googleRosterCount) roster\(googleRosterCount == 1 ? " has" : "s have") shifts in this Google account. After signing out, Helm can't update or remove them until you sign in again.",
+                    "\(googleRosterCount) roster\(googleRosterCount == 1 ? " has" : "s have") shifts in this Google account. Helm can't change them until you sign back in.",
                     isPresented: $isConfirmingSignOut,
                     titleVisibility: .visible
                 ) {
@@ -621,7 +621,7 @@ struct SettingsForm: View {
             Text("Google Calendar")
         } footer: {
             if !GoogleConfig.isConfigured {
-                Text("To connect Google Calendar, create a free Google Cloud OAuth client ID (type “iOS”, bundle ID Fusion-Studios.Helm) and paste it here. Helm only ever touches a “Helm Shifts” calendar it creates — never your other calendars.")
+                Text("Create a free Google Cloud OAuth client ID (type “iOS”, bundle ID Fusion-Studios.Helm) and paste it here. Helm only touches its own “Helm Shifts” calendar, never your others.")
             } else {
                 Text("Helm writes to its own “Helm Shifts” calendar in your Google account — never your other calendars.")
             }

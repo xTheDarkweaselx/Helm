@@ -141,7 +141,7 @@ struct OnboardingView: View {
             hero("accessibility")
             Text("Comfort & accessibility")
                 .font(.title.weight(.bold))
-            Text("Helm follows your device's text size, bold text and reduce-motion settings. You can also flatten its glass effects here for extra legibility.")
+            Text("Helm follows your device's text and motion settings. Flatten its glass effects here for extra legibility.")
                 .font(.callout).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 8)

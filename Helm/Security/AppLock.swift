@@ -101,7 +101,7 @@ private extension LAError {
         switch code {
         case .userCancel, .appCancel, .systemCancel: return ""
         case .biometryNotEnrolled, .passcodeNotSet:
-            return "Set up \(AppLockSetting.biometryLabel) or a device passcode first."
+            return "Set up \(AppLockSetting.biometryLabel) or a passcode first."
         case .biometryLockout:
             return "\(AppLockSetting.biometryLabel) is locked — use your passcode."
         default: return "Couldn't unlock. Try again."

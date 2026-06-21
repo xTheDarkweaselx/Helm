@@ -129,7 +129,7 @@ struct OverviewView: View {
         ContentUnavailableView {
             Label("Welcome to Helm", systemImage: "calendar.badge.plus")
         } description: {
-            Text("Import a spreadsheet roster, or build a custom rota, and Helm keeps your calendar in step with it.")
+            Text("Import a roster spreadsheet or build a rota — Helm keeps your calendar in sync.")
         } actions: {
             Button("Import roster", systemImage: "square.and.arrow.down", action: importRoster)
                 .buttonStyle(.glassProminent)

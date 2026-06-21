@@ -62,7 +62,7 @@ struct ShiftTypeLibraryView: View {
                 } header: {
                     Text("Learned codes")
                 } footer: {
-                    Text("Taught during imports — each applies to its own roster source. Forget one and the next import will ask again.")
+                    Text("Learned per roster source during imports. Forget one to be asked again next import.")
                 }
             }
         }
@@ -74,13 +74,13 @@ struct ShiftTypeLibraryView: View {
             }
             Button("Cancel", role: .cancel) { pendingDeletion = [] }
         } message: {
-            Text("This is used by \(pendingRefCount) day\(pendingRefCount == 1 ? "" : "s") in your cycles/schedules. Deleting it turns those days off on the next update.")
+            Text("Used by \(pendingRefCount) day\(pendingRefCount == 1 ? "" : "s") in your schedules. Deleting it turns them off on the next update.")
         }
         .navigationTitle("Shift Types")
         .overlay {
             if types.isEmpty {
                 ContentUnavailableView("No shift types", systemImage: "clock",
-                    description: Text("Add the shifts you work — e.g. Morning 06:30–13:30."))
+                    description: Text("Add the shifts you work, e.g. Morning 06:30–13:30."))
             }
         }
         .toolbar {

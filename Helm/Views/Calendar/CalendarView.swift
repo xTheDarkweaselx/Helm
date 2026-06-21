@@ -148,7 +148,7 @@ struct CalendarView: View {
             Button("Remove shift", role: .destructive) { remove(shift) }
             Button("Cancel", role: .cancel) {}
         } message: { shift in
-            Text("“\(shift.title)” will be deleted from the calendar and from its roster. Re-importing the file or re-applying its schedule would add it back.")
+            Text("This deletes the shift from your calendar and roster. Re-importing the file or re-applying its schedule adds it back.")
         }
         .alert("Couldn't remove shift", isPresented: .constant(removalError != nil)) {
             Button("OK") { removalError = nil }
@@ -354,7 +354,7 @@ struct CalendarView: View {
                 Spacer()
             }
             if model.scope == .google && !model.hasGoogleSources {
-                Label("Your shifts are written to Google's “Helm Shifts” calendar. To also see your other Google events here, add the Google account to the system Calendar (Internet Accounts).",
+                Label("Shifts go to a “Helm Shifts” calendar. To see your other Google events, add the account in Internet Accounts.",
                       systemImage: "info.circle")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
