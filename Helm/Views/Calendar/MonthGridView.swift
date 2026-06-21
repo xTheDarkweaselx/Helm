@@ -179,18 +179,16 @@ struct DayCellView: View {
         }
     }
 
+    // v10: one dot signals "there are other calendar events here" — the day's
+    // agenda shows them in full on tap. (Helm shifts render as the chips above;
+    // up to four coloured dots + a count just crowded a 64pt iPhone cell.)
+    @ViewBuilder
     private var eventDots: some View {
-        HStack(spacing: 3) {
-            ForEach(Array(summary.eventColors.prefix(4).enumerated()), id: \.offset) { _, rgba in
-                Circle()
-                    .fill(rgba.map { Color(.sRGB, red: $0.r, green: $0.g, blue: $0.b, opacity: $0.a) } ?? Color.secondary)
-                    .frame(width: 5, height: 5)
-            }
-            if summary.eventCount > 4 {
-                Text("\(summary.eventCount)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
+        if summary.eventCount > 0 {
+            let color = summary.eventColors.compactMap { $0 }.first
+            Circle()
+                .fill(color.map { Color(.sRGB, red: $0.r, green: $0.g, blue: $0.b, opacity: $0.a) } ?? Color.secondary)
+                .frame(width: 6, height: 6)
         }
     }
 
