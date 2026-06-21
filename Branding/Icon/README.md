@@ -17,9 +17,9 @@ share the same `#0F3D5F` background and 1024×1024 canvas.
 - `Layer3-Rim-Hub.svg` — the white rim ring + centre hub (transparent bg).
 - `Helm-Icon-Composite.svg` — flattened reference (masked square; not for import).
 
-**Sailboat**
-- `Sailboat-Layer2-Sails.svg` — the white mainsail + jib (transparent bg).
-- `Sailboat-Layer3-Hull.svg` — the white hull (transparent bg).
+**Sailboat** (billowed sails, à la SF Symbol `sailboat.fill`)
+- `Sailboat-Layer2-Sails.svg` — the white mainsail + jib, gently billowed (transparent bg).
+- `Sailboat-Layer3-Hull.svg` — the white hull + a subtle two-ripple waterline (transparent bg).
 - `Sailboat-Composite.svg` — flattened reference (masked square; not for import).
 
 All files share a 1024×1024 canvas and are pre-aligned, so the layers stack

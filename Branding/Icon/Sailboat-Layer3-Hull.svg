@@ -1,3 +1,7 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
-  <path d="M196 705 L828 705 Q762 850 512 850 Q262 850 196 705 Z" fill="#FFFFFF"/>
+  <path d="M198 684 L826 684 Q760 826 512 826 Q264 826 198 684 Z" fill="#FFFFFF"/>
+  <g stroke="#FFFFFF" stroke-width="18" stroke-linecap="round">
+    <line x1="296" y1="852" x2="456" y2="852"/>
+    <line x1="568" y1="852" x2="728" y2="852"/>
+  </g>
 </svg>

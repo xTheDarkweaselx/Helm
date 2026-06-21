@@ -1,4 +1,4 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
-  <polygon points="520,205 520,700 806,700" fill="#FFFFFF"/>
-  <polygon points="492,262 492,700 236,700" fill="#FFFFFF"/>
+  <path d="M522 180 L522 668 L808 668 Q732 392 522 180 Z" fill="#FFFFFF"/>
+  <path d="M498 250 L498 668 L250 668 Q302 408 498 250 Z" fill="#FFFFFF"/>
 </svg>
