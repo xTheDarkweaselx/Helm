@@ -2,6 +2,13 @@
   <rect width="1024" height="1024" rx="224" fill="#0F3D5F"/>
   <path d="M520 218 Q374 454 306 656 L510 636 Q510 434 520 218 Z" fill="#FFFFFF"/>
   <path d="M556 162 L530 634 L792 628 Q766 404 556 162 Z" fill="#FFFFFF"/>
+  <g fill="none" stroke="#0F3D5F" stroke-width="9" stroke-linecap="round">
+    <path d="M540 540 Q644 560 726 538"/>
+    <path d="M544 452 Q632 470 702 450"/>
+    <path d="M548 372 Q614 388 658 370"/>
+    <path d="M392 540 Q452 556 500 540"/>
+    <path d="M410 460 Q458 476 502 460"/>
+  </g>
   <path fill="#FFFFFF" fill-rule="evenodd" d="M200 656 Q512 638 864 564 Q796 690 466 704 Q304 710 200 656 Z M276 659 Q520 641 804 593 L804 607 Q520 655 276 673 Z"/>
   <g fill="#FFFFFF">
     <path d="M160 754 C284 730 384 734 494 752 C604 770 714 770 812 746 C724 764 614 764 502 772 C384 780 284 766 160 754 Z"/>

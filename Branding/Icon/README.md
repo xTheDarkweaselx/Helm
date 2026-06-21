@@ -18,7 +18,7 @@ share the same `#0F3D5F` background and 1024×1024 canvas.
 - `Helm-Icon-Composite.svg` — flattened reference (masked square; not for import).
 
 **Sailboat** (two-sail sloop on flowing water — built to match a supplied reference)
-- `Sailboat-Layer2-Sails.svg` — the white jib + mainsail, billowed and leaning into the wind (transparent bg).
+- `Sailboat-Layer2-Sails.svg` — the white jib + mainsail, billowed, with thin draft lines cut into them (`evenodd` holes) so the sails read as wind-filled (transparent bg).
 - `Sailboat-Layer3-Hull.svg` — the white hull with a thin deck line cut through it (an `evenodd` hole, so the background shows through as the line — transparent bg).
 - `Sailboat-Layer4-Waves.svg` — three flowing white waves (transparent bg).
 - `Sailboat-Composite.svg` — flattened reference (masked square; not for import).
