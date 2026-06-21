@@ -2,8 +2,9 @@
 //  OnboardingView.swift
 //  Helm
 //
-//  v9 first-run welcome guide: a short paged tour (what Helm does → how to use it
-//  → pick an appearance → accessibility). Shown once on first launch, gated by
+//  v9 first-run welcome guide: a short two-page tour (what Helm does → how to use
+//  it) that hands you straight into your first import. Appearance & accessibility
+//  live in Settings, where the copy points. Shown once on first launch, gated by
 //  `hasCompletedOnboarding`; replayable from Settings ▸ "Show welcome guide".
 //
 
@@ -19,12 +20,13 @@ enum OnboardingState {
 struct OnboardingPresenter: ViewModifier {
     @Binding var isPresented: Bool
     let onFinish: () -> Void
+    let onImport: () -> Void
 
     func body(content: Content) -> some View {
         #if os(iOS)
-        content.fullScreenCover(isPresented: $isPresented) { OnboardingView(onFinish: onFinish) }
+        content.fullScreenCover(isPresented: $isPresented) { OnboardingView(onFinish: onFinish, onImport: onImport) }
         #else
-        content.sheet(isPresented: $isPresented) { OnboardingView(onFinish: onFinish) }
+        content.sheet(isPresented: $isPresented) { OnboardingView(onFinish: onFinish, onImport: onImport) }
         #endif
     }
 }
@@ -32,12 +34,13 @@ struct OnboardingPresenter: ViewModifier {
 struct OnboardingView: View {
     /// Called when the user finishes or skips — the host sets the completed flag.
     let onFinish: () -> Void
+    /// Called by the final "Import a roster" CTA to hand straight into the importer.
+    let onImport: () -> Void
 
     @Environment(ThemeManager.self) private var theme
-    @AppStorage(A11ySettings.reduceTransparencyKey) private var reduceTransparency = false
     @State private var page = 0
 
-    private let lastPage = 3 // Welcome, How, Appearance, Accessibility
+    private let lastPage = 1 // Welcome, How it works
 
     var body: some View {
         VStack(spacing: 0) {
@@ -56,8 +59,6 @@ struct OnboardingView: View {
             TabView(selection: $page) {
                 welcomePage.tag(0)
                 howItWorksPage.tag(1)
-                appearancePage.tag(2)
-                accessibilityPage.tag(3)
             }
             .tabViewStyle(.page(indexDisplayMode: .always))
             .indexViewStyle(.page(backgroundDisplayMode: .always))
@@ -65,18 +66,20 @@ struct OnboardingView: View {
             Group {
                 switch page {
                 case 0: welcomePage
-                case 1: howItWorksPage
-                case 2: appearancePage
-                default: accessibilityPage
+                default: howItWorksPage
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .transition(.opacity)
             #endif
 
-            Button(page == lastPage ? "Get started" : "Continue") {
-                if page == lastPage { onFinish() }
-                else { withAnimation { page += 1 } }
+            Button(page == lastPage ? "Import a roster" : "Continue") {
+                if page == lastPage {
+                    onImport()  // hand straight into the importer instead of a dead-end welcome
+                    onFinish()
+                } else {
+                    withAnimation { page += 1 }
+                }
             }
             .buttonStyle(.glassProminent)
             .controlSize(.large)
@@ -115,50 +118,11 @@ struct OnboardingView: View {
                  "Helm turns your shift codes into real shifts — with times, breaks and pay.")
             step("arrow.triangle.2.circlepath", "Stay in sync",
                  "Your calendar updates automatically, with reminders and wake-up alarms.")
-        }
-    }
-
-    private var appearancePage: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 8) {
-                Text("Make it yours")
-                    .font(.title.weight(.bold))
-                Text("Pick a look — you can change it any time in Settings.")
-                    .font(.callout).foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(.top, 8)
-            .padding(.horizontal, 24)
-
-            Form { ThemePickerSection() }
-                .formStyle(.grouped)
-                .scrollContentBackground(.hidden)
-        }
-    }
-
-    private var accessibilityPage: some View {
-        pageScaffold {
-            hero("accessibility")
-            Text("Comfort & accessibility")
-                .font(.title.weight(.bold))
-            Text("Helm follows your device's text and motion settings. Flatten its glass effects here for extra legibility.")
-                .font(.callout).foregroundStyle(.secondary)
+            Text("Only need part of Helm? Turn features on or off any time in Settings.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 8)
-
-            // Live preview card — toggling the switch flattens it immediately.
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Sample card").font(.headline)
-                Text("This is how surfaces look with your current setting.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .glassCard()
-
-            Toggle("Reduce transparency", isOn: $reduceTransparency)
-                .padding(14)
-                .glassCard()
+                .padding(.top, 8)
         }
     }
 

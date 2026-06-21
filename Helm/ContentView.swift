@@ -125,7 +125,8 @@ struct ContentView: View {
         .modifier(OnboardingPresenter(isPresented: Binding(
             get: { !hasCompletedOnboarding },
             set: { showing in if !showing { hasCompletedOnboarding = true } }
-        ), onFinish: { hasCompletedOnboarding = true }))
+        ), onFinish: { hasCompletedOnboarding = true },
+           onImport: { selection = .importer }))
         .sheet(isPresented: $showingTemplates) {
             RotaTemplatesGallery { template in
                 showingTemplates = false

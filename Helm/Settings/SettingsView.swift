@@ -485,7 +485,7 @@ struct SettingsForm: View {
         Section {
             Button("Show welcome guide") { hasCompletedOnboarding = false }
         } footer: {
-            Text("Replays the first-run tour — what Helm does, plus appearance and accessibility.")
+            Text("Replays the first-run tour — what Helm does and how to get started.")
         }
     }
 
