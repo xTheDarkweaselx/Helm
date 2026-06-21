@@ -1,4 +1,3 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
-  <path d="M248 662 L812 662 Q740 808 512 808 Q300 808 248 662 Z" fill="#FFFFFF"/>
-  <path d="M268 852 Q392 822 516 852 Q640 882 764 852" fill="none" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round"/>
+  <path fill="#FFFFFF" fill-rule="evenodd" d="M200 656 Q512 638 864 564 Q796 690 466 704 Q304 710 200 656 Z M276 659 Q520 641 804 593 L804 607 Q520 655 276 673 Z"/>
 </svg>
