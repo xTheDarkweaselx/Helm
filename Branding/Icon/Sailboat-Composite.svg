@@ -1,10 +1,6 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
   <rect width="1024" height="1024" rx="224" fill="#0F3D5F"/>
-  <path d="M522 180 L522 668 L808 668 Q732 392 522 180 Z" fill="#FFFFFF"/>
-  <path d="M498 250 L498 668 L250 668 Q302 408 498 250 Z" fill="#FFFFFF"/>
-  <path d="M198 684 L826 684 Q760 826 512 826 Q264 826 198 684 Z" fill="#FFFFFF"/>
-  <g stroke="#FFFFFF" stroke-width="18" stroke-linecap="round">
-    <line x1="296" y1="852" x2="456" y2="852"/>
-    <line x1="568" y1="852" x2="728" y2="852"/>
-  </g>
+  <path d="M430 658 Q470 400 560 150 Q772 375 798 658 Q612 688 430 658 Z" fill="#FFFFFF"/>
+  <path d="M248 662 L812 662 Q740 808 512 808 Q300 808 248 662 Z" fill="#FFFFFF"/>
+  <path d="M268 852 Q392 822 516 852 Q640 882 764 852" fill="none" stroke="#FFFFFF" stroke-width="18" stroke-linecap="round"/>
 </svg>
