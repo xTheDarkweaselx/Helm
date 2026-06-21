@@ -8,7 +8,7 @@
 		<string>Fusion-Studios.Helm.reimport</string>
 	</array>
 	<key>HelmGoogleClientID</key>
-	<string></string>
+	<string>951279642594-bn38l8idsk8j0hbg74capgpafa73ab0v.apps.googleusercontent.com</string>
 	<key>NSAlarmKitUsageDescription</key>
 	<string>Helm sets alarms to wake you up before your shifts.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
