@@ -1,7 +1,7 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
   <rect width="1024" height="1024" rx="224" fill="#0F3D5F"/>
   <path d="M580 215 Q418 478 302 672 L514 666 Q540 425 580 215 Z" fill="#FFFFFF"/>
-  <path d="M612 160 L528 666 L800 660 Q780 400 612 160 Z" fill="#FFFFFF"/>
+  <path d="M612 160 L528 666 L798 646 Q780 400 612 160 Z" fill="#FFFFFF"/>
   <g fill="none" stroke="#0F3D5F" stroke-width="9" stroke-linecap="round">
     <path d="M560 510 Q664 558 768 524"/>
     <path d="M578 424 Q654 462 738 432"/>
@@ -10,7 +10,7 @@
     <path d="M438 454 Q482 482 532 462"/>
   </g>
   <path d="M200 676 Q514 648 868 574 Q804 724 470 738 Q306 744 200 676 Z" fill="#FFFFFF"/>
-  <path d="M300 692 Q540 684 794 668" fill="none" stroke="#0F3D5F" stroke-width="13" stroke-linecap="round"/>
+  <path d="M280 706 Q500 686 720 674" fill="none" stroke="#0F3D5F" stroke-width="13" stroke-linecap="round"/>
   <g fill="#FFFFFF">
     <path d="M160 766 C284 742 384 746 494 764 C604 782 714 782 812 758 C724 776 614 776 502 784 C384 792 284 778 160 766 Z"/>
     <path d="M210 810 C334 786 434 790 544 808 C654 826 754 824 838 802 C754 820 654 820 554 828 C444 836 334 822 210 810 Z"/>
