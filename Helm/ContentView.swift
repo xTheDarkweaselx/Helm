@@ -188,20 +188,45 @@ struct ContentView: View {
         }
     }
 
+    /// A sidebar row. macOS: a Button that sets `selection` and paints its OWN
+    /// themed selection capsule — the List no longer owns selection, so the system
+    /// never draws its blue Liquid-Glass pill (that pill, with its own inset and
+    /// fade-in clock, was the "blue flash then mismatched-width overlap"). iOS keeps
+    /// the native NavigationLink / List(selection:) highlight (its tint already
+    /// themes correctly).
     @ViewBuilder
-    private func navRow(_ value: Selection, _ title: String, _ icon: String) -> some View {
-        NavigationLink(value: value) {
-            sidebarLabel(title, icon, selected: rowSelected(value))
-        }
+    private func sidebarRow<RowLabel: View>(_ value: Selection,
+                                            @ViewBuilder label: () -> RowLabel) -> some View {
         #if os(macOS)
-        .listRowBackground(rowSelected(value)
-            ? AnyView(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(theme.accent))
-            : AnyView(Color.clear))
+        Button { selection = value } label: { label() }
+            .buttonStyle(.plain)
+            .themedSidebarRow(selected: rowSelected(value), accent: theme.accent)
+        #else
+        NavigationLink(value: value) { label() }
+        #endif
+    }
+
+    private func navRow(_ value: Selection, _ title: String, _ icon: String) -> some View {
+        sidebarRow(value) { sidebarLabel(title, icon, selected: rowSelected(value)) }
+    }
+
+    /// The sidebar List. macOS drops the `selection:` binding (so no native
+    /// selection capsule is ever drawn) and restores ↑/↓ arrow-key navigation via
+    /// `.onMoveCommand`; iOS keeps the native selection.
+    @ViewBuilder
+    private func sidebarListContainer<Rows: View>(@ViewBuilder rows: () -> Rows) -> some View {
+        #if os(macOS)
+        List { rows() }
+            .focusable()
+            .focusEffectDisabled()
+            .onMoveCommand { moveSidebarSelection($0) }
+        #else
+        List(selection: $selection) { rows() }
         #endif
     }
 
     private var sidebarList: some View {
-        List(selection: $selection) {
+        sidebarListContainer {
             Section {
                 navRow(.overview, "Overview", "rectangle.grid.2x2")
                 navRow(.calendar(nil), "Calendar", "calendar")
@@ -215,16 +240,10 @@ struct ContentView: View {
             if !importedRosters.isEmpty {
                 Section("Rosters") {
                     ForEach(importedRosters) { roster in
-                        NavigationLink(value: Selection.roster(roster.id)) {
+                        sidebarRow(.roster(roster.id)) {
                             sidebarLabel(roster.title ?? "Untitled roster", "tablecells",
                                          selected: rowSelected(.roster(roster.id)))
                         }
-                        #if os(macOS)
-                        .listRowBackground(rowSelected(.roster(roster.id))
-                            ? AnyView(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(theme.accent))
-                            : AnyView(Color.clear))
-                        .foregroundStyle(rowSelected(.roster(roster.id)) ? theme.onAccent : theme.primaryText)
-                        #endif
                     }
                 }
             }
@@ -232,7 +251,7 @@ struct ContentView: View {
             if !schedules.isEmpty {
                 Section("Schedules") {
                     ForEach(schedules) { schedule in
-                        NavigationLink(value: Selection.schedule(schedule.id)) {
+                        sidebarRow(.schedule(schedule.id)) {
                             sidebarLabel(schedule.title?.isEmpty == false ? schedule.title! : "Untitled schedule",
                                          "slider.horizontal.below.square.filled.and.square",
                                          selected: rowSelected(.schedule(schedule.id)))
@@ -242,18 +261,12 @@ struct ContentView: View {
                                 deleteSchedule(schedule)
                             }
                         }
-                        // Right-click parity for macOS (no swipe actions there).
+                        // Right-click parity (macOS has no swipe actions).
                         .contextMenu {
                             Button("Delete schedule", systemImage: "trash", role: .destructive) {
                                 deleteSchedule(schedule)
                             }
                         }
-                        #if os(macOS)
-                        .listRowBackground(rowSelected(.schedule(schedule.id))
-                            ? AnyView(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(theme.accent))
-                            : AnyView(Color.clear))
-                        .foregroundStyle(rowSelected(.schedule(schedule.id)) ? theme.onAccent : theme.primaryText)
-                        #endif
                     }
                 }
             }
@@ -263,6 +276,27 @@ struct ContentView: View {
         .listStyle(.sidebar)
         #endif
     }
+
+    #if os(macOS)
+    /// ↑/↓ arrow-key navigation through the sidebar, restored after dropping the
+    /// List's `selection:` binding. Steps the same conditional row order shown.
+    private func moveSidebarSelection(_ direction: MoveCommandDirection) {
+        var order: [Selection] = [.overview, .calendar(nil), .search, .shiftTypes]
+        if planningModule { order.append(.planning) }
+        if payModule { order.append(.timesheet) }
+        order.append(.settings)
+        order.append(contentsOf: importedRosters.map { Selection.roster($0.id) })
+        order.append(contentsOf: schedules.map { Selection.schedule($0.id) })
+        let idx = order.firstIndex(where: { rowSelected($0) })
+        switch direction {
+        case .up:
+            if let i = idx, i > 0 { selection = order[i - 1] } else if idx == nil { selection = order.last }
+        case .down:
+            if let i = idx, i < order.count - 1 { selection = order[i + 1] } else if idx == nil { selection = order.first }
+        default: break
+        }
+    }
+    #endif
 
     @ViewBuilder
     private var detail: some View {
@@ -379,3 +413,47 @@ struct ContentView: View {
     ContentView()
         .modelContainer(container)
 }
+
+#if os(macOS)
+private enum SidebarSelMetrics {
+    static let capsuleHInset: CGFloat = 9   // capsule inset from the row edges
+    static let capsuleVInset: CGFloat = 2
+    static let labelHInset: CGFloat = 16    // label inset (sits inside the capsule)
+    static let labelVInset: CGFloat = 5
+}
+
+/// Paints a macOS sidebar row's themed selection capsule and owns the row insets.
+/// The List no longer draws a native selection, so this is the ONLY highlight: a
+/// full-width inset Capsule (matching the Liquid-Glass pill) that cross-fades on
+/// selection. The row background stays clear so themedPane()/vibrancy is untouched.
+private struct ThemedSidebarRow: ViewModifier {
+    let selected: Bool
+    let accent: Color
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.vertical, SidebarSelMetrics.labelVInset)
+            .padding(.horizontal, SidebarSelMetrics.labelHInset)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(accent)
+                    .opacity(selected ? 1 : 0)
+                    .padding(.horizontal, SidebarSelMetrics.capsuleHInset)
+                    .padding(.vertical, SidebarSelMetrics.capsuleVInset)
+                    .animation(.snappy(duration: 0.18), value: selected)
+            }
+            .contentShape(Rectangle())
+            .listRowInsets(EdgeInsets())
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+    }
+}
+
+private extension View {
+    /// macOS-only themed sidebar selection capsule (see `ThemedSidebarRow`).
+    func themedSidebarRow(selected: Bool, accent: Color) -> some View {
+        modifier(ThemedSidebarRow(selected: selected, accent: accent))
+    }
+}
+#endif
