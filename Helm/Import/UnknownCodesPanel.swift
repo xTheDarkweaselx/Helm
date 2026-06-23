@@ -64,7 +64,7 @@ struct UnknownCodesPanel: View {
                     onLearn: { onLearn(code, $0) }
                 )
             }
-            Text("Mappings are remembered for this roster — the next import resolves them automatically. You can change them later under Shift Types.")
+            Text("Helm remembers these for next time. You can change them later under Shift Types.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -154,11 +154,11 @@ private struct UnknownCodeRow: View {
                     }
                     Toggle("Ends next day", isOn: $overnight)
                 case .allDay:
-                    Text("Writes an all-day event (like leave or study days).")
+                    Text("Adds an all-day event, like leave or study days.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 case .ignore:
-                    Text("Days with this code will be skipped — always listed as “ignored by your rules”, never silently.")
+                    Text("Days with this code are skipped, and always listed so nothing is lost.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

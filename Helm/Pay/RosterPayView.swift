@@ -35,7 +35,7 @@ struct RosterPayView: View {
             } header: {
                 Text("Job / employer")
             } footer: {
-                Text("Shown in your timesheet's per-employer breakdown when you track more than one job. Leave blank to use the roster name.")
+                Text("Used to label this job in your timesheet. Leave blank to use the roster name.")
             }
 
             Section {
@@ -64,8 +64,8 @@ struct RosterPayView: View {
                 Text("Pay rate")
             } footer: {
                 Text(useCustomRate
-                     ? "This job is paid at \(rate.formatted(.currency(code: currency)))/h instead of the global rate."
-                     : "Inherits the global rate — \(globalRate > 0 ? globalRate.formatted(.currency(code: currency)) + "/h" : "set one in Settings ▸ Pay").")
+                     ? "This job is paid \(rate.formatted(.currency(code: currency)))/h, not the default rate."
+                     : "Uses your default rate — \(globalRate > 0 ? globalRate.formatted(.currency(code: currency)) + "/h" : "set one in Settings ▸ Pay").")
             }
 
             Section {
@@ -87,8 +87,8 @@ struct RosterPayView: View {
                 Text("Premiums")
             } footer: {
                 Text(useCustomPremiums
-                     ? "This job uses its own night/weekend/etc. rules, ignoring the global ones."
-                     : "Inherits your global premium rules from Settings ▸ Pay.")
+                     ? "This job uses its own premium rules, not your default ones."
+                     : "Uses your default premium rules from Settings ▸ Pay.")
             }
         }
         .formStyle(.grouped)

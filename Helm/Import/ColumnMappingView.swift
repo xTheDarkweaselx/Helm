@@ -82,7 +82,7 @@ struct ColumnMappingView: View {
     private var mapper: some View {
         Form {
             Section {
-                Text("Helm couldn’t auto-detect the columns in “\(sourceDisplayName)”. Tell it which columns hold your shifts — the preview updates as you choose.")
+                Text("Helm couldn’t find the columns in “\(sourceDisplayName)”. Pick which hold your shifts — the preview updates as you go.")
                     .font(.callout).foregroundStyle(.secondary)
             }
 
@@ -101,7 +101,7 @@ struct ColumnMappingView: View {
                         Text(aiError).font(.caption).foregroundStyle(.orange)
                     }
                 } footer: {
-                    Text("Reads the sheet on-device and fills in the columns below for you to confirm.")
+                    Text("Fills in the columns below for you to confirm.")
                 }
             }
             #endif
@@ -239,7 +239,7 @@ struct ColumnMappingView: View {
             Label("Pick a Date column and a Shift-code column above.", systemImage: "arrow.up")
                 .font(.caption).foregroundStyle(.secondary)
         } else if previewShifts.isEmpty {
-            Label("No rows parse with these columns — check the Date column and format.", systemImage: "exclamationmark.triangle")
+            Label("No shifts found — check the Date column and format.", systemImage: "exclamationmark.triangle")
                 .font(.caption).foregroundStyle(.orange)
         } else {
             Label("\(previewShifts.count) day\(previewShifts.count == 1 ? "" : "s") found", systemImage: "checkmark.circle")

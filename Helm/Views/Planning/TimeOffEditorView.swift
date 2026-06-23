@@ -45,7 +45,7 @@ struct TimeOffEditorView: View {
                     }
                 }
             } footer: {
-                Text("Optional. Used for the leave-hours total on the Planning screen.")
+                Text("Optional. Counts towards your leave-hours total in Planning.")
             }
 
             Section("Details") {

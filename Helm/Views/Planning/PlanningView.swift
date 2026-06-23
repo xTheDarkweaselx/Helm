@@ -179,7 +179,7 @@ struct PlanningView: View {
             Text("Weekly availability")
         } footer: {
             if rules.isEmpty {
-                Text("e.g. “Unavailable Mondays before noon”. Shifts that clash are flagged on the calendar.")
+                Text("Mark times you can't work, e.g. “Mondays before noon”. Clashing shifts get flagged.")
             }
         }
     }

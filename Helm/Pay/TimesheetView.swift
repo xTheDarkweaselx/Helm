@@ -165,7 +165,7 @@ struct TimesheetView: View {
             } header: {
                 Text("Upcoming paydays")
             } footer: {
-                Text("Projected from your scheduled shifts at your current rates — an estimate, not a promise.")
+                Text("Projected from your scheduled shifts at your current rates. An estimate, not a promise.")
             }
         }
     }
@@ -223,7 +223,7 @@ struct TimesheetView: View {
                 metric("Shifts", "\(summary.shiftCount)")
             }
             if summary.tentativeCount > 0 {
-                Text("\(summary.tentativeCount) shift\(summary.tentativeCount == 1 ? "" : "s") awaiting times — not yet paid.")
+                Text("\(summary.tentativeCount) shift\(summary.tentativeCount == 1 ? "" : "s") still need times — not paid yet.")
                     .font(.caption2).foregroundStyle(.orange)
             }
             Text(grossFooter(summary))
@@ -273,11 +273,11 @@ struct TimesheetView: View {
     private func grossFooter(_ summary: PaySummary) -> String {
         var parts: [String] = []
         if summary.overtimeHours > 0 {
-            parts.append("the overtime premium above \(hoursText(rules.overtimeThresholdHours)) h/week at \(rules.overtimeMultiplier.formatted(.number))×")
+            parts.append("overtime above \(hoursText(rules.overtimeThresholdHours)) h/week at \(rules.overtimeMultiplier.formatted(.number))×")
         }
         if summary.premiumPay > 0 { parts.append("your premium pay rules") }
         guard !parts.isEmpty else { return "Gross, before tax, at a flat hourly rate." }
-        return "Gross, before tax — includes " + parts.joined(separator: " and ") + "."
+        return "Gross, before tax. Includes " + parts.joined(separator: " and ") + "."
     }
 
     private var rangeLabel: String {

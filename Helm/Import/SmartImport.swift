@@ -189,7 +189,7 @@ struct SmartPasteSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 0) {
-                Text("Paste your roster — an email, a message, a copied table, anything. Apple Intelligence reads it on-device and pulls out your shifts.")
+                Text("Paste your roster — an email, message or copied table. Apple Intelligence reads it on-device and pulls out your shifts.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .padding([.horizontal, .top])
@@ -243,7 +243,7 @@ struct SmartPasteSheet: View {
             let roster = try await SmartImport.extract(from: text)
             let csv = roster.toCSV()
             guard csv.split(separator: "\n").count > 1 else {
-                error = "Helm couldn't find any shifts in that text. Try including the dates and shift names."
+                error = "No shifts found. Make sure the dates and shift names are included."
                 return
             }
             onExtract(csv, "Smart import")

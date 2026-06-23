@@ -174,7 +174,7 @@ final class ImportCoordinator {
             let summary = try await RosterSyncEngine.apply(plan, targets: targets, in: modelContext)
             phase = .finished(summary)
         } catch CalendarAccessError.eventKitDenied {
-            phase = .failed("Calendar access was denied. Enable it for Helm in Settings, then try again. Your shifts are saved in Helm.")
+            phase = .failed("Calendar access is off. Turn it on for Helm in Settings, then try again — your shifts are still saved.")
         } catch {
             phase = .failed(message(for: error))
         }
@@ -305,7 +305,7 @@ struct ImportView: View {
         ContentUnavailableView {
             Label("Add your roster", systemImage: "tablecells")
         } description: {
-            Text("Pick an Excel (.xlsx) or CSV file — Helm finds the dates and shift codes automatically. On‑device Apple Intelligence can also read a roster you paste as plain text.")
+            Text("Pick an Excel or CSV file and Helm finds your dates and shift codes. You can also paste a roster as text — Apple Intelligence reads it on-device.")
         } actions: {
             Button("Choose file…", systemImage: "folder") { isFileImporterPresented = true }
                 .buttonStyle(.glassProminent)
@@ -346,12 +346,12 @@ struct ImportView: View {
                 }
                 .font(.caption)
                 .buttonStyle(.borderless)
-                .help("Pick the sheet, header row and which columns hold the date and shift code.")
+                .help("Pick the sheet and the date and shift-code columns.")
             }
             .padding(.horizontal)
             .padding(.bottom, 6)
             if coordinator.sniffedCount > 0 {
-                Label("Read \(coordinator.sniffedCount) code\(coordinator.sniffedCount == 1 ? "" : "s") from your file's key — no need to teach \(coordinator.sniffedCount == 1 ? "it" : "them").",
+                Label("Read \(coordinator.sniffedCount) code\(coordinator.sniffedCount == 1 ? "" : "s") from your file's key.",
                       systemImage: "sparkles.rectangle.stack")
                     .font(.caption)
                     .foregroundStyle(.green)

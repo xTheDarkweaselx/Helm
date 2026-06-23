@@ -47,7 +47,7 @@ struct RotationPatternEditorView: View {
             } header: {
                 Text("Days")
             } footer: {
-                Text("Tap a day to set its shift or mark it off. The cycle repeats from its start date.")
+                Text("Tap a day to set its shift or mark it off. The cycle then repeats.")
             }
         }
         .themedPane() // v7.1 wash

@@ -41,12 +41,12 @@ struct RotaTemplatesGallery: View {
                 } header: {
                     Text("Start from a template")
                 } footer: {
-                    Text("A template fills in the cycle and its shift times — you can rename, retime or edit anything afterwards. It starts from today.")
+                    Text("Starts a ready-made cycle from today. Rename, retime or edit anything afterwards.")
                 }
             }
             .formStyle(.grouped)
             .themedPane()
-            .navigationTitle("New schedule")
+            .navigationTitle("Build a rota")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif

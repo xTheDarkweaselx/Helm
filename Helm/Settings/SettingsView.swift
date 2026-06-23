@@ -134,235 +134,120 @@ struct SettingsForm: View {
 
     var body: some View {
         Form {
-            Section {
-                ForEach(AppModule.allCases) { module in
-                    Toggle(isOn: moduleBinding(module)) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Label(module.title, systemImage: module.icon)
-                            Text(module.summary).font(.caption2).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            } header: {
-                Text("Features")
-            } footer: {
-                Text("Turn off features you don't use to declutter the app. Nothing is deleted — switch one back on to restore it.")
-            }
+            featuresSection
 
             Section {
-                ForEach(ReminderSetting.presets, id: \.minutes) { preset in
-                    Toggle(preset.label, isOn: reminderBinding(for: preset.minutes))
-                        .disabled(!reminderOffsets.contains(preset.minutes)
-                                  && reminderOffsets.count >= ReminderOffsets.maxCount)
+                NavigationLink { calendarRemindersScreen } label: {
+                    Label("Calendar & reminders", systemImage: "bell.badge")
                 }
-            } header: {
-                Text("Default shift reminders")
-            } footer: {
-                Text("\(reminderOffsets.isEmpty ? "No reminders" : ReminderSetting.sentenceSummary(for: Array(reminderOffsets))) — pick up to \(ReminderOffsets.maxCount). Applied to shifts as you import them; a roster can override this from its own page. To update shifts already in your calendar, open a roster and choose “Re-sync all shifts to calendar”.")
-            }
-
-            Section {
-                Toggle("Apple Calendar", isOn: destinationBinding(for: .eventkit))
-                if GoogleConfig.isConfigured {
-                    Toggle("Google Calendar", isOn: destinationBinding(for: .google))
-                        .disabled(!googleUsable && !chosenDestinations.contains(.google))
+                if payModule {
+                    NavigationLink { payScreen } label: {
+                        Label("Pay & timesheet", systemImage: "banknote")
+                    }
                 }
-            } header: {
-                Text("Calendar destinations")
-            } footer: {
-                if chosenDestinations.contains(.google) && !googleUsable {
-                    Text("Google is signed out — shifts go only to Apple Calendar until you sign in again below.")
-                        .foregroundStyle(.orange)
-                } else if chosenDestinations.count > 1 {
-                    Text("New and updated shifts are written to BOTH calendars. Each roster remembers where its shifts live, so re-applying moves them when you change this.")
-                } else if googleUsable {
-                    Text("Each roster remembers where its shifts were written, so re-importing after switching moves them to the new destination.")
-                } else {
-                    Text("Google Calendar appears here once it's set up and you're signed in below.")
+                NavigationLink { appearanceScreen } label: {
+                    Label("Appearance", systemImage: "paintpalette")
+                }
+                NavigationLink { dataScreen } label: {
+                    Label("Privacy & data", systemImage: "lock.doc")
                 }
             }
-
-            if payModule {
-            Section {
-                LabeledContent("Hourly rate") {
-                    HStack(spacing: 2) {
-                        Text(Locale.current.currencySymbol ?? "£").foregroundStyle(.secondary)
-                        TextField("Hourly rate", value: $hourlyRate, format: .number.precision(.fractionLength(0...2)))
-                            .labelsHidden() // otherwise the title renders next to the value ("0  0")
-                            .multilineTextAlignment(.trailing)
-                            .frame(maxWidth: 60)
-                            .focused($rateFieldFocused)
-                            #if os(iOS)
-                            // The decimal pad has no Return key — this toolbar
-                            // is the only way to dismiss it.
-                            .keyboardType(.decimalPad)
-                            .toolbar {
-                                ToolbarItemGroup(placement: .keyboard) {
-                                    Spacer()
-                                    Button("Done") { rateFieldFocused = false }
-                                }
-                            }
-                            #endif
-                    }
-                }
-                Toggle("Overtime", isOn: $payOvertimeEnabled)
-                if payOvertimeEnabled {
-                    Stepper(value: $payOvertimeThreshold, in: 1...100, step: 1) {
-                        LabeledContent("Over", value: "\(Int(payOvertimeThreshold)) h / week")
-                    }
-                    Picker("Overtime rate", selection: $payOvertimeMultiplier) {
-                        Text("1.25×").tag(1.25)
-                        Text("1.5×").tag(1.5)
-                        Text("2×").tag(2.0)
-                    }
-                }
-                Picker("Tax year starts", selection: $payTaxYearPreset) {
-                    Text("6 April (UK)").tag("uk")
-                    Text("1 January").tag("calendar")
-                }
-                if hourlyRate > 0 {
-                    Button { showingPremiumRules = true } label: {
-                        HStack {
-                            Text("Premium pay rules")
-                            Spacer()
-                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .contentShape(Rectangle())
-                }
-            } header: {
-                Text("Pay")
-            } footer: {
-                Text("Set your hourly rate to unlock the Timesheet — gross pay, weekly/monthly/tax-year totals, and CSV export — plus the Overview pay card. Figures are before tax.")
-            }
-
-            if hourlyRate > 0 {
-                Section {
-                    Toggle("Forecast my paydays", isOn: $payCycleEnabled)
-                    if payCycleEnabled {
-                        Picker("Pay frequency", selection: $payCycleFrequency) {
-                            ForEach(PayFrequency.allCases, id: \.rawValue) { f in
-                                Text(f.label).tag(f.rawValue)
-                            }
-                        }
-                        DatePicker(payCycleFrequency == PayFrequency.monthly.rawValue ? "A recent payday" : "Start of a pay period",
-                                   selection: payCycleAnchorBinding, displayedComponents: .date)
-                        if payCycleFrequency != PayFrequency.monthly.rawValue {
-                            Stepper(value: $payCycleLag, in: 0...14) {
-                                LabeledContent("Paid", value: payCycleLag == 0
-                                               ? "on the period's last day"
-                                               : "\(payCycleLag) day\(payCycleLag == 1 ? "" : "s") later")
-                            }
-                        }
-                    }
-                } header: {
-                    Text("Pay cycle")
-                } footer: {
-                    Text(payCycleEnabled
-                         ? payCycleFooter
-                         : "Tell Helm how often you're paid to forecast your next payday and what it'll be worth, on the Timesheet.")
-                }
-            }
-            } // if payModule
 
             #if os(iOS)
-            Section {
-                Toggle("Require \(AppLockSetting.biometryLabel)", isOn: $requireAppLock)
-                    .disabled(!AppLockSetting.canAuthenticate)
-            } header: {
-                Text("App Lock")
-            } footer: {
-                if AppLockSetting.canAuthenticate {
-                    Text("Lock Helm with \(AppLockSetting.biometryLabel) (or your device passcode) on launch and when you return to it, so only you can open your schedule.")
-                } else {
-                    Text("Set up Face ID, Touch ID, or a device passcode first to lock Helm.")
-                }
-            }
-
-            // Wake-up alarms use AlarmKit (iOS 26+); the Section hides itself on
-            // older systems rather than presenting a toggle that does nothing.
-            if #available(iOS 26.0, *) {
-                Section {
-                    Toggle("Wake me up for shifts", isOn: $shiftAlarmsEnabled)
-                    if shiftAlarmsEnabled {
-                        Picker("Alarm before shift", selection: $shiftAlarmLead) {
-                            ForEach(ShiftAlarmSetting.leadChoices, id: \.self) { mins in
-                                Text(ShiftAlarmSetting.label(forLead: mins)).tag(mins)
-                            }
-                        }
-                    }
-                } header: {
-                    Text("Wake-up alarms")
-                } footer: {
-                    Text("Sets a real alarm \(ShiftAlarmSetting.label(forLead: shiftAlarmLead)) before each upcoming timed shift. Like a Clock alarm it rings through Silent mode and Focus — including Sleep. A roster can override this timing from its “Reminders & wake-up alarm” page. Apple doesn't let apps change your Sleep schedule's wake-up alarm, so this is Helm's own alarm.")
-                }
-                .onChange(of: shiftAlarmsEnabled) { _, on in
-                    if on {
-                        SnapshotWriter.refresh(context: dataContext)
-                    } else {
-                        Task { await ShiftAlarmScheduler.shared.cancelAll() }
-                    }
-                }
-                .onChange(of: shiftAlarmLead) { _, _ in
-                    UserDefaults.standard.removeObject(forKey: ShiftAlarmSetting.signatureKey)
-                    SnapshotWriter.refresh(context: dataContext)
-                }
-            }
+            appLockSection
             #endif
 
-            ThemePickerSection()
-
-            Section {
-                Toggle("Reduce transparency", isOn: $reduceTransparency)
-            } header: {
-                Text("Accessibility")
-            } footer: {
-                Text("Flattens Helm's translucent glass to solid surfaces for legibility. Helm also follows your device's text size, bold text and reduce-motion settings.")
+            // Helm is a paid app with everything free inside, so the in-app
+            // upgrade entry is hidden (ProGate.offersUpgrade == false). The
+            // StoreKit foundation stays for a possible free-app + Pro-tier pivot.
+            if ProGate.offersUpgrade {
+                helmProSection
             }
-
-            Section {
-                Button("Show welcome guide") { hasCompletedOnboarding = false }
-            } footer: {
-                Text("Replays the first-run tour — what Helm does, plus appearance and accessibility.")
-            }
-
-            Section {
-                Button { showingPaywall = true } label: {
-                    HStack {
-                        Label("Helm Pro", systemImage: "sailboat.fill")
-                        Spacer()
-                        if proStore.isPro { Text("Unlocked").foregroundStyle(.green) }
-                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
-                    }
-                }
-                .buttonStyle(.plain)
-                .contentShape(Rectangle())
-                Button("Restore purchase") { Task { await proStore.restore() } }
-                    .disabled(proStore.isWorking)
-            } header: {
-                Text("Helm Pro")
-            } footer: {
-                Text(proStore.isPro
-                     ? "Thanks for supporting Helm."
-                     : "A one-time unlock. Everything in Helm is free right now — Pro simply supports its development.")
-            }
-
-            googleSection
-
-            dataSection
-
-            cleanupSection
         }
         .formStyle(.grouped)
         .themedPane() // v7.1 wash (iOS; passthrough on macOS)
+        .navigationTitle("Settings")
+        .sheet(isPresented: $showingPaywall) { PaywallView() }
+        // Run the legacy single-value migrations so the new keys exist before
+        // the @AppStorage defaults mask them.
+        .onAppear {
+            _ = ReminderSetting.offsets
+            _ = CalendarDestinationSetting.chosenKinds
+        }
+    }
+
+    // MARK: - Grouped sub-screens (v10: tuck the 14 flat sections behind ~4 links)
+
+    @ViewBuilder
+    private var calendarRemindersScreen: some View {
+        Form {
+            remindersSection
+            #if os(iOS)
+            alarmsSection
+            #endif
+            destinationsSection
+            googleSection
+            cleanupSection
+        }
+        .formStyle(.grouped)
+        .themedPane()
+        .navigationTitle("Calendar & reminders")
+    }
+
+    @ViewBuilder
+    private var payScreen: some View {
+        Form {
+            paySection
+            if hourlyRate > 0 { payCycleSection }
+        }
+        .formStyle(.grouped)
+        .themedPane()
+        .navigationTitle("Pay & timesheet")
+        .onChange(of: payCycleEnabled) { _, on in
+            // Seed a sensible anchor (today) the first time forecasting is enabled,
+            // so the cycle resolves immediately instead of staying nil.
+            if on, PaySettings.anchorDayKey(payCycleAnchor) == nil {
+                payCycleAnchor = PaySettings.anchorString(DayKey(containing: .now, in: payDisplayCalendar))
+            }
+        }
+        .sheet(isPresented: $showingPremiumRules) {
+            NavigationStack {
+                PremiumRulesView()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showingPremiumRules = false }
+                        }
+                    }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var appearanceScreen: some View {
+        Form {
+            ThemePickerSection()
+            accessibilitySection
+        }
+        .formStyle(.grouped)
+        .themedPane()
+        .navigationTitle("Appearance")
+    }
+
+    @ViewBuilder
+    private var dataScreen: some View {
+        Form {
+            dataSection
+            welcomeSection
+        }
+        .formStyle(.grouped)
+        .themedPane()
+        .navigationTitle("Privacy & data")
         // While the export popup is up, hide the Form from VoiceOver so focus stays
         // trapped on the popup (the scrim only blocks pointer/touch, not assistive
         // tech) — otherwise a VoiceOver user could reach controls behind it.
         .accessibilityHidden(isPreparingExport)
-        // The modal export progress popup, rendered INSIDE the Form so it shows in
-        // every Settings home (iOS sheet, sidebar pane, AND the macOS ⌘, window —
-        // the shared SyncProgressHUD isn't mounted in the Settings scene).
+        // The modal export progress popup, rendered INSIDE this screen so it shows
+        // in every Settings home (iOS sheet, sidebar pane, AND the macOS ⌘, window).
         .overlay {
             if isPreparingExport {
                 ExportProgressPopup(progress: exportProgress)
@@ -391,29 +276,245 @@ struct SettingsForm: View {
         } message: {
             if let exportErrorMessage { Text(exportErrorMessage) }
         }
-        .onChange(of: payCycleEnabled) { _, on in
-            // Seed a sensible anchor (today) the first time forecasting is enabled,
-            // so the cycle resolves immediately instead of staying nil.
-            if on, PaySettings.anchorDayKey(payCycleAnchor) == nil {
-                payCycleAnchor = PaySettings.anchorString(DayKey(containing: .now, in: payDisplayCalendar))
+    }
+
+    // MARK: - Sections (lifted verbatim; now composed into the sub-screens above)
+
+    @ViewBuilder
+    private var featuresSection: some View {
+        Section {
+            ForEach(AppModule.allCases) { module in
+                Toggle(isOn: moduleBinding(module)) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Label(module.title, systemImage: module.icon)
+                        Text(module.summary).font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        } header: {
+            Text("Features")
+        } footer: {
+            Text("Hide features you don't use. Nothing is deleted — switch one back on to restore it.")
+        }
+    }
+
+    @ViewBuilder
+    private var remindersSection: some View {
+        Section {
+            ForEach(ReminderSetting.presets, id: \.minutes) { preset in
+                Toggle(preset.label, isOn: reminderBinding(for: preset.minutes))
+                    .disabled(!reminderOffsets.contains(preset.minutes)
+                              && reminderOffsets.count >= ReminderOffsets.maxCount)
+            }
+        } header: {
+            Text("Default shift reminders")
+        } footer: {
+            Text("\(reminderOffsets.isEmpty ? "No reminders" : ReminderSetting.sentenceSummary(for: Array(reminderOffsets))) — pick up to \(ReminderOffsets.maxCount). Applied to new imports; a roster can override this. To update existing shifts, open a roster and Re-sync all shifts to calendar.")
+        }
+    }
+
+    @ViewBuilder
+    private var destinationsSection: some View {
+        Section {
+            Toggle("Apple Calendar", isOn: destinationBinding(for: .eventkit))
+            if GoogleConfig.isConfigured {
+                Toggle("Google Calendar", isOn: destinationBinding(for: .google))
+                    .disabled(!googleUsable && !chosenDestinations.contains(.google))
+            }
+        } header: {
+            Text("Calendar destinations")
+        } footer: {
+            if chosenDestinations.contains(.google) && !googleUsable {
+                Text("Google is signed out — shifts go only to Apple Calendar until you sign in again below.")
+                    .foregroundStyle(.orange)
+            } else if chosenDestinations.count > 1 {
+                Text("Shifts go to both calendars. Each roster remembers where its shifts live, so re-applying moves them when you change this.")
+            } else if googleUsable {
+                Text("Each roster remembers where its shifts were written, so re-importing after switching moves them to the new destination.")
+            } else {
+                Text("Google Calendar appears here once it's set up and you're signed in below.")
             }
         }
-        .sheet(isPresented: $showingPaywall) { PaywallView() }
-        .sheet(isPresented: $showingPremiumRules) {
-            NavigationStack {
-                PremiumRulesView()
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { showingPremiumRules = false }
+    }
+
+    @ViewBuilder
+    private var paySection: some View {
+        Section {
+            LabeledContent("Hourly rate") {
+                HStack(spacing: 2) {
+                    Text(Locale.current.currencySymbol ?? "£").foregroundStyle(.secondary)
+                    TextField("Hourly rate", value: $hourlyRate, format: .number.precision(.fractionLength(0...2)))
+                        .labelsHidden() // otherwise the title renders next to the value ("0  0")
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 60)
+                        .focused($rateFieldFocused)
+                        #if os(iOS)
+                        // The decimal pad has no Return key — this toolbar
+                        // is the only way to dismiss it.
+                        .keyboardType(.decimalPad)
+                        .toolbar {
+                            ToolbarItemGroup(placement: .keyboard) {
+                                Spacer()
+                                Button("Done") { rateFieldFocused = false }
+                            }
+                        }
+                        #endif
+                }
+            }
+            Toggle("Overtime", isOn: $payOvertimeEnabled)
+            if payOvertimeEnabled {
+                Stepper(value: $payOvertimeThreshold, in: 1...100, step: 1) {
+                    LabeledContent("Over", value: "\(Int(payOvertimeThreshold)) h / week")
+                }
+                Picker("Overtime rate", selection: $payOvertimeMultiplier) {
+                    Text("1.25×").tag(1.25)
+                    Text("1.5×").tag(1.5)
+                    Text("2×").tag(2.0)
+                }
+            }
+            Picker("Tax year starts", selection: $payTaxYearPreset) {
+                Text("6 April (UK)").tag("uk")
+                Text("1 January").tag("calendar")
+            }
+            if hourlyRate > 0 {
+                Button { showingPremiumRules = true } label: {
+                    HStack {
+                        Text("Premium pay rules")
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+            }
+        } header: {
+            Text("Pay")
+        } footer: {
+            Text("Set your hourly rate to unlock the Timesheet and Overview pay card. Figures are before tax.")
+        }
+    }
+
+    @ViewBuilder
+    private var payCycleSection: some View {
+        Section {
+            Toggle("Forecast my paydays", isOn: $payCycleEnabled)
+            if payCycleEnabled {
+                Picker("Pay frequency", selection: $payCycleFrequency) {
+                    ForEach(PayFrequency.allCases, id: \.rawValue) { f in
+                        Text(f.label).tag(f.rawValue)
+                    }
+                }
+                DatePicker(payCycleFrequency == PayFrequency.monthly.rawValue ? "A recent payday" : "Start of a pay period",
+                           selection: payCycleAnchorBinding, displayedComponents: .date)
+                if payCycleFrequency != PayFrequency.monthly.rawValue {
+                    Stepper(value: $payCycleLag, in: 0...14) {
+                        LabeledContent("Paid", value: payCycleLag == 0
+                                       ? "on the period's last day"
+                                       : "\(payCycleLag) day\(payCycleLag == 1 ? "" : "s") later")
+                    }
+                }
+            }
+        } header: {
+            Text("Pay cycle")
+        } footer: {
+            Text(payCycleEnabled
+                 ? payCycleFooter
+                 : "Tell Helm how often you're paid to forecast your next payday on the Timesheet.")
+        }
+    }
+
+    #if os(iOS)
+    @ViewBuilder
+    private var appLockSection: some View {
+        Section {
+            Toggle("Require \(AppLockSetting.biometryLabel)", isOn: $requireAppLock)
+                .disabled(!AppLockSetting.canAuthenticate)
+        } header: {
+            Text("App Lock")
+        } footer: {
+            if AppLockSetting.canAuthenticate {
+                Text("Lock Helm with \(AppLockSetting.biometryLabel) or your passcode on launch and when you return, so only you can open it.")
+            } else {
+                Text("Set up Face ID, Touch ID, or a device passcode first to lock Helm.")
+            }
+        }
+    }
+
+    // Wake-up alarms use AlarmKit (iOS 26+); the Section hides itself on older
+    // systems rather than presenting a toggle that does nothing.
+    @ViewBuilder
+    private var alarmsSection: some View {
+        if #available(iOS 26.0, *) {
+            Section {
+                Toggle("Wake me up for shifts", isOn: $shiftAlarmsEnabled)
+                if shiftAlarmsEnabled {
+                    Picker("Alarm before shift", selection: $shiftAlarmLead) {
+                        ForEach(ShiftAlarmSetting.leadChoices, id: \.self) { mins in
+                            Text(ShiftAlarmSetting.label(forLead: mins)).tag(mins)
                         }
                     }
+                }
+            } header: {
+                Text("Wake-up alarms")
+            } footer: {
+                Text("Rings a real alarm \(ShiftAlarmSetting.label(forLead: shiftAlarmLead)) before each timed shift — through Silent mode, Focus and Sleep. A roster can override the timing. (It's Helm's own alarm, separate from your Sleep schedule.)")
+            }
+            .onChange(of: shiftAlarmsEnabled) { _, on in
+                if on {
+                    SnapshotWriter.refresh(context: dataContext)
+                } else {
+                    Task { await ShiftAlarmScheduler.shared.cancelAll() }
+                }
+            }
+            .onChange(of: shiftAlarmLead) { _, _ in
+                UserDefaults.standard.removeObject(forKey: ShiftAlarmSetting.signatureKey)
+                SnapshotWriter.refresh(context: dataContext)
             }
         }
-        // Run the legacy single-value migrations so the new keys exist before
-        // the @AppStorage defaults mask them.
-        .onAppear {
-            _ = ReminderSetting.offsets
-            _ = CalendarDestinationSetting.chosenKinds
+    }
+    #endif
+
+    @ViewBuilder
+    private var accessibilitySection: some View {
+        Section {
+            Toggle("Reduce transparency", isOn: $reduceTransparency)
+        } header: {
+            Text("Accessibility")
+        } footer: {
+            Text("Flattens Helm's translucent glass to solid surfaces for easier reading. Helm also follows your device's text-size and motion settings.")
+        }
+    }
+
+    @ViewBuilder
+    private var welcomeSection: some View {
+        Section {
+            Button("Show welcome guide") { hasCompletedOnboarding = false }
+        } footer: {
+            Text("Replays the first-run tour — what Helm does and how to get started.")
+        }
+    }
+
+    @ViewBuilder
+    private var helmProSection: some View {
+        Section {
+            Button { showingPaywall = true } label: {
+                HStack {
+                    Label("Helm Pro", systemImage: "sailboat.fill")
+                    Spacer()
+                    if proStore.isPro { Text("Unlocked").foregroundStyle(.green) }
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+            Button("Restore purchase") { Task { await proStore.restore() } }
+                .disabled(proStore.isWorking)
+        } header: {
+            Text("Helm Pro")
+        } footer: {
+            Text(proStore.isPro
+                 ? "Thanks for supporting Helm."
+                 : "A one-time unlock. Everything's free right now — Pro just supports Helm's development.")
         }
     }
 
@@ -433,7 +534,7 @@ struct SettingsForm: View {
         } header: {
             Text("Your data")
         } footer: {
-            Text("Saves everything in Helm — shift types, rosters and their shifts, schedules, time-off, availability and your preferences — as one JSON file you can keep or move elsewhere. Helm never sends your roster data anywhere; it stays on your device and in your private iCloud.")
+            Text("Saves everything in Helm as one JSON file you can keep or move elsewhere. Your data never leaves your device and private iCloud.")
         }
     }
 
@@ -505,7 +606,7 @@ struct SettingsForm: View {
         } header: {
             Text("Remove Helm events")
         } footer: {
-            Text("Deletes every calendar event Helm has created there. Your rosters and schedules stay in Helm. To put events back, open a roster and choose “Re-sync all shifts to calendar”, or open a schedule's Preview and choose “Re-sync to Calendar” (a plain re-import sees them as unchanged and writes nothing). To remove a single shift, swipe it in its roster or right-click it in the calendar.")
+            Text("Deletes every event Helm created there; your rosters and schedules stay in Helm. To put events back, open a roster and Re-sync all shifts to calendar. To remove just one, swipe it in its roster.")
         }
         .confirmationDialog(
             "Remove ALL Helm events from \(removeAllCandidate.map(SyncSummary.name(for:)) ?? "this calendar")?",
@@ -519,7 +620,7 @@ struct SettingsForm: View {
             Button("Remove all", role: .destructive) { removeAll(from: kind) }
             Button("Cancel", role: .cancel) {}
         } message: { kind in
-            Text("Every event in the “Helm Shifts” calendar in \(SyncSummary.name(for: kind)) will be deleted. Helm's own data is untouched.")
+            Text("Deletes every event in the “Helm Shifts” calendar in \(SyncSummary.name(for: kind)). Your Helm data is untouched.")
         }
     }
 
@@ -593,7 +694,7 @@ struct SettingsForm: View {
                 }
                 .tint(theme.destructive)
                 .confirmationDialog(
-                    "\(googleRosterCount) roster\(googleRosterCount == 1 ? " has" : "s have") shifts in this Google account. After signing out, Helm can't update or remove them until you sign in again.",
+                    "\(googleRosterCount) roster\(googleRosterCount == 1 ? " has" : "s have") shifts in this Google account. Helm can't change them until you sign back in.",
                     isPresented: $isConfirmingSignOut,
                     titleVisibility: .visible
                 ) {
@@ -621,7 +722,7 @@ struct SettingsForm: View {
             Text("Google Calendar")
         } footer: {
             if !GoogleConfig.isConfigured {
-                Text("To connect Google Calendar, create a free Google Cloud OAuth client ID (type “iOS”, bundle ID Fusion-Studios.Helm) and paste it here. Helm only ever touches a “Helm Shifts” calendar it creates — never your other calendars.")
+                Text("Create a free Google Cloud OAuth client ID (type “iOS”, bundle ID Fusion-Studios.Helm) and paste it here. Helm only touches its own “Helm Shifts” calendar, never your others.")
             } else {
                 Text("Helm writes to its own “Helm Shifts” calendar in your Google account — never your other calendars.")
             }

@@ -707,6 +707,14 @@ private struct ShiftRow: View {
                     case .none:
                         EmptyView()
                     }
+                    // v10: a note shows as a small glyph here (full text on tap) so
+                    // the row stays compact instead of growing a 2-line wall.
+                    if let note = instance.note, !note.isEmpty {
+                        Image(systemName: "note.text")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("Has a note")
+                    }
                 }
                 if let location = instance.locationName, !location.isEmpty {
                     Label(location, systemImage: "mappin.and.ellipse")
@@ -716,12 +724,6 @@ private struct ShiftRow: View {
                 }
                 if let type = instance.shiftType, !type.tags.isEmpty {
                     TagPillRow(tags: type.tags, colorFor: { type.colorHex(forTag: $0) })
-                }
-                if let note = instance.note, !note.isEmpty {
-                    Label(note, systemImage: "note.text")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
                 }
             }
             Spacer(minLength: 8)
